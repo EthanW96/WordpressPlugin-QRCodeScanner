@@ -1,0 +1,1014 @@
+<?php
+// Admin UI logic for QR Code Tracker
+class QRCodeTracker_Admin {
+    private $main_table;
+    private $log_table;
+    private $tracker;
+
+    public function __construct($tracker) {
+        global $wpdb;
+        $this->main_table = $wpdb->prefix . 'qr_tracker';
+        $this->log_table = $wpdb->prefix . 'qr_tracker_logs';
+        $this->tracker = $tracker;
+    }
+
+    public function admin_menu() {
+        add_menu_page('QR Tracker', 'QR Tracker', 'manage_options', 'qr-tracker', [$this, 'admin_page']);
+        add_submenu_page('qr-tracker', 'Scan Logs', 'Scan Logs', 'manage_options', 'qr-scan-logs', [$this, 'scan_logs_page']);
+        add_submenu_page('qr-tracker', 'Reports', 'Reports', 'manage_options', 'qr-reports', [$this, 'reports_page']);
+        add_submenu_page('qr-tracker', 'Settings', 'Settings', 'manage_options', 'qr-settings', [$this, 'settings_page']);
+    }
+
+    public function admin_page() {
+        global $wpdb;
+        echo '<div class="wrap"><h1>QR Code Tracker</h1>';
+
+        // Move Tracked QR Codes table to the top
+        $entries = $wpdb->get_results("SELECT * FROM {$this->main_table} ORDER BY postcode, label");
+        echo '<h2>Tracked QR Codes</h2><table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Last Scanned</th><th>Actions</th></tr></thead><tbody>';
+        foreach ($entries as $row) {
+            $delete_url = esc_url(add_query_arg(['delete_id' => $row->id]));
+            $edit_url = esc_url(add_query_arg(['edit_id' => $row->id]));
+            $merge_url = esc_url(add_query_arg(['merge_id' => $row->id]));
+            $download_url = esc_url(admin_url('admin.php?action=qr_tracker_download_qr&id=' . $row->id));
+            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td><code>{$row->url}</code></td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>{$row->last_scanned}</td>";
+            echo "<td>";
+            if ($row->scan_count == 0) {
+                echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a> ";
+                echo "<a href=\"$delete_url\" onclick=\"return confirm('Are you sure you want to delete this QR code?')\" class=\"button button-secondary\">Delete</a> ";
+            } else {
+                echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a> ";
+                echo "<a href=\"$merge_url\" class=\"button button-secondary\">Merge</a> ";
+            }
+            echo "<a href='$download_url' class='button' target='_blank'>Download QR Image</a> ";
+            echo "</td></tr>";
+        }
+        echo '</tbody></table>';
+
+        if (isset($_POST['qr_submit'])) {
+            $postcode = strtoupper(sanitize_text_field($_POST['qr_postcode']));
+            $city = sanitize_text_field($_POST['qr_city']);
+            $tree = sanitize_text_field($_POST['qr_tree']);
+            $label = sanitize_text_field($_POST['qr_label']);
+            $reporting_id = sanitize_text_field($_POST['qr_reporting_id']);
+            $message_1 = wp_kses_post($_POST['qr_message_1']);
+            $message_2 = wp_kses_post($_POST['qr_message_2']);
+            $url = $this->tracker->generate_tracker_url($postcode, $city, $tree);
+            
+            // Check for duplicate URL
+            $existing = $wpdb->get_row($wpdb->prepare("SELECT id, postcode, tree FROM {$this->main_table} WHERE url = %s", $url));
+            if ($existing) {
+                echo '<div class="error"><p>Error: A QR code with this URL already exists (ID: ' . $existing->id . ', Postcode: ' . $existing->postcode . ', Tree: ' . $existing->tree . '). Please use a different URL.</p></div>';
+            } else {
+                $wpdb->insert($this->main_table, compact('url', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2'));
+                echo '<div class="updated"><p>QR Code entry saved.</p></div>';
+            }
+        }
+
+        if (isset($_POST['qr_edit_submit'])) {
+            $postcode = strtoupper(sanitize_text_field($_POST['qr_postcode']));
+            $edit_id = intval($_POST['qr_edit_id']);
+            $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count, url FROM {$this->main_table} WHERE id = %d", $edit_id));
+            
+            if ($row) {
+                $city = sanitize_text_field($_POST['qr_city']);
+                $tree = sanitize_text_field($_POST['qr_tree']);
+                $label = sanitize_text_field($_POST['qr_label']);
+                $reporting_id = sanitize_text_field($_POST['qr_reporting_id']);
+                $message_1 = wp_kses_post($_POST['qr_message_1']);
+                $message_2 = wp_kses_post($_POST['qr_message_2']);
+                $url = $this->tracker->generate_tracker_url($postcode, $city, $tree);
+                
+                // If no scans exist, allow URL editing
+                if ($row->scan_count == 0) {
+                    $update_data = compact('url', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2');
+                } else {
+                    // If scans exist, only update non-URL fields
+                    $update_data = compact('postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2');
+                }
+                
+                $wpdb->update($this->main_table, $update_data, ['id' => $edit_id]);
+                echo '<div class="updated"><p>QR Code entry updated.</p></div>';
+            } else {
+                echo '<div class="error"><p>QR Code not found.</p></div>';
+            }
+        }
+
+
+
+        if (isset($_GET['delete_id'])) {
+            $delete_id = intval($_GET['delete_id']);
+            $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count FROM {$this->main_table} WHERE id = %d", $delete_id));
+            
+            if ($row && $row->scan_count == 0) {
+                // Only allow deletion if no scans exist
+                $wpdb->delete($this->main_table, ['id' => $delete_id]);
+                echo '<div class="updated"><p>QR Code entry deleted.</p></div>';
+            } else {
+                echo '<div class="error"><p>Cannot delete QR code with existing scan data. Use the merge function instead.</p></div>';
+            }
+        }
+
+        if (isset($_POST['qr_merge_submit'])) {
+            $source_id = intval($_POST['qr_merge_source_id']);
+            $target_allocations = $_POST['qr_merge_allocations'];
+            $total_allocated = 0;
+            
+            // Validate allocations
+            foreach ($target_allocations as $target_id => $allocation) {
+                if (!empty($allocation) && is_numeric($allocation)) {
+                    $total_allocated += intval($allocation);
+                }
+            }
+            
+            // Verify source exists and has enough scans
+            $source = $wpdb->get_row($wpdb->prepare("SELECT scan_count FROM {$this->main_table} WHERE id = %d", $source_id));
+            
+            if ($source && $source->scan_count > 0 && $total_allocated == $source->scan_count) {
+                // Process each allocation
+                foreach ($target_allocations as $target_id => $allocation) {
+                    if (!empty($allocation) && is_numeric($allocation) && intval($allocation) > 0) {
+                        $target_id = intval($target_id);
+                        $allocation = intval($allocation);
+                        
+                        // Update scan count on target
+                        $wpdb->query($wpdb->prepare(
+                            "UPDATE {$this->main_table} SET scan_count = scan_count + %d WHERE id = %d",
+                            $allocation, $target_id
+                        ));
+                        
+                        // Transfer proportional scan logs to target
+                        // Get the allocation percentage and apply to scan logs
+                        $percentage = $allocation / $source->scan_count;
+                        $logs_to_transfer = $wpdb->get_results($wpdb->prepare(
+                            "SELECT id FROM {$this->log_table} WHERE tracker_id = %d ORDER BY scanned_at LIMIT %d",
+                            $source_id, $allocation
+                        ));
+                        
+                        if (!empty($logs_to_transfer)) {
+                            $log_ids = array_column($logs_to_transfer, 'id');
+                            $placeholders = implode(',', array_fill(0, count($log_ids), '%d'));
+                            $wpdb->query($wpdb->prepare(
+                                "UPDATE {$this->log_table} SET tracker_id = %d WHERE id IN ($placeholders)",
+                                array_merge([$target_id], $log_ids)
+                            ));
+                        }
+                    }
+                }
+                
+                // Delete the source entry
+                $wpdb->delete($this->main_table, ['id' => $source_id]);
+                
+                echo '<div class="updated"><p>QR Code merged successfully. ' . $source->scan_count . ' scans distributed across ' . count(array_filter($target_allocations)) . ' target QR codes.</p></div>';
+            } else {
+                echo '<div class="error"><p>Merge failed. Please ensure total allocation equals source scan count (' . ($source ? $source->scan_count : 0) . ').</p></div>';
+            }
+        }
+
+        // Handle edit form display
+        $editing = false;
+        $edit_data = null;
+        if (isset($_GET['edit_id'])) {
+            $edit_id = intval($_GET['edit_id']);
+            $edit_data = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->main_table} WHERE id = %d", $edit_id));
+            if ($edit_data) {
+                $editing = true;
+            } else {
+                echo '<div class="error"><p>QR Code not found.</p></div>';
+            }
+        }
+
+        // Handle merge form display
+        $merging = false;
+        $merge_data = null;
+        if (isset($_GET['merge_id'])) {
+            $merge_id = intval($_GET['merge_id']);
+            $merge_data = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->main_table} WHERE id = %d", $merge_id));
+            if ($merge_data && $merge_data->scan_count > 0) {
+                $merging = true;
+            } else {
+                echo '<div class="error"><p>Cannot merge QR code with no scan data. Use delete instead.</p></div>';
+            }
+        }
+
+        if ($merging && $merge_data) {
+            // Get all other QR codes for target selection
+            $target_options = $wpdb->get_results($wpdb->prepare(
+                "SELECT id, postcode, tree, label, url FROM {$this->main_table} WHERE id != %d ORDER BY postcode, tree",
+                $merge_data->id
+            ));
+            
+            echo '<h2>Merge QR Code</h2>
+            <p><strong>Source QR Code:</strong> Postcode: ' . esc_html($merge_data->postcode) . ' - Tree: ' . esc_html($merge_data->tree) . ' (' . $merge_data->scan_count . ' scans)</p>
+            <form method="post">
+                <input type="hidden" name="qr_merge_source_id" value="' . $merge_data->id . '">
+                <table class="form-table">
+                    <tr><th><label>Distribute scans to:</label></th>
+                        <td><div style="max-height: 300px; overflow-y: auto; border: 1px solid #ccc; padding: 10px;">';
+            foreach ($target_options as $option) {
+                echo '<div style="margin-bottom: 10px;">
+                    <label style="display: inline-block; width: 200px;">Postcode: ' . esc_html($option->postcode) . ' - Tree: ' . esc_html($option->tree) . '</label>
+                    <input type="number" name="qr_merge_allocations[' . $option->id . ']" min="0" max="' . $merge_data->scan_count . '" placeholder="0" style="width: 80px;">
+                    <span style="color: #666; font-size: 12px;">(' . esc_html($option->label) . ')</span>
+                </div>';
+            }
+            echo '</div></td></tr>
+                </table>
+                <p><strong>Total to allocate:</strong> <span id="total-allocated">0</span> / ' . $merge_data->scan_count . '</p>
+                <p><strong>Warning:</strong> This will distribute scans from the source to the target QR codes and delete the source entry.</p>
+                <p><input type="submit" name="qr_merge_submit" class="button button-primary" value="Merge QR Code" onclick="return confirm(\'Are you sure you want to merge these QR codes? This action cannot be undone.\')"></p>
+            </form>
+            <script>
+            document.addEventListener("DOMContentLoaded", function() {
+                const inputs = document.querySelectorAll("input[name^=\'qr_merge_allocations\']");
+                const totalSpan = document.getElementById("total-allocated");
+                
+                function updateTotal() {
+                    let total = 0;
+                    inputs.forEach(input => {
+                        total += parseInt(input.value) || 0;
+                    });
+                    totalSpan.textContent = total;
+                    totalSpan.style.color = total == ' . $merge_data->scan_count . ' ? "green" : "red";
+                }
+                
+                inputs.forEach(input => {
+                    input.addEventListener("input", updateTotal);
+                });
+                updateTotal();
+            });
+            </script>';
+        } elseif ($editing && $edit_data) {
+            echo '<h2>Edit QR Code</h2>';
+            if ($edit_data->scan_count > 0) {
+                echo '<div class="notice notice-warning"><p><strong>Note:</strong> This QR code has ' . number_format($edit_data->scan_count) . ' scan(s). The URL is auto-generated and locked to preserve tracking data. <br>Because the URL is based on postcode, city, and tree, <strong>these fields cannot be edited</strong> once scans exist. You can still edit other fields or use the merge function to redistribute scans.</p></div>';
+            }
+            echo '<form method="post">
+                <input type="hidden" name="qr_edit_id" value="' . $edit_data->id . '">
+                <table class="form-table">';
+            // Postcode
+            echo '<tr><th><label for="qr_postcode">Postcode:</label></th><td><input type="text" name="qr_postcode" required value="' . esc_attr($edit_data->postcode) . '"' . ($edit_data->scan_count > 0 ? ' readonly style="background-color:#f0f0f0;color:#666;"' : '') . '></td></tr>';
+            // City
+            echo '<tr><th><label for="qr_city">City:</label></th><td><input type="text" name="qr_city" value="' . esc_attr($edit_data->city) . '"' . ($edit_data->scan_count > 0 ? ' readonly style="background-color:#f0f0f0;color:#666;"' : '') . '></td></tr>';
+            // Tree
+            echo '<tr><th><label for="qr_tree">Tree (free text):</label></th><td><input type="text" name="qr_tree" required value="' . esc_attr($edit_data->tree) . '"' . ($edit_data->scan_count > 0 ? ' readonly style="background-color:#f0f0f0;color:#666;"' : '') . '></td></tr>';
+            echo '<tr><th><label for="qr_label">Label (optional):</label></th>
+                        <td><input type="text" name="qr_label" value="' . esc_attr($edit_data->label) . '"></td></tr>
+                    <tr><th><label for="qr_reporting_id">Reporting ID (optional):</label></th>
+                        <td><input type="text" name="qr_reporting_id" placeholder="Link to related entries" value="' . esc_attr($edit_data->reporting_id) . '"></td></tr>
+                    <tr><th><label for="qr_message_1">Message 1 (HTML):</label></th>
+                        <td>'; wp_editor($edit_data->message_1, 'qr_message_1', ['textarea_rows' => 5]); echo '<p class="description"><strong>Shortcode:</strong> <code>[qr_tracker_message_1]</code> - Use this shortcode in your WordPress pages/posts to display this message when someone scans the QR code.</p></td></tr>
+                    <tr><th><label for="qr_message_2">Message 2 (HTML):</label></th>
+                        <td>'; wp_editor($edit_data->message_2, 'qr_message_2', ['textarea_rows' => 5]); echo '<p class="description"><strong>Shortcode:</strong> <code>[qr_tracker_message_2]</code> - Use this shortcode in your WordPress pages/posts to display this message when someone scans the QR code.</p></td></tr>
+                </table>
+                <p><input type="submit" name="qr_edit_submit" class="button button-primary" value="Update QR Code"></p>
+            </form>';
+        } else {
+            echo '<h2>Add QR Code</h2>
+            <form method="post">
+                <table class="form-table">
+                    <tr><th><label for="qr_postcode">Postcode:</label></th>
+                        <td><input type="text" name="qr_postcode" required></td></tr>
+                    <tr><th><label for="qr_city">City:</label></th>
+                        <td><input type="text" name="qr_city"></td></tr>
+                    <tr><th><label for="qr_tree">Tree (free text):</label></th>
+                        <td><input type="text" name="qr_tree" required></td></tr>
+                    <tr><th><label for="qr_label">Label (optional):</label></th>
+                        <td><input type="text" name="qr_label"></td></tr>
+                    <tr><th><label for="qr_reporting_id">Reporting ID (optional):</label></th>
+                        <td><input type="text" name="qr_reporting_id" placeholder="Link to related entries"></td></tr>
+                    <tr><th><label for="qr_message_1">Message 1 (HTML):</label></th>
+                        <td>'; wp_editor('', 'qr_message_1', ['textarea_rows' => 5]); echo '<p class="description"><strong>Shortcode:</strong> <code>[qr_tracker_message_1]</code> - Use this shortcode in your WordPress pages/posts to display this message when someone scans the QR code.</p></td></tr>
+                    <tr><th><label for="qr_message_2">Message 2 (HTML):</label></th>
+                        <td>'; wp_editor('', 'qr_message_2', ['textarea_rows' => 5]); echo '<p class="description"><strong>Shortcode:</strong> <code>[qr_tracker_message_2]</code> - Use this shortcode in your WordPress pages/posts to display this message when someone scans the QR code.</p></td></tr>
+                </table>
+                <p><input type="submit" name="qr_submit" class="button button-primary" value="Save QR Code"></p>
+            </form>';
+        }
+
+
+
+        // Display quick summary
+        $total_qr_codes = $wpdb->get_var("SELECT COUNT(*) FROM {$this->main_table}");
+        $total_scans = $wpdb->get_var("SELECT SUM(scan_count) FROM {$this->main_table}");
+        $active_qr_codes = $wpdb->get_var("SELECT COUNT(*) FROM {$this->main_table} WHERE scan_count > 0");
+        $recent_scans = $wpdb->get_var("SELECT COUNT(*) FROM {$this->log_table} WHERE scanned_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
+        
+        echo '<h2>Quick Summary</h2>';
+        echo '<div style="display: flex; gap: 20px; margin: 20px 0;">';
+        echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
+        echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($total_qr_codes ?? 0) . '</div>';
+        echo '<div style="color: #666; margin-top: 5px;">Total QR Codes</div>';
+        echo '</div>';
+        echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
+        echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($total_scans ?? 0) . '</div>';
+        echo '<div style="color: #666; margin-top: 5px;">Total Scans</div>';
+        echo '</div>';
+        echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
+        echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($active_qr_codes ?? 0) . '</div>';
+        echo '<div style="color: #666; margin-top: 5px;">Active QR Codes</div>';
+        echo '</div>';
+        echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
+        echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($recent_scans ?? 0) . '</div>';
+        echo '<div style="color: #666; margin-top: 5px;">Scans (7 days)</div>';
+        echo '</div>';
+        echo '</div>';
+        echo '<p><a href="' . admin_url('admin.php?page=qr-reports') . '" class="button button-primary">View Detailed Reports</a></p>';
+    }
+        // 2. Add a helper to generate the URL from postcode, city, and tree
+        private function generate_tracker_url($postcode, $city, $tree) {
+            $base = home_url('/');
+            $params = [
+                'postcode' => $postcode,
+                'city' => $city,
+                'tree' => $tree
+            ];
+            return add_query_arg($params, $base);
+        }
+
+        public function scan_logs_page() {
+            global $wpdb;
+            echo '<div class="wrap"><h1>QR Code Scan Logs</h1>';
+    
+            // Get filter parameters
+            $date_from = isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '';
+            $date_to = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '';
+            $postcode_filter = isset($_GET['postcode']) ? sanitize_text_field($_GET['postcode']) : '';
+            $tree_filter = isset($_GET['tree']) ? sanitize_text_field($_GET['tree']) : '';
+            $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 100;
+    
+            // Build WHERE clause
+            $where_clause = "WHERE 1=1";
+            $where_params = [];
+            
+            if (!empty($date_from)) {
+                $where_clause .= " AND scanned_at >= %s";
+                $where_params[] = $date_from . ' 00:00:00';
+            }
+            
+            if (!empty($date_to)) {
+                $where_clause .= " AND scanned_at <= %s";
+                $where_params[] = $date_to . ' 23:59:59';
+            }
+            
+            if (!empty($postcode_filter)) {
+                $where_clause .= " AND postcode = %s";
+                $where_params[] = $postcode_filter;
+            }
+            
+            if (!empty($tree_filter)) {
+                $where_clause .= " AND tree = %s";
+                $where_params[] = $tree_filter;
+            }
+    
+            // Get available postcodes and trees for filters
+            $postcodes = $wpdb->get_col("SELECT DISTINCT postcode FROM {$this->log_table} WHERE postcode IS NOT NULL AND postcode != '' ORDER BY postcode");
+            $trees = $wpdb->get_col("SELECT DISTINCT tree FROM {$this->log_table} WHERE tree IS NOT NULL AND tree != '' ORDER BY tree");
+    
+            // Build and execute query
+            $sql = "SELECT * FROM {$this->log_table} {$where_clause} ORDER BY scanned_at DESC LIMIT %d";
+            $where_params[] = $limit;
+            
+            if (!empty($where_params)) {
+                $logs = $wpdb->get_results($wpdb->prepare($sql, $where_params));
+            } else {
+                $logs = $wpdb->get_results($wpdb->prepare($sql, [$limit]));
+            }
+    
+            // Display filters
+            echo '<div style="background: #f9f9f9; padding: 15px; margin: 20px 0; border: 1px solid #ddd; border-radius: 4px;">';
+            echo '<form method="get">';
+            echo '<input type="hidden" name="page" value="qr-scan-logs">';
+            echo '<div style="margin-bottom: 10px;">';
+            echo '<label>From:</label><input type="date" name="date_from" value="' . esc_attr($date_from) . '" style="margin-right: 10px;">';
+            echo '<label>To:</label><input type="date" name="date_to" value="' . esc_attr($date_to) . '" style="margin-right: 10px;">';
+            echo '<label>Limit:</label><select name="limit" style="margin-right: 10px;"><option value="100"' . ($limit == 100 ? ' selected' : '') . '>100</option><option value="500"' . ($limit == 500 ? ' selected' : '') . '>500</option><option value="1000"' . ($limit == 1000 ? ' selected' : '') . '>1000</option><option value="5000"' . ($limit == 5000 ? ' selected' : '') . '>5000</option></select>';
+            echo '</div>';
+            echo '<div style="margin-bottom: 10px;">';
+            echo '<label>Postcode:</label><select name="postcode" style="margin-right: 10px;"><option value="">All</option>';
+            foreach ($postcodes as $postcode) {
+                echo '<option value="' . esc_attr($postcode) . '"' . ($postcode_filter == $postcode ? ' selected' : '') . '>' . esc_html($postcode) . '</option>';
+            }
+            echo '</select>';
+            echo '<label>Tree:</label><select name="tree" style="margin-right: 10px;"><option value="">All</option>';
+            foreach ($trees as $tree) {
+                echo '<option value="' . esc_attr($tree) . '"' . ($tree_filter == $tree ? ' selected' : '') . '>' . esc_html($tree) . '</option>';
+            }
+            echo '<input type="submit" class="button button-primary" value="Apply Filters">';
+            echo '</div>';
+            echo '</form>';
+            echo '</div>';
+    
+            // Export button
+            $export_params = $_GET;
+            unset($export_params['page']);
+            echo '<p><a href="' . esc_url(admin_url('admin.php?action=qr_tracker_export&export_type=logs&' . http_build_query($export_params))) . '" class="button button-primary">Export CSV</a></p>';
+    
+            echo '<table class="widefat"><thead><tr><th>ID</th><th>Tracker ID</th><th>Postcode</th><th>City</th><th>Tree</th><th>Scanned At</th></tr></thead><tbody>';
+            foreach ($logs as $log) {
+                echo "<tr><td>{$log->id}</td><td>{$log->tracker_id}</td><td>{$log->postcode}</td><td>{$log->city}</td><td>{$log->tree}</td><td>{$log->scanned_at}</td></tr>";
+            }
+            echo '</tbody></table></div>';
+        }
+    
+        public function reports_page() {
+            global $wpdb;
+            
+            echo '<div class="wrap"><h1>QR Code Reports</h1>';
+    
+            // Get filter parameters
+            $view_type = isset($_GET['view']) ? sanitize_text_field($_GET['view']) : 'breakdown';
+            $group_by = isset($_GET['group_by']) ? sanitize_text_field($_GET['group_by']) : 'postcode';
+            $date_from = isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '';
+            $date_to = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '';
+            $postcode_filter = isset($_GET['postcode']) ? sanitize_text_field($_GET['postcode']) : '';
+            $tree_filter = isset($_GET['tree']) ? sanitize_text_field($_GET['tree']) : '';
+            $city_filter = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
+    
+            // Build WHERE clause for date filtering
+            $where_clause = "WHERE 1=1";
+            $where_params = [];
+            
+            if (!empty($date_from)) {
+                $where_clause .= " AND l.scanned_at >= %s";
+                $where_params[] = $date_from . ' 00:00:00';
+            }
+            
+            if (!empty($date_to)) {
+                $where_clause .= " AND l.scanned_at <= %s";
+                $where_params[] = $date_to . ' 23:59:59';
+            }
+            
+            if (!empty($postcode_filter)) {
+                $where_clause .= " AND l.postcode = %s";
+                $where_params[] = $postcode_filter;
+            }
+            
+            if (!empty($tree_filter)) {
+                $where_clause .= " AND l.tree = %s";
+                $where_params[] = $tree_filter;
+            }
+    
+            if (!empty($city_filter)) {
+                $where_clause .= " AND l.city = %s";
+                $where_params[] = $city_filter;
+            }
+    
+            // Get available postcodes and trees for filters
+            $postcodes = $wpdb->get_col("SELECT DISTINCT postcode FROM {$this->main_table} ORDER BY postcode");
+            $trees = $wpdb->get_col("SELECT DISTINCT tree FROM {$this->main_table} ORDER BY tree");
+            $cities = $wpdb->get_col("SELECT DISTINCT city FROM {$this->main_table} ORDER BY city");
+    
+            echo '<style>
+            .qr-filter-form { background: #f9f9f9; padding: 15px; margin: 20px 0; border: 1px solid #ddd; border-radius: 4px; }
+            .qr-filter-form select, .qr-filter-form input[type="date"] { margin-right: 10px; padding: 5px 28px 5px 8px !important; min-width: 90px; background: #fff; appearance: auto; -webkit-appearance: auto; -moz-appearance: auto; }
+            .qr-filter-form label { display: inline-block; margin-right: 5px; font-weight: bold; }
+            .qr-stats-summary { display: flex; gap: 20px; margin: 20px 0; }
+            .qr-stat-box { background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center; }
+            .qr-stat-number { font-size: 24px; font-weight: bold; color: #0073aa; }
+            .qr-stat-label { color: #666; margin-top: 5px; }
+            </style>';
+            
+            // Include Chart.js
+            echo '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>';
+            
+            echo '<div class="qr-filter-form">';
+            echo '<form method="get">';
+            echo '<input type="hidden" name="page" value="qr-reports">';
+            echo '<div style="margin-bottom: 10px;">';
+            echo '<label>View:</label><select name="view"><option value="breakdown"' . ($view_type == 'breakdown' ? ' selected' : '') . '>Breakdown View</option><option value="rollup"' . ($view_type == 'rollup' ? ' selected' : '') . '>Rollup View</option></select>';
+            echo '<label>Group by:</label><select name="group_by"><option value="postcode"' . ($group_by == 'postcode' ? ' selected' : '') . '>Postcode</option><option value="tree"' . ($group_by == 'tree' ? ' selected' : '') . '>Tree</option><option value="city"' . ($group_by == 'city' ? ' selected' : '') . '>City</option></select>';
+            echo '</div>';
+            echo '<div style="margin-bottom: 10px;">';
+            echo '<label>From:</label><input type="date" name="date_from" value="' . esc_attr($date_from) . '">';
+            echo '<label>To:</label><input type="date" name="date_to" value="' . esc_attr($date_to) . '">';
+            echo '<a href="' . esc_url(add_query_arg(array_merge($_GET, ['date_from' => date('Y-m-d', strtotime('-30 days')), 'date_to' => date('Y-m-d')]))) . '" class="button">Last 30 Days</a>';
+            echo '<a href="' . esc_url(add_query_arg(array_merge($_GET, ['date_from' => date('Y-m-d', strtotime('-7 days')), 'date_to' => date('Y-m-d')]))) . '" class="button">Last 7 Days</a>';
+            echo '<a href="' . esc_url(add_query_arg(array_merge($_GET, ['date_from' => '', 'date_to' => '']))) . '" class="button">All Time</a>';
+            echo '</div>';
+            echo '<div style="margin-bottom: 10px;">';
+            echo '<label>Postcode:</label><select name="postcode" style="margin-right: 10px;"><option value="">All</option>';
+            foreach ($postcodes as $postcode) {
+                echo '<option value="' . esc_attr($postcode) . '"' . ($postcode_filter == $postcode ? ' selected' : '') . '>' . esc_html($postcode) . '</option>';
+            }
+            echo '</select>';
+            echo '<label>Tree:</label><select name="tree" style="margin-right: 10px;"><option value="">All</option>';
+            foreach ($trees as $tree) {
+                echo '<option value="' . esc_attr($tree) . '"' . ($tree_filter == $tree ? ' selected' : '') . '>' . esc_html($tree) . '</option>';
+            }
+            echo '</select>';
+            echo '<label>City:</label><select name="city" style="margin-right: 10px;"><option value="">All</option>';
+            foreach ($cities as $city) {
+                echo '<option value="' . esc_attr($city) . '"' . ($city_filter == $city ? ' selected' : '') . '>' . esc_html($city) . '</option>';
+            }
+            echo '</select>';
+            echo '<input type="submit" class="button button-primary" value="Apply Filters">';
+            echo ' <a href="' . esc_url(admin_url('admin.php?page=qr-reports')) . '" class="button">Reset Filters</a>';
+            echo '</div>';
+            echo '</form>';
+            echo '</div>';
+    
+            // Display summary statistics
+            $this->display_summary_stats($where_clause, $where_params);
+    
+            if ($view_type == 'breakdown') {
+                $this->display_breakdown_report($where_clause, $where_params, $group_by);
+            } else {
+                $this->display_rollup_report($where_clause, $where_params, $group_by);
+            }
+    
+            echo '</div>';
+        }
+        public function settings_page() {
+            $plugin_version = '0.9993';
+            if (isset($_POST['qr_tracker_settings_submit'])) {
+                check_admin_referer('qr_tracker_settings');
+                $delete_on_uninstall = isset($_POST['qr_tracker_delete_on_uninstall']) ? 1 : 0;
+                update_option('qr_tracker_delete_on_uninstall', $delete_on_uninstall);
+                echo '<div class="updated"><p>Settings saved.</p></div>';
+            }
+            $delete_on_uninstall = get_option('qr_tracker_delete_on_uninstall', 0);
+            echo '<div class="wrap"><h1>QR Code Tracker Settings</h1>';
+            echo '<div style="margin-bottom:20px;padding:10px 15px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;max-width:600px;">';
+            echo '<strong>Plugin Version:</strong> ' . esc_html($plugin_version) . '<br>';
+            echo '<strong>Available Shortcodes:</strong>';
+            echo '<ul style="margin-top:8px;">';
+            echo '<li><code>[qr_tracker_message_1]</code> — Displays the first custom message for the current QR code scan.</li>';
+            echo '<li><code>[qr_tracker_message_2]</code> — Displays the second custom message for the current QR code scan.</li>';
+            echo '</ul>';
+            echo '<div style="margin-top:10px;font-size:12px;color:#666;">QR code generation powered by <a href="https://github.com/chillerlan/php-qrcode" target="_blank">chillerlan/php-qrcode</a>.</div>';
+            echo '</div>';
+            echo '<form method="post">';
+            wp_nonce_field('qr_tracker_settings');
+            echo '<table class="form-table">';
+            echo '<tr><th scope="row">Delete Data on Uninstall</th><td>';
+            echo '<label><input type="checkbox" name="qr_tracker_delete_on_uninstall" value="1"' . checked(1, $delete_on_uninstall, false) . '> Delete all plugin data when the plugin is uninstalled</label>';
+            echo '<p class="description">If checked, all QR code data and logs will be permanently deleted when you uninstall the plugin.</p>';
+            echo '</td></tr>';
+            echo '</table>';
+            echo '<p><input type="submit" name="qr_tracker_settings_submit" class="button button-primary" value="Save Settings"></p>';
+            echo '</form>';
+            echo '</div>';
+        }
+
+        private function display_summary_stats($where_clause, $where_params) {
+            global $wpdb;
+            
+            // Get summary statistics
+            $sql = "SELECT 
+                        COUNT(*) as total_scans,
+                        COUNT(DISTINCT DATE(l.scanned_at)) as unique_days,
+                        COUNT(DISTINCT l.postcode) as unique_postcodes,
+                        COUNT(DISTINCT CONCAT(l.postcode, ':', l.tree)) as unique_trees,
+                        MIN(l.scanned_at) as first_scan,
+                        MAX(l.scanned_at) as last_scan
+                    FROM {$this->log_table} l
+                    {$where_clause}";
+            
+            if (!empty($where_params)) {
+                $stats = $wpdb->get_row($wpdb->prepare($sql, $where_params));
+            } else {
+                $stats = $wpdb->get_row($sql);
+            }
+            
+            if ($stats && $stats->total_scans > 0) {
+                echo '<div class="qr-stats-summary">';
+                echo '<div class="qr-stat-box">';
+                echo '<div class="qr-stat-number">' . number_format($stats->total_scans) . '</div>';
+                echo '<div class="qr-stat-label">Total Scans</div>';
+                echo '</div>';
+                echo '<div class="qr-stat-box">';
+                echo '<div class="qr-stat-number">' . number_format($stats->unique_days) . '</div>';
+                echo '<div class="qr-stat-label">Active Days</div>';
+                echo '</div>';
+                echo '<div class="qr-stat-box">';
+                echo '<div class="qr-stat-number">' . number_format($stats->unique_postcodes) . '</div>';
+                echo '<div class="qr-stat-label">Postcodes</div>';
+                echo '</div>';
+                echo '<div class="qr-stat-box">';
+                echo '<div class="qr-stat-number">' . number_format($stats->unique_trees) . '</div>';
+                echo '<div class="qr-stat-label">Trees</div>';
+                echo '</div>';
+                echo '</div>';
+                
+                echo '<p><strong>Date Range:</strong> ' . esc_html($stats->first_scan) . ' to ' . esc_html($stats->last_scan) . '</p>';
+            } else {
+                echo '<div class="notice notice-warning"><p>No scan data found for the selected filters.</p></div>';
+            }
+        }
+
+        private function display_breakdown_report($where_clause, $where_params, $group_by) {
+            global $wpdb;
+            
+            $group_field = $group_by == 'postcode' ? 'l.postcode' : ($group_by == 'tree' ? 'l.tree' : 'l.city');
+            $group_label = $group_by == 'postcode' ? 'Postcode' : ($group_by == 'tree' ? 'Tree' : 'City');
+            
+            $sql = "SELECT 
+                        l.postcode,
+                        l.city,
+                        l.tree,
+                        {$group_field} as group_value,
+                        t.reporting_id,
+                        COUNT(*) as scan_count,
+                        MIN(l.scanned_at) as first_scan,
+                        MAX(l.scanned_at) as last_scan,
+                        COUNT(DISTINCT DATE(l.scanned_at)) as unique_days
+                    FROM {$this->log_table} l
+                    JOIN {$this->main_table} t ON l.tracker_id = t.id
+                    {$where_clause}
+                    GROUP BY {$group_field}, l.postcode, l.city, l.tree, t.reporting_id
+                    ORDER BY scan_count DESC";
+            
+            if (!empty($where_params)) {
+                $results = $wpdb->get_results($wpdb->prepare($sql, $where_params));
+            } else {
+                $results = $wpdb->get_results($sql);
+            }
+            
+            echo '<h2>Breakdown Report - Grouped by ' . esc_html($group_label) . '</h2>';
+            echo '<p><a href="' . esc_url(admin_url('admin.php?action=qr_tracker_export&export_type=breakdown&group_type=' . $group_by . '&' . http_build_query(array_diff_key($_GET, ['page' => '', 'view' => '', 'group_by' => ''])))) . '" class="button button-primary">Export CSV</a> ';
+            echo '<button onclick="showChart()" class="button">Show Chart</button> ';
+            echo '<button onclick="showHourChart()" class="button">Show Scan Time Chart</button></p>';
+            // Add chart containers
+            echo '<div id="chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px;">';
+            echo '<canvas id="breakdown-chart" width="800" height="400"></canvas>';
+            echo '</div>';
+            echo '<div id="hour-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; max-height: 600px;">';
+            echo '<canvas id="hour-chart" width="600" height="600"></canvas>';
+            echo '</div>';
+            
+            // Get time-series data for chart
+            $time_series_data = QRCodeTracker_Report::get_time_series_data($this->log_table, $this->main_table, $where_clause, $where_params);
+            
+            // Add chart data for JavaScript
+            echo '<script>';
+            echo 'var chartData = {';
+            echo 'labels: [';
+            $labels = [];
+            $values = [];
+            foreach ($results as $row) {
+                $labels[] = "'" . esc_js($row->group_value) . "'";
+                $values[] = $row->scan_count;
+            }
+            echo implode(', ', $labels);
+            echo '],';
+            echo 'values: [' . implode(', ', $values) . ']';
+            echo '};';
+            
+            // Add time series data
+            echo 'var timeSeriesData = {';
+            echo 'dates: [';
+            $date_labels = [];
+            foreach ($time_series_data['dates'] as $date) {
+                $date_labels[] = "'" . esc_js($date) . "'";
+            }
+            echo implode(', ', $date_labels);
+            echo '],';
+            echo 'series: [';
+            $series_data = [];
+            foreach ($time_series_data['series'] as $series_name => $series_values) {
+                $series_data[] = '{name: "' . esc_js($series_name) . '", values: [' . implode(', ', $series_values) . ']}';
+            }
+            echo implode(', ', $series_data);
+            echo ']';
+            echo '};';
+            echo '</script>';
+            echo '<script>
+            var chartInstance = null;
+            
+            window.showChart = function() {
+                var container = document.getElementById("chart-container");
+                
+                if (container.style.display === "none") {
+                    container.style.display = "block";
+                    
+                    // Destroy existing chart if it exists
+                    if (chartInstance) {
+                        chartInstance.destroy();
+                    }
+                    
+                    // Prepare data for Chart.js
+                    var datasets = [];
+                    var colors = [
+                        "#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF", 
+                        "#FF9F40", "#FF6384", "#C9CBCF", "#4BC0C0", "#FF6384",
+                        "#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF"
+                    ];
+                    
+                    for (var i = 0; i < timeSeriesData.series.length; i++) {
+                        var series = timeSeriesData.series[i];
+                        var colorIndex = i % colors.length;
+                        var baseColor = colors[colorIndex];
+                        
+                        // Create a slightly transparent version for background
+                        var backgroundColor = baseColor + "20";
+                        
+                        datasets.push({
+                            label: series.name,
+                            data: series.values,
+                            borderColor: baseColor,
+                            backgroundColor: backgroundColor,
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.1,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: baseColor,
+                            pointBorderColor: "#ffffff",
+                            pointBorderWidth: 2
+                        });
+                    }
+                    
+                    // Create Chart.js chart
+                    var ctx = document.getElementById("breakdown-chart").getContext("2d");
+                    
+                    // Calculate animation timing
+                    var totalDuration = 2000; // 2 seconds total
+                    var delayBetweenPoints = totalDuration / timeSeriesData.dates.length;
+                    
+                    // Define progressive animation
+                    var previousY = function(ctx) {
+                        return ctx.index === 0 ? ctx.chart.scales.y.getPixelForValue(100) : ctx.chart.getDatasetMeta(ctx.datasetIndex).data[ctx.index - 1].getProps([\'y\'], true).y;
+                    };
+                    
+                    var animation = {
+                        x: {
+                            type: \'number\',
+                            easing: \'linear\',
+                            duration: delayBetweenPoints,
+                            from: NaN, // the point is initially skipped
+                            delay: function(ctx) {
+                                if (ctx.type !== \'data\' || ctx.xStarted) {
+                                    return 0;
+                                }
+                                ctx.xStarted = true;
+                                return ctx.index * delayBetweenPoints;
+                            }
+                        },
+                        y: {
+                            type: \'number\',
+                            easing: \'linear\',
+                            duration: delayBetweenPoints,
+                            from: previousY,
+                            delay: function(ctx) {
+                                if (ctx.type !== \'data\' || ctx.yStarted) {
+                                    return 0;
+                                }
+                                ctx.yStarted = true;
+                                return ctx.index * delayBetweenPoints;
+                            }
+                        }
+                    };
+                    
+                    chartInstance = new Chart(ctx, {
+                        type: "line",
+                        data: {
+                            labels: timeSeriesData.dates.map(function(date) {
+                                var d = new Date(date);
+                                return (d.getMonth() + 1) + "/" + d.getDate();
+                            }),
+                            datasets: datasets
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            animation: animation,
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: "Daily Scan Activity Over Time"
+                                },
+                                legend: {
+                                    display: true,
+                                    position: "top"
+                                },
+                                tooltip: {
+                                    mode: "index",
+                                    intersect: false
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    display: true,
+                                    title: {
+                                        display: true,
+                                        text: "Date"
+                                    },
+                                    grid: {
+                                        display: true
+                                    }
+                                },
+                                y: {
+                                    display: true,
+                                    title: {
+                                        display: true,
+                                        text: "Number of Scans"
+                                    },
+                                    grid: {
+                                        display: true
+                                    },
+                                    beginAtZero: true,
+                                    ticks: {
+                                        stepSize: 1,
+                                        precision: 0
+                                    }
+                                }
+                            },
+                            interaction: {
+                                mode: "nearest",
+                                axis: "x",
+                                intersect: false
+                            }
+                        }
+                    });
+                } else {
+                    container.style.display = "none";
+                }
+            }
+            </script>';
+            
+            // Add scan hour data for JS
+            $hour_series_data = QRCodeTracker_Report::get_scan_hour_series_data($this->log_table, $this->main_table, $where_clause, $where_params);
+            $series_names = array_keys($hour_series_data);
+            $series_colors = [
+                '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40',
+                '#C9CBCF', '#4BC0C0', '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
+                '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384',
+                '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#FF6384'
+            ];
+            echo '<script>';
+            echo 'var hourChartData = {';
+            echo 'labels: [';
+            $hour_labels = [];
+            for ($h = 0; $h < 24; $h++) {
+                $hour_labels[] = "'" . sprintf('%02d:00', $h) . "'";
+            }
+            echo implode(', ', $hour_labels);
+            echo '], datasets: [';
+            $dataset_js = [];
+            foreach ($series_names as $i => $series) {
+                $color = $series_colors[$i % count($series_colors)];
+                $data = $hour_series_data[$series];
+                $dataset_js[] = '{label: "' . addslashes($series) . '", data: [' . implode(',', $data) . '], fill: false, borderColor: "' . $color . '", backgroundColor: "' . $color . '", pointBackgroundColor: "' . $color . '", pointBorderColor: "#fff", pointHoverBackgroundColor: "#fff", pointHoverBorderColor: "' . $color . '"}';
+            }
+            echo implode(',', $dataset_js);
+            echo ']};';
+            echo '
+var hourChartInstance = null;
+window.showHourChart = function() {
+    var container = document.getElementById("hour-chart-container");
+    if (container.style.display === "none") {
+        container.style.display = "block";
+        if (hourChartInstance) { hourChartInstance.destroy(); }
+        var ctx = document.getElementById("hour-chart").getContext("2d");
+        hourChartInstance = new Chart(ctx, {
+            type: "radar",
+            data: {
+                labels: hourChartData.labels,
+                datasets: hourChartData.datasets
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: "top" },
+                    title: { display: true, text: "Scan Distribution by Hour of Day (Radar/Clock)" }
+                },
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        min: 0,
+                        max: Math.max.apply(null, [].concat.apply([], hourChartData.datasets.map(function(ds){return ds.data;}))) + 1,
+                        ticks: { stepSize: 1, precision: 0 },
+                        pointLabels: { font: { size: 14 } }
+                    }
+                }
+            }
+        });
+    } else {
+        container.style.display = "none";
+    }
+}
+';
+            echo '</script>';
+            
+            echo '<table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Reporting ID</th><th>' . esc_html($group_label) . '</th><th>Total Scans</th><th>Unique Days</th><th>First Scan</th><th>Last Scan</th></tr></thead><tbody>';
+            
+            $total_scans = 0;
+            $total_unique_days = 0;
+            
+            foreach ($results as $row) {
+                echo "<tr>";
+                echo "<td>" . esc_html($row->postcode) . "</td>";
+                echo "<td>" . esc_html($row->city) . "</td>";
+                echo "<td>" . esc_html($row->tree) . "</td>";
+                echo "<td>" . esc_html($row->reporting_id) . "</td>";
+                echo "<td>" . esc_html($row->group_value) . "</td>";
+                echo "<td>" . number_format($row->scan_count) . "</td>";
+                echo "<td>" . number_format($row->unique_days) . "</td>";
+                echo "<td>" . esc_html($row->first_scan) . "</td>";
+                echo "<td>" . esc_html($row->last_scan) . "</td>";
+                echo "</tr>";
+                
+                $total_scans += $row->scan_count;
+                $total_unique_days += $row->unique_days;
+            }
+            
+            echo "<tr style='font-weight: bold; background-color: #f9f9f9;'>";
+            echo "<td colspan='5'><strong>Total</strong></td>";
+            echo "<td><strong>" . number_format($total_scans) . "</strong></td>";
+            echo "<td><strong>" . number_format($total_unique_days) . "</strong></td>";
+            echo "<td colspan='2'></td>";
+            echo "</tr>";
+            echo '</tbody></table>';
+        }
+    
+        private function display_rollup_report($where_clause, $where_params, $group_by) {
+            global $wpdb;
+            
+            $group_field = $group_by == 'postcode' ? 'l.postcode' : ($group_by == 'tree' ? 'l.tree' : 'l.city');
+            $other_field = $group_by == 'postcode' ? 'l.tree' : ($group_by == 'tree' ? 'l.postcode' : 'l.postcode');
+            $group_label = $group_by == 'postcode' ? 'Postcode' : ($group_by == 'tree' ? 'Tree' : 'City');
+            $other_label = $group_by == 'postcode' ? 'Tree' : ($group_by == 'tree' ? 'Postcode' : 'Postcode');
+            
+            $sql = "SELECT 
+                        {$group_field} as group_value,
+                        {$other_field} as other_value,
+                        l.city,
+                        t.reporting_id,
+                        COUNT(*) as scan_count,
+                        MIN(l.scanned_at) as first_scan,
+                        MAX(l.scanned_at) as last_scan,
+                        COUNT(DISTINCT DATE(l.scanned_at)) as unique_days
+                    FROM {$this->log_table} l
+                    JOIN {$this->main_table} t ON l.tracker_id = t.id
+                    {$where_clause}
+                    GROUP BY {$group_field}, {$other_field}, l.city, t.reporting_id
+                    ORDER BY {$group_field}, scan_count DESC";
+            
+            if (!empty($where_params)) {
+                $results = $wpdb->get_results($wpdb->prepare($sql, $where_params));
+            } else {
+                $results = $wpdb->get_results($sql);
+            }
+            
+            echo '<h2>Rollup Report - ' . esc_html($group_label) . ' and ' . esc_html($other_label) . '</h2>';
+            echo '<p><a href="' . esc_url(admin_url('admin.php?action=qr_tracker_export&export_type=rollup&group_type=' . $group_by . '&' . http_build_query(array_diff_key($_GET, ['page' => '', 'view' => '', 'group_by' => ''])))) . '" class="button button-primary">Export CSV</a> ';
+            
+            echo '<table class="widefat"><thead><tr><th>' . esc_html($group_label) . '</th><th>' . esc_html($other_label) . '</th><th>City</th><th>Reporting ID</th><th>Total Scans</th><th>Unique Days</th><th>First Scan</th><th>Last Scan</th></tr></thead><tbody>';
+            
+            $current_group = '';
+            $group_total = 0;
+            $total_scans = 0;
+            $total_unique_days = 0;
+            
+            foreach ($results as $row) {
+                if ($current_group != $row->group_value) {
+                    if ($current_group != '') {
+                        echo "<tr style='background-color: #f0f0f0; font-weight: bold;'>";
+                        echo "<td><strong>" . esc_html($current_group) . " Total</strong></td>";
+                        echo "<td></td>";
+                        echo "<td></td>";
+                        echo "<td><strong>" . number_format($group_total) . "</strong></td>";
+                        echo "<td colspan='4'></td>";
+                        echo "</tr>";
+                    }
+                    $current_group = $row->group_value;
+                    $group_total = 0;
+                }
+                echo "<tr>";
+                echo "<td>" . esc_html($row->group_value) . "</td>";
+                echo "<td>" . esc_html($row->other_value) . "</td>";
+                echo "<td>" . esc_html($row->city) . "</td>";
+                echo "<td>" . esc_html($row->reporting_id) . "</td>";
+                echo "<td>" . number_format($row->scan_count) . "</td>";
+                echo "<td>" . number_format($row->unique_days) . "</td>";
+                echo "<td>" . esc_html($row->first_scan) . "</td>";
+                echo "<td>" . esc_html($row->last_scan) . "</td>";
+                echo "</tr>";
+                $group_total += $row->scan_count;
+                $total_scans += $row->scan_count;
+                $total_unique_days += $row->unique_days;
+            }
+            
+            if ($current_group != '') {
+                echo "<tr style='background-color: #f0f0f0; font-weight: bold;'>";
+                echo "<td><strong>" . esc_html($current_group) . " Total</strong></td>";
+                echo "<td></td>";
+                echo "<td></td>";
+                echo "<td><strong>" . number_format($group_total) . "</strong></td>";
+                echo "<td colspan='4'></td>";
+                echo "</tr>";
+            }
+            
+            echo "<tr style='font-weight: bold; background-color: #e0e0e0;'>";
+            echo "<td><strong>Grand Total</strong></td>";
+            echo "<td></td>";
+            echo "<td></td>";
+            echo "<td></td>";
+            echo "<td><strong>" . number_format($total_scans) . "</strong></td>";
+            echo "<td><strong>" . number_format($total_unique_days) . "</strong></td>";
+            echo "<td colspan='2'></td>";
+            echo "</tr>";
+            echo '</tbody></table>';
+        }
+    } 
