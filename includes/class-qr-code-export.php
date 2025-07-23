@@ -26,9 +26,9 @@ class QRCodeTracker_Export {
             wp_die('Missing export type parameter');
         }
         
-        // For breakdown and rollup exports, group_type is required
+        // For breakdown and rollup exports, group_type defaults to postcode
         if (in_array($export_type, ['breakdown', 'rollup']) && empty($group_type)) {
-            wp_die('Missing group type parameter for ' . $export_type . ' export');
+            $group_type = 'postcode';
         }
         
         // Get filter parameters
@@ -104,6 +104,8 @@ class QRCodeTracker_Export {
     private function export_breakdown_csv($output, $where_clause, $where_params, $group_type) {
         global $wpdb;
         
+        // Default to postcode grouping if no group_type specified
+        $group_type = $group_type ?: 'postcode';
         $group_field = $group_type == 'postcode' ? 'l.postcode' : 'l.tree';
         $group_label = $group_type == 'postcode' ? 'Postcode' : 'Tree';
         
@@ -149,6 +151,8 @@ class QRCodeTracker_Export {
     }
     private function export_rollup_csv($output, $where_clause, $where_params, $group_type) {
         global $wpdb;
+        // Default to postcode grouping if no group_type specified
+        $group_type = $group_type ?: 'postcode';
         $group_field = $group_type == 'postcode' ? 'l.postcode' : 'l.tree';
         $other_field = $group_type == 'postcode' ? 'l.tree' : 'l.postcode';
         $group_label = $group_type == 'postcode' ? 'Postcode' : 'Tree';

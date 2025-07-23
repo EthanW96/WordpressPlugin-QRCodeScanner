@@ -336,6 +336,8 @@ class QRCodeTracker_Admin {
             $postcode_filter = isset($_GET['postcode']) ? sanitize_text_field($_GET['postcode']) : '';
             $tree_filter = isset($_GET['tree']) ? sanitize_text_field($_GET['tree']) : '';
             $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 100;
+            $page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+            $offset = ($page - 1) * $limit;
     
             // Build WHERE clause
             $where_clause = "WHERE 1=1";
@@ -365,14 +367,27 @@ class QRCodeTracker_Admin {
             $postcodes = $wpdb->get_col("SELECT DISTINCT postcode FROM {$this->log_table} WHERE postcode IS NOT NULL AND postcode != '' ORDER BY postcode");
             $trees = $wpdb->get_col("SELECT DISTINCT tree FROM {$this->log_table} WHERE tree IS NOT NULL AND tree != '' ORDER BY tree");
     
-            // Build and execute query
-            $sql = "SELECT * FROM {$this->log_table} {$where_clause} ORDER BY scanned_at DESC LIMIT %d";
-            $where_params[] = $limit;
-            
+            // Get total count for pagination
+            $count_sql = "SELECT COUNT(*) FROM {$this->log_table} {$where_clause}";
             if (!empty($where_params)) {
-                $logs = $wpdb->get_results($wpdb->prepare($sql, $where_params));
+                $total_records = $wpdb->get_var($wpdb->prepare($count_sql, $where_params));
             } else {
-                $logs = $wpdb->get_results($wpdb->prepare($sql, [$limit]));
+                $total_records = $wpdb->get_var($count_sql);
+            }
+            
+            $total_pages = ceil($total_records / $limit);
+            $page = min($page, $total_pages);
+            $page = max(1, $page);
+            $offset = ($page - 1) * $limit;
+    
+            // Build and execute query with pagination
+            $sql = "SELECT * FROM {$this->log_table} {$where_clause} ORDER BY scanned_at DESC LIMIT %d OFFSET %d";
+            $query_params = array_merge($where_params, [$limit, $offset]);
+            
+            if (!empty($query_params)) {
+                $logs = $wpdb->get_results($wpdb->prepare($sql, $query_params));
+            } else {
+                $logs = $wpdb->get_results($wpdb->prepare($sql, [$limit, $offset]));
             }
     
             // Display filters
@@ -402,13 +417,88 @@ class QRCodeTracker_Admin {
             // Export button
             $export_params = $_GET;
             unset($export_params['page']);
+            unset($export_params['paged']);
             echo '<p><a href="' . esc_url(admin_url('admin.php?action=qr_tracker_export&export_type=logs&' . http_build_query($export_params))) . '" class="button button-primary">Export CSV</a></p>';
     
+                        // Helper function to generate pagination controls
+            $generate_pagination = function($page, $total_pages, $start_record, $end_record, $total_records) {
+                $pagination_html = '';
+                
+                // Display pagination info
+                $pagination_html .= '<div style="margin: 20px 0; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px;">';
+                $pagination_html .= '<strong>Showing records ' . number_format($start_record) . ' to ' . number_format($end_record) . ' of ' . number_format($total_records) . ' total records</strong>';
+                $pagination_html .= '</div>';
+                
+                // Display pagination controls
+                if ($total_pages > 1) {
+                    $pagination_html .= '<div style="margin: 20px 0; text-align: center;">';
+                    $pagination_html .= '<div class="tablenav-pages" style="display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap;">';
+                    
+                    // Previous page link
+                    if ($page > 1) {
+                        $prev_url = add_query_arg(['paged' => $page - 1], $_SERVER['REQUEST_URI']);
+                        $pagination_html .= '<a class="prev page-numbers" href="' . esc_url($prev_url) . '" style="margin: 0 4px; padding: 5px 10px; text-decoration: none; border: 1px solid #ddd; border-radius: 3px; background: #f9f9f9;">&laquo; Previous</a>';
+                    }
+                    
+                    // Page numbers
+                    $start_page = max(1, $page - 2);
+                    $end_page = min($total_pages, $page + 2);
+                    
+                    if ($start_page > 1) {
+                        $first_url = add_query_arg(['paged' => 1], $_SERVER['REQUEST_URI']);
+                        $pagination_html .= '<a class="page-numbers" href="' . esc_url($first_url) . '" style="margin: 0 4px; padding: 5px 10px; text-decoration: none; border: 1px solid #ddd; border-radius: 3px; background: #f9f9f9;">1</a>';
+                        if ($start_page > 2) {
+                            $pagination_html .= '<span class="page-numbers dots" style="margin: 0 4px; padding: 5px 10px;">…</span>';
+                        }
+                    }
+                    
+                    for ($i = $start_page; $i <= $end_page; $i++) {
+                        if ($i == $page) {
+                            $pagination_html .= '<span class="page-numbers current" style="margin: 0 4px; padding: 5px 10px; border: 1px solid #0073aa; border-radius: 3px; background: #0073aa; color: white; font-weight: bold;">' . $i . '</span>';
+                        } else {
+                            $page_url = add_query_arg(['paged' => $i], $_SERVER['REQUEST_URI']);
+                            $pagination_html .= '<a class="page-numbers" href="' . esc_url($page_url) . '" style="margin: 0 4px; padding: 5px 10px; text-decoration: none; border: 1px solid #ddd; border-radius: 3px; background: #f9f9f9;">' . $i . '</a>';
+                        }
+                    }
+                    
+                    if ($end_page < $total_pages) {
+                        if ($end_page < $total_pages - 1) {
+                            $pagination_html .= '<span class="page-numbers dots" style="margin: 0 4px; padding: 5px 10px;">…</span>';
+                        }
+                        $last_url = add_query_arg(['paged' => $total_pages], $_SERVER['REQUEST_URI']);
+                        $pagination_html .= '<a class="page-numbers" href="' . esc_url($last_url) . '" style="margin: 0 4px; padding: 5px 10px; text-decoration: none; border: 1px solid #ddd; border-radius: 3px; background: #f9f9f9;">' . $total_pages . '</a>';
+                    }
+                    
+                    // Next page link
+                    if ($page < $total_pages) {
+                        $next_url = add_query_arg(['paged' => $page + 1], $_SERVER['REQUEST_URI']);
+                        $pagination_html .= '<a class="next page-numbers" href="' . esc_url($next_url) . '" style="margin: 0 4px; padding: 5px 10px; text-decoration: none; border: 1px solid #ddd; border-radius: 3px; background: #f9f9f9;">Next &raquo;</a>';
+                    }
+                    
+                    $pagination_html .= '</div>';
+                    $pagination_html .= '</div>';
+                }
+                
+                return $pagination_html;
+            };
+
+            // Calculate pagination values
+            $start_record = $offset + 1;
+            $end_record = min($offset + $limit, $total_records);
+            
+            // Display top pagination
+            echo $generate_pagination($page, $total_pages, $start_record, $end_record, $total_records);
+
             echo '<table class="widefat"><thead><tr><th>ID</th><th>Tracker ID</th><th>Postcode</th><th>City</th><th>Tree</th><th>Scanned At</th></tr></thead><tbody>';
             foreach ($logs as $log) {
                 echo "<tr><td>{$log->id}</td><td>{$log->tracker_id}</td><td>{$log->postcode}</td><td>{$log->city}</td><td>{$log->tree}</td><td>{$log->scanned_at}</td></tr>";
             }
-            echo '</tbody></table></div>';
+            echo '</tbody></table>';
+            
+            // Display bottom pagination
+            echo $generate_pagination($page, $total_pages, $start_record, $end_record, $total_records);
+            
+            echo '</div>';
         }
     
         public function reports_page() {
@@ -418,7 +508,6 @@ class QRCodeTracker_Admin {
     
             // Get filter parameters
             $view_type = isset($_GET['view']) ? sanitize_text_field($_GET['view']) : 'breakdown';
-            $group_by = isset($_GET['group_by']) ? sanitize_text_field($_GET['group_by']) : 'postcode';
             $date_from = isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '';
             $date_to = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '';
             $postcode_filter = isset($_GET['postcode']) ? sanitize_text_field($_GET['postcode']) : '';
@@ -477,7 +566,6 @@ class QRCodeTracker_Admin {
             echo '<input type="hidden" name="page" value="qr-reports">';
             echo '<div style="margin-bottom: 10px;">';
             echo '<label>View:</label><select name="view"><option value="breakdown"' . ($view_type == 'breakdown' ? ' selected' : '') . '>Breakdown View</option><option value="rollup"' . ($view_type == 'rollup' ? ' selected' : '') . '>Rollup View</option></select>';
-            echo '<label>Group by:</label><select name="group_by"><option value="postcode"' . ($group_by == 'postcode' ? ' selected' : '') . '>Postcode</option><option value="tree"' . ($group_by == 'tree' ? ' selected' : '') . '>Tree</option><option value="city"' . ($group_by == 'city' ? ' selected' : '') . '>City</option></select>';
             echo '</div>';
             echo '<div style="margin-bottom: 10px;">';
             echo '<label>From:</label><input type="date" name="date_from" value="' . esc_attr($date_from) . '">';
@@ -512,9 +600,9 @@ class QRCodeTracker_Admin {
             $this->display_summary_stats($where_clause, $where_params);
     
             if ($view_type == 'breakdown') {
-                $this->display_breakdown_report($where_clause, $where_params, $group_by);
+                $this->display_breakdown_report($where_clause, $where_params);
             } else {
-                $this->display_rollup_report($where_clause, $where_params, $group_by);
+                $this->display_rollup_report($where_clause, $where_params);
             }
     
             echo '</div>';
@@ -554,22 +642,8 @@ class QRCodeTracker_Admin {
         private function display_summary_stats($where_clause, $where_params) {
             global $wpdb;
             
-            // Get summary statistics
-            $sql = "SELECT 
-                        COUNT(*) as total_scans,
-                        COUNT(DISTINCT DATE(l.scanned_at)) as unique_days,
-                        COUNT(DISTINCT l.postcode) as unique_postcodes,
-                        COUNT(DISTINCT CONCAT(l.postcode, ':', l.tree)) as unique_trees,
-                        MIN(l.scanned_at) as first_scan,
-                        MAX(l.scanned_at) as last_scan
-                    FROM {$this->log_table} l
-                    {$where_clause}";
-            
-            if (!empty($where_params)) {
-                $stats = $wpdb->get_row($wpdb->prepare($sql, $where_params));
-            } else {
-                $stats = $wpdb->get_row($sql);
-            }
+            // Get summary statistics using optimized method
+            $stats = QRCodeTracker_Report::get_summary_stats($this->log_table, $this->main_table, $where_clause, $where_params);
             
             if ($stats && $stats->total_scans > 0) {
                 echo '<div class="qr-stats-summary">';
@@ -597,11 +671,11 @@ class QRCodeTracker_Admin {
             }
         }
 
-        private function display_breakdown_report($where_clause, $where_params, $group_by) {
+        private function display_breakdown_report($where_clause, $where_params) {
             global $wpdb;
             
-            $group_field = $group_by == 'postcode' ? 'l.postcode' : ($group_by == 'tree' ? 'l.tree' : 'l.city');
-            $group_label = $group_by == 'postcode' ? 'Postcode' : ($group_by == 'tree' ? 'Tree' : 'City');
+            $group_field = 'l.postcode';
+            $group_label = 'Postcode';
             
             $sql = "SELECT 
                         l.postcode,
@@ -626,9 +700,14 @@ class QRCodeTracker_Admin {
             }
             
             echo '<h2>Breakdown Report - Grouped by ' . esc_html($group_label) . '</h2>';
-            echo '<p><a href="' . esc_url(admin_url('admin.php?action=qr_tracker_export&export_type=breakdown&group_type=' . $group_by . '&' . http_build_query(array_diff_key($_GET, ['page' => '', 'view' => '', 'group_by' => ''])))) . '" class="button button-primary">Export CSV</a> ';
+            echo '<p><a href="' . esc_url(admin_url('admin.php?action=qr_tracker_export&export_type=breakdown&group_type=postcode&' . http_build_query(array_diff_key($_GET, ['page' => '', 'view' => ''])))) . '" class="button button-primary">Export CSV</a> ';
             echo '<button onclick="showChart()" class="button">Show Chart</button> ';
             echo '<button onclick="showHourChart()" class="button">Show Scan Time Chart</button></p>';
+            
+            // Show performance info if data is large
+            if ($time_series_data['total_days'] > 100) {
+                echo '<div class="notice notice-info"><p><strong>Performance Note:</strong> Large dataset detected (' . $time_series_data['total_days'] . ' days). Chart data has been sampled to ' . count($time_series_data['dates']) . ' points for optimal performance. Export CSV for full data.</p></div>';
+            }
             // Add chart containers
             echo '<div id="chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px;">';
             echo '<canvas id="breakdown-chart" width="800" height="400"></canvas>';
@@ -637,8 +716,8 @@ class QRCodeTracker_Admin {
             echo '<canvas id="hour-chart" width="600" height="600"></canvas>';
             echo '</div>';
             
-            // Get time-series data for chart
-            $time_series_data = QRCodeTracker_Report::get_time_series_data($this->log_table, $this->main_table, $where_clause, $where_params);
+            // Get time-series data for chart with performance optimization
+            $time_series_data = QRCodeTracker_Report::get_time_series_data($this->log_table, $this->main_table, $where_clause, $where_params, 100);
             
             // Add chart data for JavaScript
             echo '<script>';
@@ -682,10 +761,24 @@ class QRCodeTracker_Admin {
                 if (container.style.display === "none") {
                     container.style.display = "block";
                     
-                    // Destroy existing chart if it exists
-                    if (chartInstance) {
-                        chartInstance.destroy();
+                    // Show loading indicator
+                    container.innerHTML = \'<div style="text-align: center; padding: 40px;"><div class="spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #0073aa; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div><p>Loading chart...</p></div>\';
+                    
+                    // Add spinner CSS
+                    if (!document.getElementById(\'chart-spinner-style\')) {
+                        var style = document.createElement(\'style\');
+                        style.id = \'chart-spinner-style\';
+                        style.textContent = \'@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }\';
+                        document.head.appendChild(style);
                     }
+                    
+                    // Use setTimeout to allow UI to update before heavy chart creation
+                    setTimeout(function() {
+                        try {
+                            // Destroy existing chart if it exists
+                            if (chartInstance) {
+                                chartInstance.destroy();
+                            }
                     
                     // Prepare data for Chart.js
                     var datasets = [];
@@ -719,47 +812,15 @@ class QRCodeTracker_Admin {
                         });
                     }
                     
-                    // Create Chart.js chart
-                    var ctx = document.getElementById("breakdown-chart").getContext("2d");
-                    
-                    // Calculate animation timing
-                    var totalDuration = 2000; // 2 seconds total
-                    var delayBetweenPoints = totalDuration / timeSeriesData.dates.length;
-                    
-                    // Define progressive animation
-                    var previousY = function(ctx) {
-                        return ctx.index === 0 ? ctx.chart.scales.y.getPixelForValue(100) : ctx.chart.getDatasetMeta(ctx.datasetIndex).data[ctx.index - 1].getProps([\'y\'], true).y;
-                    };
-                    
+                    // Simplified animation for better performance
                     var animation = {
-                        x: {
-                            type: \'number\',
-                            easing: \'linear\',
-                            duration: delayBetweenPoints,
-                            from: NaN, // the point is initially skipped
-                            delay: function(ctx) {
-                                if (ctx.type !== \'data\' || ctx.xStarted) {
-                                    return 0;
-                                }
-                                ctx.xStarted = true;
-                                return ctx.index * delayBetweenPoints;
-                            }
-                        },
-                        y: {
-                            type: \'number\',
-                            easing: \'linear\',
-                            duration: delayBetweenPoints,
-                            from: previousY,
-                            delay: function(ctx) {
-                                if (ctx.type !== \'data\' || ctx.yStarted) {
-                                    return 0;
-                                }
-                                ctx.yStarted = true;
-                                return ctx.index * delayBetweenPoints;
-                            }
-                        }
+                        duration: 1000,
+                        easing: \'easeOutQuart\'
                     };
                     
+                    // Restore canvas element
+                    container.innerHTML = \'<canvas id="breakdown-chart" width="800" height="400"></canvas>\';
+                    var ctx = document.getElementById("breakdown-chart").getContext("2d");
                     chartInstance = new Chart(ctx, {
                         type: "line",
                         data: {
@@ -773,6 +834,15 @@ class QRCodeTracker_Admin {
                             responsive: true,
                             maintainAspectRatio: false,
                             animation: animation,
+                            elements: {
+                                point: {
+                                    radius: timeSeriesData.dates.length > 50 ? 2 : 4,
+                                    hoverRadius: timeSeriesData.dates.length > 50 ? 3 : 6
+                                },
+                                line: {
+                                    tension: 0.1
+                                }
+                            },
                             plugins: {
                                 title: {
                                     display: true,
@@ -780,11 +850,16 @@ class QRCodeTracker_Admin {
                                 },
                                 legend: {
                                     display: true,
-                                    position: "top"
+                                    position: "top",
+                                    labels: {
+                                        usePointStyle: true,
+                                        boxWidth: 6
+                                    }
                                 },
                                 tooltip: {
                                     mode: "index",
-                                    intersect: false
+                                    intersect: false,
+                                    enabled: timeSeriesData.dates.length <= 100
                                 }
                             },
                             scales: {
@@ -821,14 +896,18 @@ class QRCodeTracker_Admin {
                             }
                         }
                     });
+                } catch (error) {
+                    container.innerHTML = \'<div style="text-align: center; padding: 40px; color: #d63638;"><p><strong>Error loading chart:</strong> \' + error.message + \'</p><p>Try refreshing the page or reducing the date range.</p></div>\';
+                }
+            }, 100);
                 } else {
                     container.style.display = "none";
                 }
             }
             </script>';
             
-            // Add scan hour data for JS
-            $hour_series_data = QRCodeTracker_Report::get_scan_hour_series_data($this->log_table, $this->main_table, $where_clause, $where_params);
+            // Add scan hour data for JS with performance optimization
+            $hour_series_data = QRCodeTracker_Report::get_scan_hour_series_data($this->log_table, $this->main_table, $where_clause, $where_params, 10);
             $series_names = array_keys($hour_series_data);
             $series_colors = [
                 '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40',
@@ -859,31 +938,55 @@ window.showHourChart = function() {
     var container = document.getElementById("hour-chart-container");
     if (container.style.display === "none") {
         container.style.display = "block";
-        if (hourChartInstance) { hourChartInstance.destroy(); }
-        var ctx = document.getElementById("hour-chart").getContext("2d");
-        hourChartInstance = new Chart(ctx, {
-            type: "radar",
-            data: {
-                labels: hourChartData.labels,
-                datasets: hourChartData.datasets
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { position: "top" },
-                    title: { display: true, text: "Scan Distribution by Hour of Day (Radar/Clock)" }
-                },
-                scales: {
-                    r: {
-                        beginAtZero: true,
-                        min: 0,
-                        max: Math.max.apply(null, [].concat.apply([], hourChartData.datasets.map(function(ds){return ds.data;}))) + 1,
-                        ticks: { stepSize: 1, precision: 0 },
-                        pointLabels: { font: { size: 14 } }
+        
+        // Show loading indicator
+        container.innerHTML = \'<div style="text-align: center; padding: 40px;"><div class="spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #0073aa; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div><p>Loading chart...</p></div>\';
+        
+        // Use setTimeout to allow UI to update before heavy chart creation
+        setTimeout(function() {
+            try {
+                if (hourChartInstance) { hourChartInstance.destroy(); }
+                
+                // Restore canvas element
+                container.innerHTML = \'<canvas id="hour-chart" width="600" height="600"></canvas>\';
+                var ctx = document.getElementById("hour-chart").getContext("2d");
+                hourChartInstance = new Chart(ctx, {
+                    type: "radar",
+                    data: {
+                        labels: hourChartData.labels,
+                        datasets: hourChartData.datasets
+                    },
+                    options: {
+                        responsive: true,
+                        animation: {
+                            duration: 1000,
+                            easing: \'easeOutQuart\'
+                        },
+                        plugins: {
+                            legend: { 
+                                position: "top",
+                                labels: {
+                                    usePointStyle: true,
+                                    boxWidth: 6
+                                }
+                            },
+                            title: { display: true, text: "Scan Distribution by Hour of Day (Radar/Clock)" }
+                        },
+                        scales: {
+                            r: {
+                                beginAtZero: true,
+                                min: 0,
+                                max: Math.max.apply(null, [].concat.apply([], hourChartData.datasets.map(function(ds){return ds.data;}))) + 1,
+                                ticks: { stepSize: 1, precision: 0 },
+                                pointLabels: { font: { size: 14 } }
+                            }
+                        }
                     }
-                }
+                });
+            } catch (error) {
+                container.innerHTML = \'<div style="text-align: center; padding: 40px; color: #d63638;"><p><strong>Error loading chart:</strong> \' + error.message + \'</p><p>Try refreshing the page or reducing the date range.</p></div>\';
             }
-        });
+        }, 100);
     } else {
         container.style.display = "none";
     }
@@ -922,13 +1025,13 @@ window.showHourChart = function() {
             echo '</tbody></table>';
         }
     
-        private function display_rollup_report($where_clause, $where_params, $group_by) {
+        private function display_rollup_report($where_clause, $where_params) {
             global $wpdb;
             
-            $group_field = $group_by == 'postcode' ? 'l.postcode' : ($group_by == 'tree' ? 'l.tree' : 'l.city');
-            $other_field = $group_by == 'postcode' ? 'l.tree' : ($group_by == 'tree' ? 'l.postcode' : 'l.postcode');
-            $group_label = $group_by == 'postcode' ? 'Postcode' : ($group_by == 'tree' ? 'Tree' : 'City');
-            $other_label = $group_by == 'postcode' ? 'Tree' : ($group_by == 'tree' ? 'Postcode' : 'Postcode');
+            $group_field = 'l.postcode';
+            $other_field = 'l.tree';
+            $group_label = 'Postcode';
+            $other_label = 'Tree';
             
             $sql = "SELECT 
                         {$group_field} as group_value,
@@ -952,7 +1055,7 @@ window.showHourChart = function() {
             }
             
             echo '<h2>Rollup Report - ' . esc_html($group_label) . ' and ' . esc_html($other_label) . '</h2>';
-            echo '<p><a href="' . esc_url(admin_url('admin.php?action=qr_tracker_export&export_type=rollup&group_type=' . $group_by . '&' . http_build_query(array_diff_key($_GET, ['page' => '', 'view' => '', 'group_by' => ''])))) . '" class="button button-primary">Export CSV</a> ';
+            echo '<p><a href="' . esc_url(admin_url('admin.php?action=qr_tracker_export&export_type=rollup&group_type=postcode&' . http_build_query(array_diff_key($_GET, ['page' => '', 'view' => ''])))) . '" class="button button-primary">Export CSV</a> ';
             
             echo '<table class="widefat"><thead><tr><th>' . esc_html($group_label) . '</th><th>' . esc_html($other_label) . '</th><th>City</th><th>Reporting ID</th><th>Total Scans</th><th>Unique Days</th><th>First Scan</th><th>Last Scan</th></tr></thead><tbody>';
             

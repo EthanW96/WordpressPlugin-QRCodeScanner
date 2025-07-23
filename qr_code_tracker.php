@@ -13,6 +13,7 @@ if (file_exists(__DIR__ . '/vendor/autoload.php')) {
 }
 
 require_once __DIR__ . '/includes/class-qr-code-db.php';
+require_once __DIR__ . '/includes/class-qr-code-manager.php';
 require_once __DIR__ . '/includes/class-qr-code-admin.php';
 require_once __DIR__ . '/includes/class-qr-code-export.php';
 require_once __DIR__ . '/includes/class-qr-code-report.php';
@@ -28,6 +29,7 @@ class QRCodeTracker {
     private $admin;
     private $db;
     private $export;
+    private $manager;
 
     public function __construct() {
         global $wpdb;
@@ -39,6 +41,7 @@ class QRCodeTracker {
         register_uninstall_hook(__FILE__, ['QRCodeTracker_DB', 'uninstall']);
         add_action('plugins_loaded', [$this->db, 'maybe_upgrade_schema']);
 
+        $this->manager = new QRCodeTracker_Manager();
         $this->admin = new QRCodeTracker_Admin($this);
         add_action('admin_menu', [$this->admin, 'admin_menu']);
 
@@ -210,14 +213,7 @@ class QRCodeTracker {
 
     // 3. Add a helper to generate a QR code image as a data URI
     public function generate_qr_code_image($url) {
-        $options = new QROptions([
-            'outputType' => QRCode::OUTPUT_IMAGE_PNG,
-            'eccLevel' => QRCode::ECC_L,
-            'scale' => 4,
-            'imageBase64' => true // this makes render() return a data URI
-        ]);
-        $qrcode = new QRCode($options);
-        return $qrcode->render($url); // already a data URI
+        return $this->manager->generate_qr_code_image($url);
     }
 
     public function handle_download_qr() {
@@ -253,13 +249,7 @@ class QRCodeTracker {
     }
 
     public function generate_tracker_url($postcode, $city, $tree) {
-        $base = home_url('/');
-        $params = [
-            'postcode' => $postcode,
-            'city' => $city,
-            'tree' => $tree
-        ];
-        return add_query_arg($params, $base);
+        return $this->manager->generate_tracker_url($postcode, $city, $tree);
     }
 }
 

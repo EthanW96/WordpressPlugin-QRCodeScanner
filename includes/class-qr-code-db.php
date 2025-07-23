@@ -35,7 +35,14 @@ class QRCodeTracker_DB {
             tree VARCHAR(64),
             scanned_at DATETIME NOT NULL,
             PRIMARY KEY (id),
-            KEY tracker_id (tracker_id)
+            KEY tracker_id (tracker_id),
+            KEY scanned_at (scanned_at),
+            KEY postcode (postcode),
+            KEY tree (tree),
+            KEY city (city),
+            KEY postcode_tree (postcode, tree),
+            KEY scanned_at_postcode (scanned_at, postcode),
+            KEY scanned_at_tree (scanned_at, tree)
         ) $charset_collate;";
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql_main);
@@ -71,6 +78,33 @@ class QRCodeTracker_DB {
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'city'");
         if (empty($columns)) {
             $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN city VARCHAR(64) AFTER postcode");
+        }
+        
+        // Add performance indexes for existing installations
+        $this->add_performance_indexes();
+    }
+    
+    private function add_performance_indexes() {
+        global $wpdb;
+        
+        // Check and add indexes for log table
+        $indexes = $wpdb->get_results("SHOW INDEX FROM {$this->log_table}");
+        $existing_indexes = array_column($indexes, 'Key_name');
+        
+        $required_indexes = [
+            'scanned_at' => 'scanned_at',
+            'postcode' => 'postcode', 
+            'tree' => 'tree',
+            'city' => 'city',
+            'postcode_tree' => 'postcode, tree',
+            'scanned_at_postcode' => 'scanned_at, postcode',
+            'scanned_at_tree' => 'scanned_at, tree'
+        ];
+        
+        foreach ($required_indexes as $index_name => $columns) {
+            if (!in_array($index_name, $existing_indexes)) {
+                $wpdb->query("ALTER TABLE {$this->log_table} ADD INDEX {$index_name} ({$columns})");
+            }
         }
     }
 
