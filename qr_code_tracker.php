@@ -13,10 +13,12 @@ if (file_exists(__DIR__ . '/vendor/autoload.php')) {
 }
 
 require_once __DIR__ . '/includes/class-qr-code-db.php';
-require_once __DIR__ . '/includes/class-qr-code-manager.php';
 require_once __DIR__ . '/includes/class-qr-code-admin.php';
 require_once __DIR__ . '/includes/class-qr-code-export.php';
 require_once __DIR__ . '/includes/class-qr-code-report.php';
+require_once __DIR__ . '/includes/class-qr-code-single-report.php';
+require_once __DIR__ . '/includes/class-qr-code-city-report.php';
+require_once __DIR__ . '/includes/class-qr-code-popup.php';
 
 // 1. Add QR code library import at the top (after class QRCodeTracker {)
 use chillerlan\QRCode\QRCode;
@@ -29,7 +31,7 @@ class QRCodeTracker {
     private $admin;
     private $db;
     private $export;
-    private $manager;
+    private $popup;
 
     public function __construct() {
         global $wpdb;
@@ -41,12 +43,14 @@ class QRCodeTracker {
         register_uninstall_hook(__FILE__, ['QRCodeTracker_DB', 'uninstall']);
         add_action('plugins_loaded', [$this->db, 'maybe_upgrade_schema']);
 
-        $this->manager = new QRCodeTracker_Manager();
         $this->admin = new QRCodeTracker_Admin($this);
         add_action('admin_menu', [$this->admin, 'admin_menu']);
 
         $this->export = new QRCodeTracker_Export();
         add_action('admin_action_qr_tracker_export', [$this->export, 'handle_csv_export']);
+
+        // Initialize popup functionality
+        $this->popup = new QRCodeTracker_Popup($this);
 
         add_action('wp', [$this, 'track_visit']);
         add_shortcode('qr_tracker_message_1', [$this, 'shortcode_message_1']);
@@ -171,7 +175,7 @@ class QRCodeTracker {
         }
     }
 
-    private function get_current_tracker() {
+    public function get_current_tracker() {
         if ($this->current_tracker !== null) {
             return $this->current_tracker;
         }
@@ -213,7 +217,14 @@ class QRCodeTracker {
 
     // 3. Add a helper to generate a QR code image as a data URI
     public function generate_qr_code_image($url) {
-        return $this->manager->generate_qr_code_image($url);
+        $options = new QROptions([
+            'outputType' => QRCode::OUTPUT_IMAGE_PNG,
+            'eccLevel' => QRCode::ECC_H,
+            'scale' => 5,
+            'imageBase64' => true
+        ]);
+        $qrcode = new QRCode($options);
+        return $qrcode->render($url);
     }
 
     public function handle_download_qr() {
@@ -249,7 +260,13 @@ class QRCodeTracker {
     }
 
     public function generate_tracker_url($postcode, $city, $tree) {
-        return $this->manager->generate_tracker_url($postcode, $city, $tree);
+        $base = home_url('/');
+        $params = [
+            'postcode' => $postcode,
+            'city' => $city,
+            'tree' => $tree
+        ];
+        return add_query_arg($params, $base);
     }
 }
 

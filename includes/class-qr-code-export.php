@@ -96,6 +96,10 @@ class QRCodeTracker_Export {
             $this->export_rollup_csv($output, $where_clause, $where_params, $group_type);
         } elseif ($export_type == 'logs') {
             $this->export_logs_csv($output, $where_clause, $where_params);
+        } elseif ($export_type == 'single_qr') {
+            $this->export_single_qr_csv($output, $where_clause, $where_params);
+        } elseif ($export_type == 'city') {
+            $this->export_city_csv($output, $where_clause, $where_params);
         }
         
         fclose($output);
@@ -242,6 +246,173 @@ class QRCodeTracker_Export {
                 $row->city,
                 $row->tree,
                 $row->scanned_at
+            ]);
+        }
+    }
+
+    private function export_single_qr_csv($output, $where_clause, $where_params) {
+            global $wpdb;
+            
+            // Get QR code ID from parameters
+            $qr_id = isset($_GET['qr_id']) ? intval($_GET['qr_id']) : 0;
+            
+            if (!$qr_id) {
+                wp_die('Missing QR code ID parameter');
+            }
+            
+            // Get QR code details
+            $qr_code = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$this->main_table} WHERE id = %d",
+                $qr_id
+            ));
+            
+            if (!$qr_code) {
+                wp_die('QR code not found');
+            }
+            
+            // Build WHERE clause for this specific QR code
+            $single_where_clause = "WHERE l.tracker_id = %d";
+            $single_where_params = [$qr_id];
+            
+            // Add date filters if provided
+            $date_from = isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '';
+            $date_to = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '';
+            
+            if (!empty($date_from)) {
+                $single_where_clause .= " AND l.scanned_at >= %s";
+                $single_where_params[] = $date_from . ' 00:00:00';
+            }
+            
+            if (!empty($date_to)) {
+                $single_where_clause .= " AND l.scanned_at <= %s";
+                $single_where_params[] = $date_to . ' 23:59:59';
+            }
+            
+            // Get scan logs for this QR code
+            $sql = "SELECT 
+                        l.id,
+                        l.scanned_at,
+                        HOUR(l.scanned_at) as scan_hour,
+                        DAYOFWEEK(l.scanned_at) as day_of_week,
+                        DATE(l.scanned_at) as scan_date
+                    FROM {$this->log_table} l
+                    {$single_where_clause}
+                    ORDER BY l.scanned_at DESC";
+            
+            $results = $wpdb->get_results($wpdb->prepare($sql, $single_where_params));
+            
+            // Write header
+            fputcsv($output, [
+                'QR Code ID',
+                'Postcode',
+                'City', 
+                'Tree',
+                'Label',
+                'Reporting ID',
+                'Scan ID',
+                'Scanned At',
+                'Scan Date',
+                'Scan Hour',
+                'Day of Week'
+            ]);
+            
+            // Write data
+            foreach ($results as $row) {
+                $day_names = ['', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                $day_name = $day_names[$row->day_of_week] ?? 'Unknown';
+                
+                fputcsv($output, [
+                    $qr_code->id,
+                    $qr_code->postcode,
+                    $qr_code->city,
+                    $qr_code->tree,
+                    $qr_code->label,
+                    $qr_code->reporting_id,
+                    $row->id,
+                    $row->scanned_at,
+                    $row->scan_date,
+                    $row->scan_hour,
+                    $day_name
+                ]);
+            }
+    }
+
+    private function export_city_csv($output, $where_clause, $where_params) {
+        global $wpdb;
+        
+        // Get city name from parameters
+        $city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
+        
+        if (empty($city)) {
+            wp_die('Missing city parameter');
+        }
+        
+        // Build WHERE clause for this specific city
+        $city_where_clause = "WHERE l.city = %s";
+        $city_where_params = [$city];
+        
+        // Add date filters if provided
+        $date_from = isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '';
+        $date_to = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '';
+        
+        if (!empty($date_from)) {
+            $city_where_clause .= " AND l.scanned_at >= %s";
+            $city_where_params[] = $date_from . ' 00:00:00';
+        }
+        
+        if (!empty($date_to)) {
+            $city_where_clause .= " AND l.scanned_at <= %s";
+            $city_where_params[] = $date_to . ' 23:59:59';
+        }
+        
+        // Get scan logs for this city
+        $sql = "SELECT 
+                    l.id,
+                    l.scanned_at,
+                    t.postcode,
+                    t.tree,
+                    t.label,
+                    t.reporting_id,
+                    HOUR(l.scanned_at) as scan_hour,
+                    DAYOFWEEK(l.scanned_at) as day_of_week,
+                    DATE(l.scanned_at) as scan_date
+                FROM {$this->log_table} l
+                JOIN {$this->main_table} t ON l.tracker_id = t.id
+                {$city_where_clause}
+                ORDER BY l.scanned_at DESC";
+        
+        $results = $wpdb->get_results($wpdb->prepare($sql, $city_where_params));
+        
+        // Write header
+        fputcsv($output, [
+            'City',
+            'Postcode',
+            'Tree',
+            'Label',
+            'Reporting ID',
+            'Scan ID',
+            'Scanned At',
+            'Scan Date',
+            'Scan Hour',
+            'Day of Week'
+        ]);
+        
+        // Write data
+        foreach ($results as $row) {
+            $day_names = ['', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            $day_name = $day_names[$row->day_of_week] ?? 'Unknown';
+            
+            fputcsv($output, [
+                $city,
+                $row->postcode,
+                $row->tree,
+                $row->label,
+                $row->reporting_id,
+                $row->id,
+                $row->scanned_at,
+                $row->scan_date,
+                $row->scan_hour,
+                $day_name
             ]);
         }
     }

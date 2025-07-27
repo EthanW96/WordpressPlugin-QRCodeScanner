@@ -7,40 +7,36 @@
 SET @home_url = 'https://adventtree.network/'; -- Change this to your actual domain
 
 -- Sample data arrays for realistic QR codes
-SET @postcodes = 'M1 1AA,M1 1AB,M1 1AC,M1 1AD,M1 1AE,M2 1AA,M2 1AB,M2 1AC,M2 1AD,M2 1AE,M3 1AA,M3 1AB,M3 1AC,M3 1AD,M3 1AE,M4 1AA,M4 1AB,M4 1AC,M4 1AD,M4 1AE,M5 1AA,M5 1AB,M5 1AC,M5 1AD,M5 1AE,M6 1AA,M6 1AB,M6 1AC,M6 1AD,M6 1AE,M7 1AA,M7 1AB,M7 1AC,M7 1AD,M7 1AE,M8 1AA,M8 1AB,M8 1AC,M8 1AD,M8 1AE,M9 1AA,M9 1AB,M9 1AC,M9 1AD,M9 1AE,M10 1AA,M10 1AB,M10 1AC,M10 1AD,M10 1AE,M11 1AA,M11 1AB,M11 1AC,M11 1AD,M11 1AE,M12 1AA,M12 1AB,M12 1AC,M12 1AD,M12 1AE,M13 1AA,M13 1AB,M13 1AC,M13 1AD,M13 1AE,M14 1AA,M14 1AB,M14 1AC,M14 1AD,M14 1AE,M15 1AA,M15 1AB,M15 1AC,M15 1AD,M15 1AE,M16 1AA,M16 1AB,M16 1AC,M16 1AD,M16 1AE,M17 1AA,M17 1AB,M17 1AC,M17 1AD,M17 1AE,M18 1AA,M18 1AB,M18 1AC,M18 1AD,M18 1AE,M19 1AA,M19 1AB,M19 1AC,M19 1AD,M19 1AE,M20 1AA,M20 1AB,M20 1AC,M20 1AD,M20 1AE,M21 1AA,M21 1AB,M21 1AC,M21 1AD,M21 1AE,M22 1AA,M22 1AB,M22 1AC,M22 1AD,M22 1AE,M23 1AA,M23 1AB,M23 1AC,M23 1AD,M23 1AE,M24 1AA,M24 1AB,M24 1AC,M24 1AD,M24 1AE,M25 1AA,M25 1AB,M25 1AC,M25 1AD,M25 1AE,M26 1AA,M26 1AB,M26 1AC,M26 1AD,M26 1AE,M27 1AA,M27 1AB,M27 1AC,M27 1AD,M27 1AE,M28 1AA,M28 1AB,M28 1AC,M28 1AD,M28 1AE,M29 1AA,M29 1AB,M29 1AC,M29 1AD,M29 1AE,M30 1AA,M30 1AB,M30 1AC,M30 1AD,M30 1AE';
+SET @postcodes = 'M11AA,M11AB,M11AC,M11AD,M11AE,M21AA,M21AB,M21AC,M21AD,M21AE,M31AA,M31AB,M31AC,M31AD,M31AE,M41AA,M41AB,M41AC,M41AD,M41AE,M51AA,M51AB,M51AC,M51AD,M51AE,M61AA,M61AB,M61AC,M61AD,M61AE,M71AA,M71AB,M71AC,M71AD,M71AE,M81AA,M81AB,M81AC,M81AD,M81AE,M91AA,M91AB,M91AC,M91AD,M91AE,M101AA,M101AB,M101AC,M101AD,M101AE,M111AA,M111AB,M111AC,M111AD,M111AE,M121AA,M121AB,M121AC,M121AD,M121AE,M131AA,M131AB,M131AC,M131AD,M131AE,M141AA,M141AB,M141AC,M141AD,M141AE,M151AA,M151AB,M151AC,M151AD,M151AE,M161AA,M161AB,M161AC,M161AD,M161AE,M171AA,M171AB,M171AC,M171AD,M171AE,M181AA,M181AB,M181AC,M181AD,M181AE,M191AA,M191AB,M191AC,M191AD,M191AE,M201AA,M201AB,M201AC,M201AD,M201AE,M211AA,M211AB,M211AC,M211AD,M211AE,M221AA,M221AB,M221AC,M221AD,M221AE,M231AA,M231AB,M231AC,M231AD,M231AE,M241AA,M241AB,M241AC,M241AD,M241AE,M251AA,M251AB,M251AC,M251AD,M251AE,M261AA,M261AB,M261AC,M261AD,M261AE,M271AA,M271AB,M271AC,M271AD,M271AE,M281AA,M281AB,M281AC,M281AD,M281AE,M291AA,M291AB,M291AC,M291AD,M291AE,M301AA,M301AB,M301AC,M301AD,M301AE';
 
-SET @cities = 'Manchester,Stockport,Bolton,Bury,Oldham,Rochdale,Tameside,Trafford,Wigan,Salford,Altrincham,Ashton-under-Lyne,Bramhall,Bury,Cheadle,Denton,Droylsden,Eccles,Failsworth,Farnworth,Heywood,Hollinwood,Horwich,Hyde,Irlam,Kearsley,Leigh,Littleborough,Middleton,Milnrow,Mossley,Newton Heath,Oldham,Partington,Radcliffe,Ramsbottom,Rochdale,Royton,Sale,Stalybridge,Stockport,Stretford,Swinton,Tyldesley,Urmston,Walkden,Westhoughton,Whitefield,Wigan,Worsley';
+SET @cities = 'Manchester,Stockport,Bolton,Bury,Oldham,Rochdale,Tameside,Trafford,Wigan,Salford,Altrincham,Ashton-under-Lyne,Bramhall,Bury,Cheadle,Denton,Droylsden,Eccles,Failsworth,Farnworth,Heywood,Hollinwood,Horwich,Hyde,Irlam,Kearsley,Leigh,Littleborough,Middleton,Milnrow,Mossley,NewtonHeath,Oldham,Partington,Radcliffe,Ramsbottom,Rochdale,Royton,Sale,Stalybridge,Stockport,Stretford,Swinton,Tyldesley,Urmston,Walkden,Westhoughton,Whitefield,Wigan,Worsley';
 
-SET @trees = 'Oak Tree,Maple Tree,Birch Tree,Willow Tree,Cherry Tree,Apple Tree,Pear Tree,Plum Tree,Elm Tree,Beech Tree,Pine Tree,Spruce Tree,Cedar Tree,Cypress Tree,Ash Tree,Hazel Tree,Rowan Tree,Hawthorn Tree,Holly Tree,Yew Tree,Linden Tree,Poplar Tree,Aspen Tree,Cottonwood Tree,Sycamore Tree,Horse Chestnut Tree,Sweet Chestnut Tree,Walnut Tree,Hickory Tree,Butternut Tree,Black Walnut Tree,English Oak,Red Oak,White Oak,Bur Oak,Pin Oak,Scarlet Oak,Black Oak,Swamp White Oak,Chinkapin Oak,Post Oak,Shingle Oak,Overcup Oak,Nuttall Oak,Water Oak,Willow Oak,Laurel Oak,Shumard Oak,Shingle Oak,Blackjack Oak,Bluejack Oak';
+SET @trees = 'OakTree,MapleTree,BirchTree,WillowTree,CherryTree,AppleTree,PearTree,PlumTree,ElmTree,BeechTree,PineTree,SpruceTree,CedarTree,CypressTree,AshTree,HazelTree,RowanTree,HawthornTree,HollyTree,YewTree,LindenTree,PoplarTree,AspenTree,CottonwoodTree,SycamoreTree,HorseChestnutTree,SweetChestnutTree,WalnutTree,HickoryTree,ButternutTree,BlackWalnutTree,EnglishOak,RedOak,WhiteOak,BurOak,PinOak,ScarletOak,BlackOak,SwampWhiteOak,ChinkapinOak,PostOak,ShingleOak,OvercupOak,NuttallOak,WaterOak,WillowOak,LaurelOak,ShumardOak,ShingleOak,BlackjackOak,BluejackOak';
 
 SET @labels = 'Main Entrance,Back Garden,Front Yard,Side Path,Community Park,School Grounds,Library Garden,Museum Grounds,Hospital Garden,Church Yard,Town Hall,Market Square,Station Platform,Bus Stop,Car Park,Recreation Ground,Playing Field,Sports Centre,Swimming Pool,Leisure Centre,Community Centre,Health Centre,Dental Practice,Pharmacy,Post Office,Bank,Supermarket,Convenience Store,Petrol Station,Restaurant,Cafe,Pub,Hotel,Theatre,Cinema,Art Gallery,Museum,Library,School,College,University,Hospital,Clinic,GP Surgery,Dentist,Optician,Pharmacy,Veterinary Surgery,Pet Shop,Garden Centre,DIY Store,Hardware Store,Bookshop,Clothes Shop,Shoe Shop,Jewelry Store,Antique Shop,Charity Shop,Thrift Store,Pawn Shop,Car Dealership,Petrol Station,Car Wash,Mechanic Garage,Tyre Centre,Car Parts Store,Motorbike Shop,Bicycle Shop,Sports Shop,Fitness Centre,Gym,Yoga Studio,Dance Studio,Martial Arts,Swimming Pool,Tennis Court,Football Pitch,Cricket Ground,Golf Course,Bowling Green,Squash Court,Badminton Court,Table Tennis,Snooker Hall,Billiards Hall,Darts Board,Pool Table,Arcade Games,Amusement Park,Fairground,Carnival,Circus,Theatre Group,Choir,Orchestra,Band,Music Group,Drama Group,Art Class,Craft Group,Knitting Circle,Book Club,Writing Group,Photography Club,Chess Club,Bridge Club,Quiz Night,Bingo Night,Karaoke Night,Comedy Night,Open Mic Night,Poetry Reading,Story Time,Childrens Club,Youth Group,Scouts,Guides,Cubs,Brownies,Beavers,Rainbows,Boys Brigade,Girls Brigade,Army Cadets,Air Cadets,Sea Cadets,Police Cadets,Fire Cadets,St John Ambulance,Red Cross,Salvation Army,Oxfam,Save the Children,UNICEF,Greenpeace,WWF,RSPCA,RSPB,National Trust,English Heritage,Historic England,Natural England,Environment Agency,Highways Agency,Network Rail,Transport for London,Met Office,Office for National Statistics,Government Digital Service,NHS Digital,Public Health England,Office for Standards in Education,Ofsted,Ofcom,Ofgem,Ofwat,Ofqual,Office for Students,Research England,Innovate UK,UK Research and Innovation,Arts Council England,Sport England,Heritage Lottery Fund,Big Lottery Fund,National Lottery,Postcode Lottery';
-
-SET @reporting_ids = 'QR001,QR002,QR003,QR004,QR005,QR006,QR007,QR008,QR009,QR010,QR011,QR012,QR013,QR014,QR015,QR016,QR017,QR018,QR019,QR020,QR021,QR022,QR023,QR024,QR025,QR026,QR027,QR028,QR029,QR030,QR031,QR032,QR033,QR034,QR035,QR036,QR037,QR038,QR039,QR040,QR041,QR042,QR043,QR044,QR045,QR046,QR047,QR048,QR049,QR050,QR051,QR052,QR053,QR054,QR055,QR056,QR057,QR058,QR059,QR060,QR061,QR062,QR063,QR064,QR065,QR066,QR067,QR068,QR069,QR070,QR071,QR072,QR073,QR074,QR075,QR076,QR077,QR078,QR079,QR080,QR081,QR082,QR083,QR084,QR085,QR086,QR087,QR088,QR089,QR090,QR091,QR092,QR093,QR094,QR095,QR096,QR097,QR098,QR099,QR100,QR101,QR102,QR103,QR104,QR105,QR106,QR107,QR108,QR109,QR110,QR111,QR112,QR113,QR114,QR115,QR116,QR117,QR118,QR119,QR120,QR121,QR122,QR123,QR124,QR125,QR126,QR127,QR128,QR129,QR130,QR131,QR132,QR133,QR134,QR135,QR136,QR137,QR138,QR139,QR140,QR141,QR142,QR143,QR144,QR145,QR146,QR147,QR148,QR149,QR150';
 
 -- Clear existing test data (optional - uncomment if you want to start fresh)
 -- DELETE FROM wpkx_qr_tracker_logs WHERE tracker_id IN (SELECT id FROM wpkx_qr_tracker WHERE reporting_id LIKE 'QR%');
 -- DELETE FROM wpkx_qr_tracker WHERE reporting_id LIKE 'QR%';
 
 -- Generate 150 QR codes
-INSERT INTO wpkx_qr_tracker (url, postcode, city, tree, label, reporting_id, scan_count, last_scanned, message_1, message_2)
+INSERT INTO wpkx_qr_tracker (url, postcode, city, tree, label, scan_count, last_scanned, message_1, message_2)
 SELECT 
     CONCAT(@home_url, '/?postcode=', postcode, '&city=', city, '&tree=', tree) as url,
     postcode,
     city,
     tree,
     label,
-    reporting_id,
     0 as scan_count,
     NULL as last_scanned,
     CONCAT('<h2>Welcome to ', city, '</h2><p>You have scanned a QR code for the <strong>', tree, '</strong> in <strong>', postcode, '</strong>.</p><p>This is test message 1 for tracking purposes.</p>') as message_1,
-    CONCAT('<h3>Additional Information</h3><p>Reporting ID: <strong>', reporting_id, '</strong></p><p>Location: <strong>', label, '</strong></p><p>This is test message 2 with more details about this location.</p>') as message_2
+    CONCAT('<h3>Additional Information</h3><p>Location: <strong>', label, '</strong></p><p>This is test message 2 with more details about this location.</p>') as message_2
 FROM (
     SELECT 
         SUBSTRING_INDEX(SUBSTRING_INDEX(@postcodes, ',', numbers.n), ',', -1) as postcode,
         SUBSTRING_INDEX(SUBSTRING_INDEX(@cities, ',', FLOOR(1 + RAND() * 50)), ',', -1) as city,
         SUBSTRING_INDEX(SUBSTRING_INDEX(@trees, ',', FLOOR(1 + RAND() * 50)), ',', -1) as tree,
-        SUBSTRING_INDEX(SUBSTRING_INDEX(@labels, ',', FLOOR(1 + RAND() * 100)), ',', -1) as label,
-        SUBSTRING_INDEX(SUBSTRING_INDEX(@reporting_ids, ',', numbers.n), ',', -1) as reporting_id
+        SUBSTRING_INDEX(SUBSTRING_INDEX(@labels, ',', FLOOR(1 + RAND() * 100)), ',', -1) as label
     FROM (
         SELECT 1 n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL
         SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL
@@ -296,7 +292,6 @@ FROM (
         SELECT 996 UNION ALL SELECT 997 UNION ALL SELECT 998 UNION ALL SELECT 999 UNION ALL SELECT 1000
     ) numbers
     WHERE numbers.n <= 100000
-    AND qr.reporting_id LIKE 'QR%'
 ) scan_data
 ORDER BY scan_time;
 
@@ -312,8 +307,7 @@ SET
         SELECT MAX(scanned_at) 
         FROM wpkx_qr_tracker_logs 
         WHERE tracker_id = wpkx_qr_tracker.id
-    )
-WHERE reporting_id LIKE 'QR%';
+    );
 
 -- Display summary statistics
 SELECT 
@@ -324,8 +318,7 @@ SELECT
     MIN(scan_count) as min_scans,
     MAX(scan_count) as max_scans,
     COUNT(CASE WHEN scan_count > 0 THEN 1 END) as active_qr_codes
-FROM wpkx_qr_tracker 
-WHERE reporting_id LIKE 'QR%';
+FROM wpkx_qr_tracker;
 
 SELECT 
     'Scan Distribution Summary' as info,
@@ -334,20 +327,17 @@ SELECT
     COUNT(DISTINCT DATE(scanned_at)) as unique_days_with_scans,
     MIN(scanned_at) as earliest_scan,
     MAX(scanned_at) as latest_scan
-FROM wpkx_qr_tracker_logs 
-WHERE tracker_id IN (SELECT id FROM wpkx_qr_tracker WHERE reporting_id LIKE 'QR%');
+FROM wpkx_qr_tracker_logs;
 
 -- Show top 10 most scanned QR codes
 SELECT 
     'Top 10 Most Scanned QR Codes' as ranking,
-    reporting_id,
     postcode,
     city,
     tree,
     scan_count,
     last_scanned
 FROM wpkx_qr_tracker 
-WHERE reporting_id LIKE 'QR%'
 ORDER BY scan_count DESC 
 LIMIT 10;
 
@@ -357,7 +347,6 @@ SELECT
     HOUR(scanned_at) as hour_of_day,
     COUNT(*) as scan_count
 FROM wpkx_qr_tracker_logs 
-WHERE tracker_id IN (SELECT id FROM wpkx_qr_tracker WHERE reporting_id LIKE 'QR%')
 GROUP BY HOUR(scanned_at)
 ORDER BY hour_of_day;
 
@@ -367,6 +356,5 @@ SELECT
     DAYNAME(scanned_at) as day_of_week,
     COUNT(*) as scan_count
 FROM wpkx_qr_tracker_logs 
-WHERE tracker_id IN (SELECT id FROM wpkx_qr_tracker WHERE reporting_id LIKE 'QR%')
 GROUP BY DAYNAME(scanned_at)
 ORDER BY FIELD(DAYNAME(scanned_at), 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'); 

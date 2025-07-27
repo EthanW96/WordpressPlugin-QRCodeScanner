@@ -59,6 +59,10 @@ class QRCodeTracker_DB {
         if (empty($columns)) {
             $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN message_2 LONGTEXT AFTER message_1");
         }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'show_popup'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN show_popup TINYINT(1) DEFAULT 1 AFTER message_2");
+        }
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'tree'");
         if (empty($columns)) {
             $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN tree VARCHAR(64) AFTER postcode");

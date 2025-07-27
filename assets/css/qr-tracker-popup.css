@@ -1,0 +1,175 @@
+/* QR Tracker Popup Styles */
+.qr-tracker-popup {
+    position: fixed;
+    z-index: 9999;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+}
+
+.qr-tracker-popup.bottom-right {
+    bottom: 20px;
+    right: 20px;
+}
+
+.qr-tracker-popup.bottom-left {
+    bottom: 20px;
+    left: 20px;
+}
+
+.qr-tracker-popup.top-right {
+    top: 20px;
+    right: 20px;
+}
+
+.qr-tracker-popup.top-left {
+    top: 20px;
+    left: 20px;
+}
+
+.qr-tracker-popup-content {
+    background: #ffffff;
+    border: 2px solid #ffd700;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    max-width: 300px;
+    min-width: 250px;
+    position: relative;
+    animation: qr-popup-slide-in 0.3s ease-out;
+}
+
+@keyframes qr-popup-slide-in {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.qr-tracker-popup-header {
+    position: relative;
+    padding: 8px 12px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.qr-tracker-popup-close {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    background: none;
+    border: none;
+    font-size: 18px;
+    font-weight: bold;
+    color: #333;
+    cursor: pointer;
+    padding: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s ease;
+}
+
+.qr-tracker-popup-close:hover {
+    background-color: #f0f0f0;
+}
+
+.qr-tracker-popup-body {
+    padding: 16px 20px;
+}
+
+.qr-tracker-message-container {
+    text-align: center;
+}
+
+.qr-tracker-message {
+    margin-bottom: 8px;
+    font-size: 16px;
+    font-weight: 500;
+    color: #333;
+    line-height: 1.4;
+}
+
+.qr-tracker-message:last-child {
+    margin-bottom: 0;
+}
+
+/* Theme variations */
+.qr-tracker-popup.theme-christmas .qr-tracker-popup-content {
+    border-color: #ff6b6b;
+    background: linear-gradient(135deg, #ffffff 0%, #fff5f5 100%);
+}
+
+.qr-tracker-popup.theme-christmas .qr-tracker-message {
+    color: #d63031;
+}
+
+.qr-tracker-popup.theme-dark .qr-tracker-popup-content {
+    background: #2d3436;
+    border-color: #636e72;
+    color: #ffffff;
+}
+
+.qr-tracker-popup.theme-dark .qr-tracker-message {
+    color: #ffffff;
+}
+
+.qr-tracker-popup.theme-dark .qr-tracker-popup-close {
+    color: #ffffff;
+}
+
+.qr-tracker-popup.theme-dark .qr-tracker-popup-close:hover {
+    background-color: #636e72;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .qr-tracker-popup {
+        bottom: 10px !important;
+        right: 10px !important;
+        left: 10px !important;
+    }
+    
+    .qr-tracker-popup-content {
+        max-width: none;
+        width: calc(100vw - 20px);
+    }
+}
+
+/* Accessibility improvements */
+.qr-tracker-popup-close:focus {
+    outline: 2px solid #0073aa;
+    outline-offset: 2px;
+}
+
+/* Print styles */
+@media print {
+    .qr-tracker-popup {
+        display: none !important;
+    }
+}
+
+/* Trigger button styles */
+.qr-tracker-popup-trigger {
+    background: #0073aa;
+    color: #ffffff;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+}
+
+.qr-tracker-popup-trigger:hover {
+    background: #005a87;
+}
+
+.qr-tracker-popup-trigger:focus {
+    outline: 2px solid #0073aa;
+    outline-offset: 2px;
+} 
