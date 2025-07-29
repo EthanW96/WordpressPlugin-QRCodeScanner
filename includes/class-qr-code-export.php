@@ -66,15 +66,6 @@ class QRCodeTracker_Export {
             $where_params[] = $city_filter;
         }
 
-        // Debug logging (only for admins)
-        if (current_user_can('manage_options')) {
-            error_log("QR Export Debug - Export Type: " . $export_type);
-            error_log("QR Export Debug - Date From: " . $date_from);
-            error_log("QR Export Debug - Date To: " . $date_to);
-            error_log("QR Export Debug - Where Clause: " . $where_clause);
-            error_log("QR Export Debug - Where Params: " . print_r($where_params, true));
-        }
-
         $filename = 'qr_tracker_report_' . $export_type . ($group_type ? '_' . $group_type : '') . '_' . date('Y-m-d_H-i-s') . '.csv';
         
         // Set headers for CSV download
@@ -100,6 +91,8 @@ class QRCodeTracker_Export {
             $this->export_single_qr_csv($output, $where_clause, $where_params);
         } elseif ($export_type == 'city') {
             $this->export_city_csv($output, $where_clause, $where_params);
+        } elseif ($export_type == 'reporting_id') {
+            $this->export_reporting_id_csv($output, $where_clause, $where_params);
         }
         
         fclose($output);
@@ -212,26 +205,10 @@ class QRCodeTracker_Export {
         $sql = "SELECT * FROM {$this->log_table} {$where_clause} ORDER BY scanned_at DESC LIMIT %d";
         $where_params[] = $limit;
         
-        // Debug logging
-        if (current_user_can('manage_options')) {
-            error_log("QR Export Debug - SQL Query: " . $sql);
-            error_log("QR Export Debug - SQL Params: " . print_r($where_params, true));
-        }
-        
         if (!empty($where_params)) {
             $results = $wpdb->get_results($wpdb->prepare($sql, $where_params));
         } else {
             $results = $wpdb->get_results($wpdb->prepare($sql, [$limit]));
-        }
-        
-        // Debug logging
-        if (current_user_can('manage_options')) {
-            error_log("QR Export Debug - Results Count: " . count($results));
-            if (empty($results)) {
-                error_log("QR Export Debug - No results found. Checking if table has data...");
-                $total_logs = $wpdb->get_var("SELECT COUNT(*) FROM {$this->log_table}");
-                error_log("QR Export Debug - Total logs in table: " . $total_logs);
-            }
         }
         
         // Write header
@@ -408,6 +385,86 @@ class QRCodeTracker_Export {
                 $row->tree,
                 $row->label,
                 $row->reporting_id,
+                $row->id,
+                $row->scanned_at,
+                $row->scan_date,
+                $row->scan_hour,
+                $day_name
+            ]);
+        }
+    }
+
+    private function export_reporting_id_csv($output, $where_clause, $where_params) {
+        global $wpdb;
+        
+        // Get reporting ID from parameters
+        $reporting_id = isset($_GET['reporting_id']) ? sanitize_text_field($_GET['reporting_id']) : '';
+        
+        if (empty($reporting_id)) {
+            wp_die('Missing reporting ID parameter');
+        }
+        
+        // Build WHERE clause for this specific reporting ID
+        $reporting_id_where_clause = "WHERE t.reporting_id = %s";
+        $reporting_id_where_params = [$reporting_id];
+        
+        // Add date filters if provided
+        $date_from = isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '';
+        $date_to = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '';
+        
+        if (!empty($date_from)) {
+            $reporting_id_where_clause .= " AND l.scanned_at >= %s";
+            $reporting_id_where_params[] = $date_from . ' 00:00:00';
+        }
+        
+        if (!empty($date_to)) {
+            $reporting_id_where_clause .= " AND l.scanned_at <= %s";
+            $reporting_id_where_params[] = $date_to . ' 23:59:59';
+        }
+        
+        // Get scan logs for this reporting ID
+        $sql = "SELECT 
+                    l.id,
+                    l.scanned_at,
+                    t.postcode,
+                    t.city,
+                    t.tree,
+                    t.label,
+                    HOUR(l.scanned_at) as scan_hour,
+                    DAYOFWEEK(l.scanned_at) as day_of_week,
+                    DATE(l.scanned_at) as scan_date
+                FROM {$this->log_table} l
+                JOIN {$this->main_table} t ON l.tracker_id = t.id
+                {$reporting_id_where_clause}
+                ORDER BY l.scanned_at DESC";
+        
+        $results = $wpdb->get_results($wpdb->prepare($sql, $reporting_id_where_params));
+        
+        // Write header
+        fputcsv($output, [
+            'Reporting ID',
+            'Postcode',
+            'City',
+            'Tree',
+            'Label',
+            'Scan ID',
+            'Scanned At',
+            'Scan Date',
+            'Scan Hour',
+            'Day of Week'
+        ]);
+        
+        // Write data
+        foreach ($results as $row) {
+            $day_names = ['', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            $day_name = $day_names[$row->day_of_week] ?? 'Unknown';
+            
+            fputcsv($output, [
+                $reporting_id,
+                $row->postcode,
+                $row->city,
+                $row->tree,
+                $row->label,
                 $row->id,
                 $row->scanned_at,
                 $row->scan_date,

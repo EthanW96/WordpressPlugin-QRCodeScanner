@@ -272,6 +272,35 @@ class QRCodeTracker_Report {
         }
         return $series_data;
     }
+
+    /**
+     * Get scan counts by day of week (all series combined) with performance optimization
+     * @param string $log_table
+     * @param string $main_table
+     * @param string $where_clause
+     * @param array $where_params
+     * @return array
+     */
+    public static function get_scan_day_of_week_data($log_table, $main_table, $where_clause, $where_params) {
+        global $wpdb;
+        $sql = "SELECT DAYOFWEEK(l.scanned_at) as day_of_week, COUNT(*) as scan_count
+                FROM $log_table l
+                JOIN $main_table t ON l.tracker_id = t.id
+                $where_clause
+                GROUP BY day_of_week
+                ORDER BY day_of_week";
+        if (!empty($where_params)) {
+            $results = $wpdb->get_results($wpdb->prepare($sql, $where_params));
+        } else {
+            $results = $wpdb->get_results($sql);
+        }
+        $day_data = array_fill(1, 7, 0);
+        foreach ($results as $row) {
+            $day = (int)$row->day_of_week;
+            $day_data[$day] = (int)$row->scan_count;
+        }
+        return $day_data;
+    }
     
     /**
      * Get summary statistics with performance optimization

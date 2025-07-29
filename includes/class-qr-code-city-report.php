@@ -186,20 +186,41 @@ class QRCodeTracker_CityReport {
         // Get hour distribution data
         $hour_data = $this->get_hour_distribution_data($where_clause, $where_params);
         
+        // Get day of week distribution data
+        $day_data = $this->get_day_of_week_distribution_data($where_clause, $where_params);
+        
         echo '<div style="margin: 20px 0;">';
         echo '<h2>Charts</h2>';
         echo '<button onclick="showLineChart()" class="button">Show Daily Activity Chart</button> ';
-        echo '<button onclick="showRadarChart()" class="button">Show Hour Distribution Chart</button>';
+        echo '<button onclick="showRadarChart()" class="button">Show Hour Distribution Chart</button> ';
+        echo '<button onclick="showBarChart()" class="button">Show Day of Week Chart</button>';
         echo '</div>';
         
         // Line chart container
-        echo '<div id="line-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px;">';
+        echo '<div id="line-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
+        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
+        echo '<h3 style="margin: 0;">Daily Activity Chart</h3>';
+        echo '<button onclick="exportChartAsImage(\'line-chart\', \'city-daily-activity-chart\')" class="button button-secondary">Export as Image</button>';
+        echo '</div>';
         echo '<canvas id="line-chart" width="800" height="400"></canvas>';
         echo '</div>';
         
         // Radar chart container
-        echo '<div id="radar-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px;">';
+        echo '<div id="radar-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 700px;">';
+        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
+        echo '<h3 style="margin: 0;">Hour Distribution Chart</h3>';
+        echo '<button onclick="exportChartAsImage(\'radar-chart\', \'city-hour-distribution-chart\')" class="button button-secondary">Export as Image</button>';
+        echo '</div>';
         echo '<canvas id="radar-chart" width="600" height="600"></canvas>';
+        echo '</div>';
+        
+        // Bar chart container
+        echo '<div id="bar-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
+        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
+        echo '<h3 style="margin: 0;">Day of Week Chart</h3>';
+        echo '<button onclick="exportChartAsImage(\'bar-chart\', \'city-day-of-week-chart\')" class="button button-secondary">Export as Image</button>';
+        echo '</div>';
+        echo '<canvas id="bar-chart" width="800" height="400"></canvas>';
         echo '</div>';
         
         // JavaScript for charts
@@ -214,8 +235,14 @@ class QRCodeTracker_CityReport {
         echo 'values: [' . implode(',', $hour_data) . ']';
         echo '};';
         
+        echo 'var barChartData = {';
+        echo 'labels: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],';
+        echo 'values: [' . implode(',', array_values($day_data)) . ']';
+        echo '};';
+        
         echo 'var lineChartInstance = null;';
         echo 'var radarChartInstance = null;';
+        echo 'var barChartInstance = null;';
         
         echo 'window.showLineChart = function() {';
         echo 'var container = document.getElementById("line-chart-container");';
@@ -294,7 +321,92 @@ class QRCodeTracker_CityReport {
         echo 'container.style.display = "none";';
         echo '}';
         echo '};';
+        
+        echo 'window.showBarChart = function() {';
+        echo 'var container = document.getElementById("bar-chart-container");';
+        echo 'if (container.style.display === "none") {';
+        echo 'container.style.display = "block";';
+        echo 'setTimeout(function() {';
+        echo 'if (barChartInstance) { barChartInstance.destroy(); }';
+        echo 'var ctx = document.getElementById("bar-chart").getContext("2d");';
+        echo 'barChartInstance = new Chart(ctx, {';
+        echo 'type: "bar",';
+        echo 'data: {';
+        echo 'labels: barChartData.labels,';
+        echo 'datasets: [{';
+        echo 'label: "Scan Distribution by Day of Week",';
+        echo 'data: barChartData.values,';
+        echo 'backgroundColor: "#36A2EB",';
+        echo 'borderColor: "#36A2EB",';
+        echo 'borderWidth: 1';
+        echo '}]';
+        echo '},';
+        echo 'options: {';
+        echo 'responsive: true,';
+        echo 'maintainAspectRatio: false,';
+        echo 'plugins: {';
+        echo 'title: { display: true, text: "Scan Distribution by Day of Week - ' . esc_js($city) . '" }';
+        echo '},';
+        echo 'scales: {';
+        echo 'y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } }';
+        echo '}';
+        echo '}';
+        echo '});';
+        echo '}, 100);';
+        echo '} else {';
+        echo 'container.style.display = "none";';
+        echo '}';
+        echo '};';
         echo '</script>';
+        
+        // Add chart export functionality
+        echo '<script>
+        function exportChartAsImage(canvasId, filename) {
+            try {
+                const canvas = document.getElementById(canvasId);
+                if (!canvas) {
+                    alert("Chart not found. Please make sure the chart is displayed first.");
+                    return;
+                }
+                
+                // Create a temporary canvas with higher resolution for better quality
+                const tempCanvas = document.createElement("canvas");
+                const ctx = tempCanvas.getContext("2d");
+                
+                // Set higher resolution (2x for better quality)
+                const scale = 2;
+                tempCanvas.width = canvas.width * scale;
+                tempCanvas.height = canvas.height * scale;
+                
+                // Scale the context to ensure correct drawing
+                ctx.scale(scale, scale);
+                
+                // Fill the canvas with white background
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw the original canvas content to the temp canvas
+                ctx.drawImage(canvas, 0, 0);
+                
+                // Convert to blob and download
+                tempCanvas.toBlob(function(blob) {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.style.display = "none";
+                    a.href = url;
+                    a.download = filename + "_" + new Date().toISOString().slice(0, 10) + ".png";
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                }, "image/png");
+                
+            } catch (error) {
+                console.error("Error exporting chart:", error);
+                alert("Error exporting chart. Please try again.");
+            }
+        }
+        </script>';
     }
 
     /**
@@ -332,7 +444,7 @@ class QRCodeTracker_CityReport {
                 echo '<td>' . esc_html($qr_code->postcode) . '</td>';
                 echo '<td>' . esc_html($qr_code->tree) . '</td>';
                 echo '<td>' . esc_html($qr_code->label) . '</td>';
-                echo '<td>' . esc_html($qr_code->reporting_id) . '</td>';
+                echo '<td><a href="' . admin_url('admin.php?page=qr-reporting-id-report&reporting_id=' . urlencode($qr_code->reporting_id)) . '">' . esc_html($qr_code->reporting_id) . '</a></td>';
                 echo '<td>' . number_format($qr_code->scan_count) . '</td>';
                 echo '<td>' . esc_html($qr_code->last_scanned) . '</td>';
                 echo '<td><a href="' . admin_url('admin.php?page=qr-single-report&qr_id=' . $qr_code->id) . '" class="button">View Report</a></td>';
@@ -560,6 +672,32 @@ class QRCodeTracker_CityReport {
         }
         
         return $hour_data;
+    }
+
+    /**
+     * Get day of week distribution data for this city
+     */
+    private function get_day_of_week_distribution_data($where_clause, $where_params) {
+        global $wpdb;
+        
+        $sql = "SELECT 
+                    DAYOFWEEK(l.scanned_at) as day_of_week,
+                    COUNT(*) as scan_count
+                FROM {$this->log_table} l
+                JOIN {$this->main_table} t ON l.tracker_id = t.id
+                {$where_clause}
+                GROUP BY day_of_week
+                ORDER BY day_of_week";
+        
+        $results = $wpdb->get_results($wpdb->prepare($sql, $where_params));
+        
+        $day_data = array_fill(1, 7, 0);
+        foreach ($results as $row) {
+            $day = (int)$row->day_of_week;
+            $day_data[$day] = (int)$row->scan_count;
+        }
+        
+        return $day_data;
     }
 }
 

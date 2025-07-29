@@ -3,7 +3,7 @@
 Plugin Name: QR Code Tracker
 Description: Generate and track QR code links with query strings, including scan tracking and postcode rollups, plus dynamic HTML messages via shortcodes.
 Version: 0.9993
-Author: Ethan Widen & ChatGPT
+Author: Ethan Widen
 */
 
 
@@ -114,7 +114,6 @@ class QRCodeTracker {
     
 
     public function track_visit() {
-
         global $wpdb;
         
         // Get the current URL in multiple ways to ensure we catch it
@@ -124,14 +123,6 @@ class QRCodeTracker {
         // Also try without trailing slash variations
         $current_url_no_slash = rtrim($current_url, '/');
         $request_uri_no_slash = rtrim($request_uri, '/');
-        
-        // Debug: Log the URLs being checked (only for admin users)
-        if (current_user_can('manage_options')) {
-            error_log("QR Tracker Debug - Current URL: " . $current_url);
-            error_log("QR Tracker Debug - Request URI: " . $request_uri);
-            error_log("QR Tracker Debug - Current URL no slash: " . $current_url_no_slash);
-            error_log("QR Tracker Debug - Request URI no slash: " . $request_uri_no_slash);
-        }
         
         // Find the exact URL match in the database - try multiple variations
         // Also try adding/removing trailing slash before query parameters
@@ -162,16 +153,6 @@ class QRCodeTracker {
             ]);
 
             $this->current_tracker = $row;
-            
-            // Debug: Log successful match
-            if (current_user_can('manage_options')) {
-                error_log("QR Tracker Debug - Found match for tracker ID: " . $row->id);
-            }
-        } else {
-            // Debug: Log when no match is found
-            if (current_user_can('manage_options')) {
-                error_log("QR Tracker Debug - No match found in database");
-            }
         }
     }
 

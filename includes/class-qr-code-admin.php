@@ -10,15 +10,24 @@ class QRCodeTracker_Admin {
         $this->main_table = $wpdb->prefix . 'qr_tracker';
         $this->log_table = $wpdb->prefix . 'qr_tracker_logs';
         $this->tracker = $tracker;
+        
+        // Initialize search functionality
+        require_once plugin_dir_path(__FILE__) . 'class-qr-code-search.php';
+        $this->search = new QRCodeTracker_Search();
     }
 
     public function admin_menu() {
-        add_menu_page('QR Tracker', 'QR Tracker', 'manage_options', 'qr-tracker', [$this, 'admin_page']);
+        add_menu_page('QR Tracker', 'QR Tracker', 'manage_options', 'qr-tracker', [$this, 'admin_page'], 'data:image/svg+xml;base64,' . base64_encode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h6v6H3V3zm2 2v2h2V5H5zm8-2h6v6h-6V3zm2 2v2h2V5h-2zM3 11h6v6H3v-6zm2 2v2h2v-2H5zm8 0h6v6h-6v-6zm2 2v2h2v-2h-2z"/></svg>'));
         add_submenu_page('qr-tracker', 'Scan Logs', 'Scan Logs', 'manage_options', 'qr-scan-logs', [$this, 'scan_logs_page']);
         add_submenu_page('qr-tracker', 'Reports', 'Reports', 'manage_options', 'qr-reports', [$this, 'reports_page']);
-        //add_submenu_page('qr-tracker', 'Single QR Report', 'Single QR Report', 'manage_options', 'qr-single-report', [$this, 'single_report_page']);
-        //add_submenu_page('qr-tracker', 'City Report', 'City Report', 'manage_options', 'qr-city-report', [$this, 'city_report_page']);
+        // Hidden pages - accessible but not shown in menu
+        add_submenu_page('qr-tracker', 'Single QR Report', 'Single QR Report', 'manage_options', 'qr-single-report', [$this, 'single_report_page']);
+        add_submenu_page('qr-tracker', 'City Report', 'City Report', 'manage_options', 'qr-city-report', [$this, 'city_report_page']);
+        add_submenu_page('qr-tracker', 'Reporting ID Report', 'Reporting ID Report', 'manage_options', 'qr-reporting-id-report', [$this, 'reporting_id_report_page']);
         add_submenu_page('qr-tracker', 'Settings', 'Settings', 'manage_options', 'qr-settings', [$this, 'settings_page']);
+        
+        // Hide the hidden pages from the menu
+        add_action('admin_head', [$this, 'hide_hidden_menu_items']);
     }
 
     public function admin_page() {
@@ -586,6 +595,10 @@ class QRCodeTracker_Admin {
         return add_query_arg($params, $base);
     }
 
+
+
+
+
     public function scan_logs_page() {
         // Include the scan logs class
         require_once plugin_dir_path(__FILE__) . 'class-qr-code-scan-logs.php';
@@ -595,111 +608,11 @@ class QRCodeTracker_Admin {
         $scan_logs->display_scan_logs_page();
     }
 
-    public function reports_page() {
-        global $wpdb;
-        
-        echo '<div class="wrap"><h1>QR Code Reports</h1>';
-    
-        // Get filter parameters
-        $view_type = isset($_GET['view']) ? sanitize_text_field($_GET['view']) : 'breakdown';
-        $date_from = isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '';
-        $date_to = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '';
-        $postcode_filter = isset($_GET['postcode']) ? sanitize_text_field($_GET['postcode']) : '';
-        $tree_filter = isset($_GET['tree']) ? sanitize_text_field($_GET['tree']) : '';
-        $city_filter = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
-    
-        // Build WHERE clause for date filtering
-        $where_clause = "WHERE 1=1";
-        $where_params = [];
-        
-        if (!empty($date_from)) {
-            $where_clause .= " AND l.scanned_at >= %s";
-            $where_params[] = $date_from . ' 00:00:00';
-        }
-        
-        if (!empty($date_to)) {
-            $where_clause .= " AND l.scanned_at <= %s";
-            $where_params[] = $date_to . ' 23:59:59';
-        }
-        
-        if (!empty($postcode_filter)) {
-            $where_clause .= " AND l.postcode = %s";
-            $where_params[] = $postcode_filter;
-        }
-        
-        if (!empty($tree_filter)) {
-            $where_clause .= " AND l.tree = %s";
-            $where_params[] = $tree_filter;
-        }
-    
-        if (!empty($city_filter)) {
-            $where_clause .= " AND l.city = %s";
-            $where_params[] = $city_filter;
-        }
-    
-        // Get available postcodes and trees for filters
-        $postcodes = $wpdb->get_col("SELECT DISTINCT postcode FROM {$this->main_table} ORDER BY postcode");
-        $trees = $wpdb->get_col("SELECT DISTINCT tree FROM {$this->main_table} ORDER BY tree");
-        $cities = $wpdb->get_col("SELECT DISTINCT city FROM {$this->main_table} ORDER BY city");
-    
-        echo '<style>
-        .qr-filter-form { background: #f9f9f9; padding: 15px; margin: 20px 0; border: 1px solid #ddd; border-radius: 4px; }
-        .qr-filter-form select, .qr-filter-form input[type="date"] { margin-right: 10px; padding: 5px 28px 5px 8px !important; min-width: 90px; background: #fff; appearance: auto; -webkit-appearance: auto; -moz-appearance: auto; }
-        .qr-filter-form label { display: inline-block; margin-right: 5px; font-weight: bold; }
-        .qr-stats-summary { display: flex; gap: 20px; margin: 20px 0; }
-        .qr-stat-box { background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center; }
-        .qr-stat-number { font-size: 24px; font-weight: bold; color: #0073aa; }
-        .qr-stat-label { color: #666; margin-top: 5px; }
-        </style>';
-        
-        // Include Chart.js
-        echo '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>';
-        
-        echo '<div class="qr-filter-form">';
-        echo '<form method="get">';
-        echo '<input type="hidden" name="page" value="qr-reports">';
-        echo '<div style="margin-bottom: 10px;">';
-        echo '<label>View:</label><select name="view"><option value="breakdown"' . ($view_type == 'breakdown' ? ' selected' : '') . '>Breakdown View</option><option value="rollup"' . ($view_type == 'rollup' ? ' selected' : '') . '>Rollup View</option></select>';
-        echo '</div>';
-        echo '<div style="margin-bottom: 10px;">';
-        echo '<label>From:</label><input type="date" name="date_from" value="' . esc_attr($date_from) . '">';
-        echo '<label>To:</label><input type="date" name="date_to" value="' . esc_attr($date_to) . '">';
-        echo '<a href="' . esc_url(add_query_arg(array_merge($_GET, ['date_from' => date('Y-m-d', strtotime('-30 days')), 'date_to' => date('Y-m-d')]))) . '" class="button">Last 30 Days</a>';
-        echo '<a href="' . esc_url(add_query_arg(array_merge($_GET, ['date_from' => date('Y-m-d', strtotime('-7 days')), 'date_to' => date('Y-m-d')]))) . '" class="button">Last 7 Days</a>';
-        echo '<a href="' . esc_url(add_query_arg(array_merge($_GET, ['date_from' => '', 'date_to' => '']))) . '" class="button">All Time</a>';
-        echo '</div>';
-        echo '<div style="margin-bottom: 10px;">';
-        echo '<label>Postcode:</label><select name="postcode" style="margin-right: 10px;"><option value="">All</option>';
-        foreach ($postcodes as $postcode) {
-            echo '<option value="' . esc_attr($postcode) . '"' . ($postcode_filter == $postcode ? ' selected' : '') . '>' . esc_html($postcode) . '</option>';
-        }
-        echo '</select>';
-        echo '<label>Tree:</label><select name="tree" style="margin-right: 10px;"><option value="">All</option>';
-        foreach ($trees as $tree) {
-            echo '<option value="' . esc_attr($tree) . '"' . ($tree_filter == $tree ? ' selected' : '') . '>' . esc_html($tree) . '</option>';
-        }
-        echo '</select>';
-        echo '<label>City:</label><select name="city" style="margin-right: 10px;"><option value="">All</option>';
-        foreach ($cities as $city) {
-            echo '<option value="' . esc_attr($city) . '"' . ($city_filter == $city ? ' selected' : '') . '>' . esc_html($city) . '</option>';
-        }
-        echo '</select>';
-        echo '<input type="submit" class="button button-primary" value="Apply Filters">';
-        echo ' <a href="' . esc_url(admin_url('admin.php?page=qr-reports')) . '" class="button">Reset Filters</a>';
-        echo '</div>';
-        echo '</form>';
-        echo '</div>';
-    
-        // Display summary statistics
-        $this->display_summary_stats($where_clause, $where_params);
-    
-        if ($view_type == 'breakdown') {
-            $this->display_breakdown_report($where_clause, $where_params);
-        } else {
-            $this->display_rollup_report($where_clause, $where_params);
-        }
-    
-        echo '</div>';
+        public function reports_page() {
+        // Use the new reports display class
+        require_once plugin_dir_path(__FILE__) . 'class-qr-code-reports-display.php';
+        $reports_display = new QRCodeTracker_ReportsDisplay($this->search);
+        $reports_display->display_reports_page();
     }
 
     public function settings_page() {
@@ -768,7 +681,7 @@ class QRCodeTracker_Admin {
         }
     }
 
-    private function display_breakdown_report($where_clause, $where_params) {
+    public function display_breakdown_report($where_clause, $where_params) {
         global $wpdb;
         
         $group_field = 'l.postcode';
@@ -798,19 +711,35 @@ class QRCodeTracker_Admin {
         
         echo '<h2>Breakdown Report - Grouped by ' . esc_html($group_label) . '</h2>';
         echo '<p><a href="' . esc_url(admin_url('admin.php?action=qr_tracker_export&export_type=breakdown&group_type=postcode&' . http_build_query(array_diff_key($_GET, ['page' => '', 'view' => ''])))) . '" class="button button-primary">Export CSV</a> ';
-        echo '<button onclick="showChart()" class="button">Show Chart</button> ';
-        echo '<button onclick="showHourChart()" class="button">Show Scan Time Chart</button></p>';
+        echo '<button onclick="showChart()" class="button">Show Daily Activity Chart</button> ';
+        echo '<button onclick="showHourChart()" class="button">Show Hour Distribution Chart</button> ';
+        echo '<button onclick="showDayChart()" class="button">Show Day of Week Chart</button></p>';
         
         // Show performance info if data is large
         if ($time_series_data['total_days'] > 100) {
             echo '<div class="notice notice-info"><p><strong>Performance Note:</strong> Large dataset detected (' . $time_series_data['total_days'] . ' days). Chart data has been sampled to ' . count($time_series_data['dates']) . ' points for optimal performance. Export CSV for full data.</p></div>';
         }
         // Add chart containers
-        echo '<div id="chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px;">';
+        echo '<div id="chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
+        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
+        echo '<h3 style="margin: 0;">Daily Activity Chart</h3>';
+        echo '<button onclick="exportChartAsImage(\'breakdown-chart\', \'daily-activity-chart\')" class="button button-secondary">Export as Image</button>';
+        echo '</div>';
         echo '<canvas id="breakdown-chart" width="800" height="400"></canvas>';
         echo '</div>';
-        echo '<div id="hour-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; max-height: 600px;">';
+        echo '<div id="hour-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 700px;">';
+        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
+        echo '<h3 style="margin: 0;">Hour Distribution Chart</h3>';
+        echo '<button onclick="exportChartAsImage(\'hour-chart\', \'hour-distribution-chart\')" class="button button-secondary">Export as Image</button>';
+        echo '</div>';
         echo '<canvas id="hour-chart" width="600" height="600"></canvas>';
+        echo '</div>';
+        echo '<div id="day-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
+        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
+        echo '<h3 style="margin: 0;">Day of Week Chart</h3>';
+        echo '<button onclick="exportChartAsImage(\'day-chart\', \'day-of-week-chart\')" class="button button-secondary">Export as Image</button>';
+        echo '</div>';
+        echo '<canvas id="day-chart" width="800" height="400"></canvas>';
         echo '</div>';
         
         // Get time-series data for chart with performance optimization
@@ -1005,6 +934,9 @@ class QRCodeTracker_Admin {
         
         // Add scan hour data for JS with performance optimization
         $hour_series_data = QRCodeTracker_Report::get_scan_hour_series_data($this->log_table, $this->main_table, $where_clause, $where_params, 10);
+        
+        // Add day of week data for JS
+        $day_data = QRCodeTracker_Report::get_scan_day_of_week_data($this->log_table, $this->main_table, $where_clause, $where_params);
         $series_names = array_keys($hour_series_data);
         $series_colors = [
             '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40',
@@ -1029,8 +961,16 @@ class QRCodeTracker_Admin {
         }
         echo implode(',', $dataset_js);
         echo ']};';
+        
+        // Add day of week chart data
+        echo 'var dayChartData = {';
+        echo 'labels: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],';
+        echo 'values: [' . implode(',', array_values($day_data)) . ']';
+        echo '};';
+        
         echo '
 var hourChartInstance = null;
+var dayChartInstance = null;
 window.showHourChart = function() {
     var container = document.getElementById("hour-chart-container");
     if (container.style.display === "none") {
@@ -1088,8 +1028,112 @@ window.showHourChart = function() {
         container.style.display = "none";
     }
 }
+
+window.showDayChart = function() {
+    var container = document.getElementById("day-chart-container");
+    if (container.style.display === "none") {
+        container.style.display = "block";
+        
+        // Show loading indicator
+        container.innerHTML = \'<div style="text-align: center; padding: 40px;"><div class="spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #0073aa; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div><p>Loading chart...</p></div>\';
+        
+        // Use setTimeout to allow UI to update before heavy chart creation
+        setTimeout(function() {
+            try {
+                if (dayChartInstance) { dayChartInstance.destroy(); }
+                
+                // Restore canvas element
+                container.innerHTML = \'<canvas id="day-chart" width="800" height="400"></canvas>\';
+                var ctx = document.getElementById("day-chart").getContext("2d");
+                dayChartInstance = new Chart(ctx, {
+                    type: "bar",
+                    data: {
+                        labels: dayChartData.labels,
+                        datasets: [{
+                            label: "Scan Distribution by Day of Week",
+                            data: dayChartData.values,
+                            backgroundColor: "#36A2EB",
+                            borderColor: "#36A2EB",
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: {
+                            duration: 1000,
+                            easing: \'easeOutQuart\'
+                        },
+                        plugins: {
+                            title: { display: true, text: "Scan Distribution by Day of Week" }
+                        },
+                        scales: {
+                            y: { 
+                                beginAtZero: true, 
+                                ticks: { stepSize: 1, precision: 0 } 
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                container.innerHTML = \'<div style="text-align: center; padding: 40px; color: #d63638;"><p><strong>Error loading chart:</strong> \' + error.message + \'</p><p>Try refreshing the page or reducing the date range.</p></div>\';
+            }
+        }, 100);
+    } else {
+        container.style.display = "none";
+    }
+}
 ';
         echo '</script>';
+        
+        // Add chart export functionality
+        echo '<script>
+        function exportChartAsImage(canvasId, filename) {
+            try {
+                const canvas = document.getElementById(canvasId);
+                if (!canvas) {
+                    alert("Chart not found. Please make sure the chart is displayed first.");
+                    return;
+                }
+                
+                // Create a temporary canvas with higher resolution for better quality
+                const tempCanvas = document.createElement("canvas");
+                const ctx = tempCanvas.getContext("2d");
+                
+                // Set higher resolution (2x for better quality)
+                const scale = 2;
+                tempCanvas.width = canvas.width * scale;
+                tempCanvas.height = canvas.height * scale;
+                
+                // Scale the context to ensure correct drawing
+                ctx.scale(scale, scale);
+                
+                // Fill the canvas with white background
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw the original canvas content to the temp canvas
+                ctx.drawImage(canvas, 0, 0);
+                
+                // Convert to blob and download
+                tempCanvas.toBlob(function(blob) {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.style.display = "none";
+                    a.href = url;
+                    a.download = filename + "_" + new Date().toISOString().slice(0, 10) + ".png";
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                }, "image/png");
+                
+            } catch (error) {
+                console.error("Error exporting chart:", error);
+                alert("Error exporting chart. Please try again.");
+            }
+        }
+        </script>';
         
         echo '<table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Reporting ID</th><th>' . esc_html($group_label) . '</th><th>Total Scans</th><th>Unique Days</th><th>First Scan</th><th>Last Scan</th></tr></thead><tbody>';
         
@@ -1101,7 +1145,7 @@ window.showHourChart = function() {
             echo "<td>" . esc_html($row->postcode) . "</td>";
             echo "<td><a href='" . admin_url('admin.php?page=qr-city-report&city=' . urlencode($row->city)) . "'>" . esc_html($row->city) . "</a></td>";
             echo "<td>" . esc_html($row->tree) . "</td>";
-            echo "<td>" . esc_html($row->reporting_id) . "</td>";
+            echo "<td><a href='" . admin_url('admin.php?page=qr-reporting-id-report&reporting_id=' . urlencode($row->reporting_id)) . "'>" . esc_html($row->reporting_id) . "</a></td>";
             echo "<td>" . esc_html($row->group_value) . "</td>";
             echo "<td>" . number_format($row->scan_count) . "</td>";
             echo "<td>" . number_format($row->unique_days) . "</td>";
@@ -1122,7 +1166,7 @@ window.showHourChart = function() {
         echo '</tbody></table>';
     }
 
-    private function display_rollup_report($where_clause, $where_params) {
+    public function display_rollup_report($where_clause, $where_params) {
         global $wpdb;
         
         $group_field = 'l.postcode';
@@ -1153,6 +1197,263 @@ window.showHourChart = function() {
         
         echo '<h2>Rollup Report - ' . esc_html($group_label) . ' and ' . esc_html($other_label) . '</h2>';
         echo '<p><a href="' . esc_url(admin_url('admin.php?action=qr_tracker_export&export_type=rollup&group_type=postcode&' . http_build_query(array_diff_key($_GET, ['page' => '', 'view' => ''])))) . '" class="button button-primary">Export CSV</a> ';
+        echo '<button onclick="showRollupChart()" class="button">Show Daily Activity Chart</button> ';
+        echo '<button onclick="showRollupHourChart()" class="button">Show Hour Distribution Chart</button> ';
+        echo '<button onclick="showRollupDayChart()" class="button">Show Day of Week Chart</button></p>';
+        
+        // Add chart containers
+        echo '<div id="rollup-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
+        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
+        echo '<h3 style="margin: 0;">Daily Activity Chart</h3>';
+        echo '<button onclick="exportChartAsImage(\'rollup-chart\', \'rollup-daily-activity-chart\')" class="button button-secondary">Export as Image</button>';
+        echo '</div>';
+        echo '<canvas id="rollup-chart" width="800" height="400"></canvas>';
+        echo '</div>';
+        echo '<div id="rollup-hour-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 700px;">';
+        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
+        echo '<h3 style="margin: 0;">Hour Distribution Chart</h3>';
+        echo '<button onclick="exportChartAsImage(\'rollup-hour-chart\', \'rollup-hour-distribution-chart\')" class="button button-secondary">Export as Image</button>';
+        echo '</div>';
+        echo '<canvas id="rollup-hour-chart" width="600" height="600"></canvas>';
+        echo '</div>';
+        echo '<div id="rollup-day-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
+        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
+        echo '<h3 style="margin: 0;">Day of Week Chart</h3>';
+        echo '<button onclick="exportChartAsImage(\'rollup-day-chart\', \'rollup-day-of-week-chart\')" class="button button-secondary">Export as Image</button>';
+        echo '</div>';
+        echo '<canvas id="rollup-day-chart" width="800" height="400"></canvas>';
+        echo '</div>';
+        
+        // Get time-series data for chart with performance optimization
+        $time_series_data = QRCodeTracker_Report::get_time_series_data($this->log_table, $this->main_table, $where_clause, $where_params, 100);
+        
+        // Add scan hour data for JS with performance optimization
+        $hour_series_data = QRCodeTracker_Report::get_scan_hour_series_data($this->log_table, $this->main_table, $where_clause, $where_params, 10);
+        
+        // Add day of week data for JS
+        $day_data = QRCodeTracker_Report::get_scan_day_of_week_data($this->log_table, $this->main_table, $where_clause, $where_params);
+        
+        // Add chart data for JavaScript
+        echo '<script>';
+        echo 'var rollupTimeSeriesData = {';
+        echo 'dates: [';
+        $date_labels = [];
+        foreach ($time_series_data['dates'] as $date) {
+            $date_labels[] = "'" . esc_js($date) . "'";
+        }
+        echo implode(', ', $date_labels);
+        echo '],';
+        echo 'series: [';
+        $series_data = [];
+        foreach ($time_series_data['series'] as $series_name => $series_values) {
+            $series_data[] = '{name: "' . esc_js($series_name) . '", values: [' . implode(', ', $series_values) . ']}';
+        }
+        echo implode(', ', $series_data);
+        echo ']';
+        echo '};';
+        
+        // Add hour chart data
+        $series_names = array_keys($hour_series_data);
+        $series_colors = [
+            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40',
+            '#C9CBCF', '#4BC0C0', '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
+            '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384',
+            '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#FF6384'
+        ];
+        echo 'var rollupHourChartData = {';
+        echo 'labels: [';
+        $hour_labels = [];
+        for ($h = 0; $h < 24; $h++) {
+            $hour_labels[] = "'" . sprintf('%02d:00', $h) . "'";
+        }
+        echo implode(', ', $hour_labels);
+        echo '], datasets: [';
+        $dataset_js = [];
+        foreach ($series_names as $i => $series) {
+            $color = $series_colors[$i % count($series_colors)];
+            $data = $hour_series_data[$series];
+            $dataset_js[] = '{label: "' . addslashes($series) . '", data: [' . implode(',', $data) . '], fill: false, borderColor: "' . $color . '", backgroundColor: "' . $color . '", pointBackgroundColor: "' . $color . '", pointBorderColor: "#fff", pointHoverBackgroundColor: "#fff", pointHoverBorderColor: "' . $color . '"}';
+        }
+        echo implode(',', $dataset_js);
+        echo ']};';
+        
+        // Add day of week chart data
+        echo 'var rollupDayChartData = {';
+        echo 'labels: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],';
+        echo 'values: [' . implode(',', array_values($day_data)) . ']';
+        echo '};';
+        
+        echo '
+var rollupChartInstance = null;
+var rollupHourChartInstance = null;
+var rollupDayChartInstance = null;
+
+window.showRollupChart = function() {
+    var container = document.getElementById("rollup-chart-container");
+    if (container.style.display === "none") {
+        container.style.display = "block";
+        container.innerHTML = \'<div style="text-align: center; padding: 40px;"><div class="spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #0073aa; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div><p>Loading chart...</p></div>\';
+        
+        setTimeout(function() {
+            try {
+                if (rollupChartInstance) { rollupChartInstance.destroy(); }
+                
+                var datasets = [];
+                var colors = [
+                    "#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF", 
+                    "#FF9F40", "#FF6384", "#C9CBCF", "#4BC0C0", "#FF6384",
+                    "#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF"
+                ];
+                
+                for (var i = 0; i < rollupTimeSeriesData.series.length; i++) {
+                    var series = rollupTimeSeriesData.series[i];
+                    var colorIndex = i % colors.length;
+                    var baseColor = colors[colorIndex];
+                    var backgroundColor = baseColor + "20";
+                    
+                    datasets.push({
+                        label: series.name,
+                        data: series.values,
+                        borderColor: baseColor,
+                        backgroundColor: backgroundColor,
+                        borderWidth: 3,
+                        fill: false,
+                        tension: 0.1,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: baseColor,
+                        pointBorderColor: "#ffffff",
+                        pointBorderWidth: 2
+                    });
+                }
+                
+                container.innerHTML = \'<canvas id="rollup-chart" width="800" height="400"></canvas>\';
+                var ctx = document.getElementById("rollup-chart").getContext("2d");
+                rollupChartInstance = new Chart(ctx, {
+                    type: "line",
+                    data: {
+                        labels: rollupTimeSeriesData.dates.map(function(date) {
+                            var d = new Date(date);
+                            return (d.getMonth() + 1) + "/" + d.getDate();
+                        }),
+                        datasets: datasets
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: { duration: 1000, easing: \'easeOutQuart\' },
+                        elements: {
+                            point: { radius: rollupTimeSeriesData.dates.length > 50 ? 2 : 4, hoverRadius: rollupTimeSeriesData.dates.length > 50 ? 3 : 6 },
+                            line: { tension: 0.1 }
+                        },
+                        plugins: {
+                            title: { display: true, text: "Daily Scan Activity Over Time" },
+                            legend: { display: true, position: "top", labels: { usePointStyle: true, boxWidth: 6 } },
+                            tooltip: { mode: "index", intersect: false, enabled: rollupTimeSeriesData.dates.length <= 100 }
+                        },
+                        scales: {
+                            x: { display: true, title: { display: true, text: "Date" }, grid: { display: true } },
+                            y: { display: true, title: { display: true, text: "Number of Scans" }, grid: { display: true }, beginAtZero: true, ticks: { stepSize: 1, precision: 0 } }
+                        },
+                        interaction: { mode: "nearest", axis: "x", intersect: false }
+                    }
+                });
+            } catch (error) {
+                container.innerHTML = \'<div style="text-align: center; padding: 40px; color: #d63638;"><p><strong>Error loading chart:</strong> \' + error.message + \'</p><p>Try refreshing the page or reducing the date range.</p></div>\';
+            }
+        }, 100);
+    } else {
+        container.style.display = "none";
+    }
+}
+
+window.showRollupHourChart = function() {
+    var container = document.getElementById("rollup-hour-chart-container");
+    if (container.style.display === "none") {
+        container.style.display = "block";
+        container.innerHTML = \'<div style="text-align: center; padding: 40px;"><div class="spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #0073aa; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div><p>Loading chart...</p></div>\';
+        
+        setTimeout(function() {
+            try {
+                if (rollupHourChartInstance) { rollupHourChartInstance.destroy(); }
+                
+                container.innerHTML = \'<canvas id="rollup-hour-chart" width="600" height="600"></canvas>\';
+                var ctx = document.getElementById("rollup-hour-chart").getContext("2d");
+                rollupHourChartInstance = new Chart(ctx, {
+                    type: "radar",
+                    data: {
+                        labels: rollupHourChartData.labels,
+                        datasets: rollupHourChartData.datasets
+                    },
+                    options: {
+                        responsive: true,
+                        animation: { duration: 1000, easing: \'easeOutQuart\' },
+                        plugins: {
+                            legend: { position: "top", labels: { usePointStyle: true, boxWidth: 6 } },
+                            title: { display: true, text: "Scan Distribution by Hour of Day (Radar/Clock)" }
+                        },
+                        scales: {
+                            r: {
+                                beginAtZero: true,
+                                min: 0,
+                                max: Math.max.apply(null, [].concat.apply([], rollupHourChartData.datasets.map(function(ds){return ds.data;}))) + 1,
+                                ticks: { stepSize: 1, precision: 0 },
+                                pointLabels: { font: { size: 14 } }
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                container.innerHTML = \'<div style="text-align: center; padding: 40px; color: #d63638;"><p><strong>Error loading chart:</strong> \' + error.message + \'</p><p>Try refreshing the page or reducing the date range.</p></div>\';
+            }
+        }, 100);
+    } else {
+        container.style.display = "none";
+    }
+}
+
+window.showRollupDayChart = function() {
+    var container = document.getElementById("rollup-day-chart-container");
+    if (container.style.display === "none") {
+        container.style.display = "block";
+        container.innerHTML = \'<div style="text-align: center; padding: 40px;"><div class="spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #0073aa; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div><p>Loading chart...</p></div>\';
+        
+        setTimeout(function() {
+            try {
+                if (rollupDayChartInstance) { rollupDayChartInstance.destroy(); }
+                
+                container.innerHTML = \'<canvas id="rollup-day-chart" width="800" height="400"></canvas>\';
+                var ctx = document.getElementById("rollup-day-chart").getContext("2d");
+                rollupDayChartInstance = new Chart(ctx, {
+                    type: "bar",
+                    data: {
+                        labels: rollupDayChartData.labels,
+                        datasets: [{
+                            label: "Scan Distribution by Day of Week",
+                            data: rollupDayChartData.values,
+                            backgroundColor: "#36A2EB",
+                            borderColor: "#36A2EB",
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: { duration: 1000, easing: \'easeOutQuart\' },
+                        plugins: { title: { display: true, text: "Scan Distribution by Day of Week" } },
+                        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } }
+                    }
+                });
+            } catch (error) {
+                container.innerHTML = \'<div style="text-align: center; padding: 40px; color: #d63638;"><p><strong>Error loading chart:</strong> \' + error.message + \'</p><p>Try refreshing the page or reducing the date range.</p></div>\';
+            }
+        }, 100);
+    } else {
+        container.style.display = "none";
+    }
+}
+';
+        echo '</script>';
         
         echo '<table class="widefat"><thead><tr><th>' . esc_html($group_label) . '</th><th>' . esc_html($other_label) . '</th><th>City</th><th>Reporting ID</th><th>Total Scans</th><th>Unique Days</th><th>First Scan</th><th>Last Scan</th></tr></thead><tbody>';
         
@@ -1179,7 +1480,7 @@ window.showHourChart = function() {
             echo "<td>" . esc_html($row->group_value) . "</td>";
             echo "<td>" . esc_html($row->other_value) . "</td>";
             echo "<td><a href='" . admin_url('admin.php?page=qr-city-report&city=' . urlencode($row->city)) . "'>" . esc_html($row->city) . "</a></td>";
-            echo "<td>" . esc_html($row->reporting_id) . "</td>";
+            echo "<td><a href='" . admin_url('admin.php?page=qr-reporting-id-report&reporting_id=' . urlencode($row->reporting_id)) . "'>" . esc_html($row->reporting_id) . "</a></td>";
             echo "<td>" . number_format($row->scan_count) . "</td>";
             echo "<td>" . number_format($row->unique_days) . "</td>";
             echo "<td>" . esc_html($row->first_scan) . "</td>";
@@ -1213,6 +1514,20 @@ window.showHourChart = function() {
     }
 
     /**
+     * Hide hidden menu items from the admin menu
+     */
+    public function hide_hidden_menu_items() {
+        echo '<style>
+        /* Hide hidden QR tracker pages from menu */
+        #adminmenu a[href*="page=qr-single-report"],
+        #adminmenu a[href*="page=qr-city-report"],
+        #adminmenu a[href*="page=qr-reporting-id-report"] {
+            display: none !important;
+        }
+        </style>';
+    }
+
+    /**
      * Display single QR code report page
      */
     public function single_report_page() {
@@ -1234,5 +1549,17 @@ window.showHourChart = function() {
         // Create instance and display the page
         $city_report = new QRCodeTracker_CityReport($this->tracker);
         $city_report->display_city_report_page();
+    }
+
+    /**
+     * Display reporting ID QR code report page
+     */
+    public function reporting_id_report_page() {
+        // Include the reporting ID report class
+        require_once plugin_dir_path(__FILE__) . 'class-qr-code-reporting-id-report.php';
+        
+        // Create instance and display the page
+        $reporting_id_report = new QRCodeTracker_ReportingIDReport($this->tracker);
+        $reporting_id_report->display_reporting_id_report_page();
     }
 } 

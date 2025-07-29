@@ -1,6 +1,6 @@
 <?php
-// Individual QR Code Report functionality
-class QRCodeTracker_SingleReport {
+// Reporting ID QR Code Report functionality
+class QRCodeTracker_ReportingIDReport {
     private $main_table;
     private $log_table;
     private $tracker;
@@ -13,31 +13,17 @@ class QRCodeTracker_SingleReport {
     }
 
     /**
-     * Display the single QR code report page
+     * Display the reporting ID QR code report page
      */
-    public function display_single_report_page() {
+    public function display_reporting_id_report_page() {
         global $wpdb;
         
-        // Get QR code ID from URL parameter
-        $qr_id = isset($_GET['qr_id']) ? intval($_GET['qr_id']) : 0;
+        // Get reporting ID from URL parameter
+        $reporting_id = isset($_GET['reporting_id']) ? sanitize_text_field($_GET['reporting_id']) : '';
         
-        if (!$qr_id) {
-            echo '<div class="wrap"><h1>QR Code Report</h1>';
-            echo '<div class="error"><p>No QR code ID specified.</p></div>';
-            echo '<p><a href="' . admin_url('admin.php?page=qr-tracker') . '" class="button">Back to QR Tracker</a></p>';
-            echo '</div>';
-            return;
-        }
-
-        // Get QR code details
-        $qr_code = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$this->main_table} WHERE id = %d",
-            $qr_id
-        ));
-
-        if (!$qr_code) {
-            echo '<div class="wrap"><h1>QR Code Report</h1>';
-            echo '<div class="error"><p>QR code not found.</p></div>';
+        if (empty($reporting_id)) {
+            echo '<div class="wrap"><h1>Reporting ID QR Code Report</h1>';
+            echo '<div class="error"><p>No reporting ID specified.</p></div>';
             echo '<p><a href="' . admin_url('admin.php?page=qr-tracker') . '" class="button">Back to QR Tracker</a></p>';
             echo '</div>';
             return;
@@ -47,9 +33,9 @@ class QRCodeTracker_SingleReport {
         $date_from = isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '';
         $date_to = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '';
 
-        // Build WHERE clause for this specific QR code
-        $where_clause = "WHERE l.tracker_id = %d";
-        $where_params = [$qr_id];
+        // Build WHERE clause for this specific reporting ID
+        $where_clause = "WHERE t.reporting_id = %s";
+        $where_params = [$reporting_id];
         
         if (!empty($date_from)) {
             $where_clause .= " AND l.scanned_at >= %s";
@@ -61,45 +47,62 @@ class QRCodeTracker_SingleReport {
             $where_params[] = $date_to . ' 23:59:59';
         }
 
-        echo '<div class="wrap"><h1>QR Code Report</h1>';
+        echo '<div class="wrap"><h1>Reporting ID QR Code Report</h1>';
         
         // Back button
         echo '<p><a href="' . admin_url('admin.php?page=qr-tracker') . '" class="button">&larr; Back to QR Tracker</a></p>';
 
-        // QR Code Details Section
-        $this->display_qr_code_details($qr_code);
+        // Reporting ID Details Section
+        $this->display_reporting_id_details($reporting_id);
 
         // Filters Section
-        $this->display_filters($qr_id, $date_from, $date_to);
+        $this->display_filters($reporting_id, $date_from, $date_to);
 
         // Summary Statistics
-        $this->display_summary_stats($where_clause, $where_params, $qr_code);
+        $this->display_summary_stats($where_clause, $where_params, $reporting_id);
 
         // Charts Section
-        $this->display_charts($where_clause, $where_params, $qr_code);
+        $this->display_charts($where_clause, $where_params, $reporting_id);
+
+        // QR Codes with this Reporting ID
+        $this->display_reporting_id_qr_codes($where_clause, $where_params, $reporting_id);
 
         // Detailed Scan Logs
-        $this->display_scan_logs($where_clause, $where_params, $qr_code);
+        $this->display_scan_logs($where_clause, $where_params, $reporting_id);
 
         echo '</div>';
     }
 
     /**
-     * Display QR code details
+     * Display reporting ID details
      */
-    private function display_qr_code_details($qr_code) {
+    private function display_reporting_id_details($reporting_id) {
+        global $wpdb;
+        
+        // Get reporting ID statistics
+        $reporting_id_stats = $wpdb->get_row($wpdb->prepare(
+            "SELECT 
+                COUNT(DISTINCT t.id) as total_qr_codes,
+                SUM(t.scan_count) as total_scans,
+                MAX(t.last_scanned) as last_scanned,
+                COUNT(DISTINCT t.postcode) as unique_postcodes,
+                COUNT(DISTINCT t.city) as unique_cities,
+                COUNT(DISTINCT t.tree) as unique_trees
+            FROM {$this->main_table} t
+            WHERE t.reporting_id = %s",
+            $reporting_id
+        ));
+
         echo '<div style="background: #fff; border: 1px solid #ddd; padding: 20px; margin: 20px 0; border-radius: 4px;">';
-        echo '<h2>QR Code Details</h2>';
+        echo '<h2>Reporting ID Details: ' . esc_html($reporting_id) . '</h2>';
         echo '<table class="form-table" style="margin: 0;">';
-        echo '<tr><th style="width: 150px;">Postcode:</th><td>' . esc_html($qr_code->postcode) . '</td></tr>';
-        echo '<tr><th>City:</th><td>' . esc_html($qr_code->city) . '</td></tr>';
-        echo '<tr><th>Tree:</th><td>' . esc_html($qr_code->tree) . '</td></tr>';
-        echo '<tr><th>Label:</th><td>' . esc_html($qr_code->label) . '</td></tr>';
-        echo '<tr><th>Reporting ID:</th><td>' . esc_html($qr_code->reporting_id) . '</td></tr>';
-        echo '<tr><th>Total Scans:</th><td><strong>' . number_format($qr_code->scan_count) . '</strong></td></tr>';
-        echo '<tr><th>Last Scanned:</th><td>' . esc_html($qr_code->last_scanned) . '</td></tr>';
-        echo '<tr><th>URL:</th><td><code>' . esc_html($qr_code->url) . '</code></td></tr>';
-        echo '<tr><th>QR Code:</th><td><img src="' . esc_attr($this->tracker->generate_qr_code_image($qr_code->url)) . '" alt="QR Code" style="width:120px;height:120px;"></td></tr>';
+        echo '<tr><th style="width: 150px;">Reporting ID:</th><td><strong>' . esc_html($reporting_id) . '</strong></td></tr>';
+        echo '<tr><th>Total QR Codes:</th><td><strong>' . number_format($reporting_id_stats->total_qr_codes) . '</strong></td></tr>';
+        echo '<tr><th>Total Scans:</th><td><strong>' . number_format($reporting_id_stats->total_scans) . '</strong></td></tr>';
+        echo '<tr><th>Unique Postcodes:</th><td><strong>' . number_format($reporting_id_stats->unique_postcodes) . '</strong></td></tr>';
+        echo '<tr><th>Unique Cities:</th><td><strong>' . number_format($reporting_id_stats->unique_cities) . '</strong></td></tr>';
+        echo '<tr><th>Unique Trees:</th><td><strong>' . number_format($reporting_id_stats->unique_trees) . '</strong></td></tr>';
+        echo '<tr><th>Last Scanned:</th><td>' . esc_html($reporting_id_stats->last_scanned) . '</td></tr>';
         echo '</table>';
         echo '</div>';
     }
@@ -107,12 +110,12 @@ class QRCodeTracker_SingleReport {
     /**
      * Display filters
      */
-    private function display_filters($qr_id, $date_from, $date_to) {
+    private function display_filters($reporting_id, $date_from, $date_to) {
         echo '<div style="background: #f9f9f9; padding: 15px; margin: 20px 0; border: 1px solid #ddd; border-radius: 4px;">';
         echo '<h3>Filters</h3>';
         echo '<form method="get">';
-        echo '<input type="hidden" name="page" value="qr-single-report">';
-        echo '<input type="hidden" name="qr_id" value="' . esc_attr($qr_id) . '">';
+        echo '<input type="hidden" name="page" value="qr-reporting-id-report">';
+        echo '<input type="hidden" name="reporting_id" value="' . esc_attr($reporting_id) . '">';
         echo '<div style="margin-bottom: 10px;">';
         echo '<label>From:</label><input type="date" name="date_from" value="' . esc_attr($date_from) . '" style="margin-right: 10px;">';
         echo '<label>To:</label><input type="date" name="date_to" value="' . esc_attr($date_to) . '" style="margin-right: 10px;">';
@@ -128,37 +131,39 @@ class QRCodeTracker_SingleReport {
     /**
      * Display summary statistics
      */
-    private function display_summary_stats($where_clause, $where_params, $qr_code) {
+    private function display_summary_stats($where_clause, $where_params, $reporting_id) {
         global $wpdb;
         
-        // Get detailed statistics for this QR code
+        // Get detailed statistics for this reporting ID
         $sql = "SELECT 
                     COUNT(*) as total_scans,
                     COUNT(DISTINCT DATE(l.scanned_at)) as unique_days,
                     MIN(l.scanned_at) as first_scan,
                     MAX(l.scanned_at) as last_scan,
                     AVG(HOUR(l.scanned_at)) as avg_hour,
-                    COUNT(DISTINCT HOUR(l.scanned_at)) as active_hours
+                    COUNT(DISTINCT HOUR(l.scanned_at)) as active_hours,
+                    COUNT(DISTINCT l.tracker_id) as active_qr_codes
                 FROM {$this->log_table} l
+                JOIN {$this->main_table} t ON l.tracker_id = t.id
                 {$where_clause}";
         
         $stats = $wpdb->get_row($wpdb->prepare($sql, $where_params));
         
         if ($stats && $stats->total_scans > 0) {
-            echo '<div style="display: flex; gap: 20px; margin: 20px 0;">';
-            echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
+            echo '<div style="display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap;">';
+            echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center; min-width: 150px;">';
             echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($stats->total_scans) . '</div>';
             echo '<div style="color: #666; margin-top: 5px;">Total Scans</div>';
             echo '</div>';
-            echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
+            echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center; min-width: 150px;">';
             echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($stats->unique_days) . '</div>';
             echo '<div style="color: #666; margin-top: 5px;">Active Days</div>';
             echo '</div>';
-            echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
-            echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($stats->active_hours) . '</div>';
-            echo '<div style="color: #666; margin-top: 5px;">Active Hours</div>';
+            echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center; min-width: 150px;">';
+            echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($stats->active_qr_codes) . '</div>';
+            echo '<div style="color: #666; margin-top: 5px;">Active QR Codes</div>';
             echo '</div>';
-            echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
+            echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center; min-width: 150px;">';
             echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . sprintf('%.1f', $stats->avg_hour) . '</div>';
             echo '<div style="color: #666; margin-top: 5px;">Avg Hour</div>';
             echo '</div>';
@@ -173,11 +178,11 @@ class QRCodeTracker_SingleReport {
     /**
      * Display charts
      */
-    private function display_charts($where_clause, $where_params, $qr_code) {
+    private function display_charts($where_clause, $where_params, $reporting_id) {
         // Include Chart.js
         echo '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>';
         
-        // Get time series data for this QR code
+        // Get time series data for this reporting ID
         $time_series_data = $this->get_time_series_data($where_clause, $where_params);
         
         // Get hour distribution data
@@ -197,7 +202,7 @@ class QRCodeTracker_SingleReport {
         echo '<div id="line-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
         echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
         echo '<h3 style="margin: 0;">Daily Activity Chart</h3>';
-        echo '<button onclick="exportChartAsImage(\'line-chart\', \'single-qr-daily-activity-chart\')" class="button button-secondary">Export as Image</button>';
+        echo '<button onclick="exportChartAsImage(\'line-chart\', \'reporting-id-daily-activity-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="line-chart" width="800" height="400"></canvas>';
         echo '</div>';
@@ -206,7 +211,7 @@ class QRCodeTracker_SingleReport {
         echo '<div id="radar-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 700px;">';
         echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
         echo '<h3 style="margin: 0;">Hour Distribution Chart</h3>';
-        echo '<button onclick="exportChartAsImage(\'radar-chart\', \'single-qr-hour-distribution-chart\')" class="button button-secondary">Export as Image</button>';
+        echo '<button onclick="exportChartAsImage(\'radar-chart\', \'reporting-id-hour-distribution-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="radar-chart" width="600" height="600"></canvas>';
         echo '</div>';
@@ -215,7 +220,7 @@ class QRCodeTracker_SingleReport {
         echo '<div id="bar-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
         echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
         echo '<h3 style="margin: 0;">Day of Week Chart</h3>';
-        echo '<button onclick="exportChartAsImage(\'bar-chart\', \'single-qr-day-of-week-chart\')" class="button button-secondary">Export as Image</button>';
+        echo '<button onclick="exportChartAsImage(\'bar-chart\', \'reporting-id-day-of-week-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="bar-chart" width="800" height="400"></canvas>';
         echo '</div>';
@@ -268,8 +273,7 @@ class QRCodeTracker_SingleReport {
         echo 'responsive: true,';
         echo 'maintainAspectRatio: false,';
         echo 'plugins: {';
-        echo 'title: { display: true, text: "Daily Scan Activity" },';
-        echo 'legend: { display: true, position: "top" }';
+        echo 'title: { display: true, text: "Daily Scan Activity - ' . esc_js($reporting_id) . '" }';
         echo '},';
         echo 'scales: {';
         echo 'y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } }';
@@ -307,8 +311,7 @@ class QRCodeTracker_SingleReport {
         echo 'options: {';
         echo 'responsive: true,';
         echo 'plugins: {';
-        echo 'title: { display: true, text: "Scan Distribution by Hour of Day" },';
-        echo 'legend: { position: "top" }';
+        echo 'title: { display: true, text: "Scan Distribution by Hour of Day - ' . esc_js($reporting_id) . '" }';
         echo '},';
         echo 'scales: {';
         echo 'r: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } }';
@@ -344,8 +347,7 @@ class QRCodeTracker_SingleReport {
         echo 'responsive: true,';
         echo 'maintainAspectRatio: false,';
         echo 'plugins: {';
-        echo 'title: { display: true, text: "Scan Distribution by Day of Week" },';
-        echo 'legend: { position: "top" }';
+        echo 'title: { display: true, text: "Scan Distribution by Day of Week - ' . esc_js($reporting_id) . '" }';
         echo '},';
         echo 'scales: {';
         echo 'y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } }';
@@ -410,10 +412,64 @@ class QRCodeTracker_SingleReport {
     }
 
     /**
+     * Display QR codes with this reporting ID
+     */
+    private function display_reporting_id_qr_codes($where_clause, $where_params, $reporting_id) {
+        global $wpdb;
+        
+        // Get QR codes for this reporting ID
+        $sql = "SELECT 
+                    t.id,
+                    t.postcode,
+                    t.city,
+                    t.tree,
+                    t.label,
+                    t.scan_count,
+                    t.last_scanned,
+                    t.url
+                FROM {$this->main_table} t
+                WHERE t.reporting_id = %s
+                ORDER BY t.scan_count DESC";
+        
+        $qr_codes = $wpdb->get_results($wpdb->prepare($sql, $reporting_id));
+
+        echo '<div style="margin: 20px 0;">';
+        echo '<h2>QR Codes with Reporting ID: ' . esc_html($reporting_id) . '</h2>';
+        
+        if (!empty($qr_codes)) {
+            echo '<table class="widefat">';
+            echo '<thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Scans</th><th>Last Scanned</th><th>Actions</th></tr></thead>';
+            echo '<tbody>';
+            
+            foreach ($qr_codes as $qr_code) {
+                echo '<tr>';
+                echo '<td>' . esc_html($qr_code->postcode) . '</td>';
+                echo '<td><a href="' . admin_url('admin.php?page=qr-city-report&city=' . urlencode($qr_code->city)) . '">' . esc_html($qr_code->city) . '</a></td>';
+                echo '<td>' . esc_html($qr_code->tree) . '</td>';
+                echo '<td>' . esc_html($qr_code->label) . '</td>';
+                echo '<td>' . number_format($qr_code->scan_count) . '</td>';
+                echo '<td>' . esc_html($qr_code->last_scanned) . '</td>';
+                echo '<td><a href="' . admin_url('admin.php?page=qr-single-report&qr_id=' . $qr_code->id) . '" class="button">View Report</a></td>';
+                echo '</tr>';
+            }
+            
+            echo '</tbody></table>';
+        } else {
+            echo '<p>No QR codes found for this reporting ID.</p>';
+        }
+        
+        echo '</div>';
+    }
+
+    /**
      * Display scan logs
      */
-    private function display_scan_logs($where_clause, $where_params, $qr_code) {
+    private function display_scan_logs($where_clause, $where_params, $reporting_id) {
         global $wpdb;
+        
+        // Get filter parameters
+        $date_from = isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '';
+        $date_to = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '';
         
         // Get pagination parameters
         $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 50;
@@ -421,7 +477,7 @@ class QRCodeTracker_SingleReport {
         $offset = ($page - 1) * $limit;
 
         // Get total count
-        $count_sql = "SELECT COUNT(*) FROM {$this->log_table} l {$where_clause}";
+        $count_sql = "SELECT COUNT(*) FROM {$this->log_table} l JOIN {$this->main_table} t ON l.tracker_id = t.id {$where_clause}";
         $total_records = $wpdb->get_var($wpdb->prepare($count_sql, $where_params));
         
         $total_pages = ceil($total_records / $limit);
@@ -430,15 +486,15 @@ class QRCodeTracker_SingleReport {
         $offset = ($page - 1) * $limit;
 
         // Get scan logs
-        $sql = "SELECT * FROM {$this->log_table} l {$where_clause} ORDER BY l.scanned_at DESC LIMIT %d OFFSET %d";
+        $sql = "SELECT l.*, t.postcode, t.city, t.tree FROM {$this->log_table} l JOIN {$this->main_table} t ON l.tracker_id = t.id {$where_clause} ORDER BY l.scanned_at DESC LIMIT %d OFFSET %d";
         $query_params = array_merge($where_params, [$limit, $offset]);
         $logs = $wpdb->get_results($wpdb->prepare($sql, $query_params));
 
         echo '<div style="margin: 20px 0;">';
-        echo '<h2>Recent Scan Logs</h2>';
+        echo '<h2>Recent Scan Logs for Reporting ID: ' . esc_html($reporting_id) . '</h2>';
         
         // Export button
-        $export_url = admin_url('admin.php?action=qr_tracker_export&export_type=single_qr&qr_id=' . $qr_code->id);
+        $export_url = admin_url('admin.php?action=qr_tracker_export&export_type=reporting_id&reporting_id=' . urlencode($reporting_id));
         if (!empty($date_from)) $export_url .= '&date_from=' . urlencode($date_from);
         if (!empty($date_to)) $export_url .= '&date_to=' . urlencode($date_to);
         echo '<p><a href="' . esc_url($export_url) . '" class="button button-primary">Export CSV</a></p>';
@@ -448,7 +504,7 @@ class QRCodeTracker_SingleReport {
             $this->display_pagination($page, $total_pages, $total_records, $limit, $offset, 'top');
             
             echo '<table class="widefat">';
-            echo '<thead><tr><th>ID</th><th>Scanned At</th><th>Hour</th><th>Day of Week</th></tr></thead>';
+            echo '<thead><tr><th>ID</th><th>Postcode</th><th>City</th><th>Tree</th><th>Scanned At</th><th>Hour</th><th>Day of Week</th></tr></thead>';
             echo '<tbody>';
             
             foreach ($logs as $log) {
@@ -458,6 +514,9 @@ class QRCodeTracker_SingleReport {
                 
                 echo '<tr>';
                 echo '<td>' . esc_html($log->id) . '</td>';
+                echo '<td>' . esc_html($log->postcode) . '</td>';
+                echo '<td><a href="' . admin_url('admin.php?page=qr-city-report&city=' . urlencode($log->city)) . '">' . esc_html($log->city) . '</a></td>';
+                echo '<td>' . esc_html($log->tree) . '</td>';
                 echo '<td>' . esc_html($log->scanned_at) . '</td>';
                 echo '<td>' . esc_html($hour) . '</td>';
                 echo '<td>' . esc_html($day_of_week) . '</td>';
@@ -542,7 +601,7 @@ class QRCodeTracker_SingleReport {
     }
 
     /**
-     * Get time series data for this QR code
+     * Get time series data for this reporting ID
      */
     private function get_time_series_data($where_clause, $where_params) {
         global $wpdb;
@@ -556,6 +615,7 @@ class QRCodeTracker_SingleReport {
                     DATE(l.scanned_at) as scan_date,
                     COUNT(*) as scan_count
                 FROM {$this->log_table} l
+                JOIN {$this->main_table} t ON l.tracker_id = t.id
                 {$where_clause}
                 GROUP BY DATE(l.scanned_at)
                 ORDER BY scan_date";
@@ -592,7 +652,7 @@ class QRCodeTracker_SingleReport {
     }
 
     /**
-     * Get hour distribution data for this QR code
+     * Get hour distribution data for this reporting ID
      */
     private function get_hour_distribution_data($where_clause, $where_params) {
         global $wpdb;
@@ -601,6 +661,7 @@ class QRCodeTracker_SingleReport {
                     HOUR(l.scanned_at) as scan_hour,
                     COUNT(*) as scan_count
                 FROM {$this->log_table} l
+                JOIN {$this->main_table} t ON l.tracker_id = t.id
                 {$where_clause}
                 GROUP BY scan_hour
                 ORDER BY scan_hour";
@@ -617,7 +678,7 @@ class QRCodeTracker_SingleReport {
     }
 
     /**
-     * Get day of week distribution data for this QR code
+     * Get day of week distribution data for this reporting ID
      */
     private function get_day_of_week_distribution_data($where_clause, $where_params) {
         global $wpdb;
@@ -626,6 +687,7 @@ class QRCodeTracker_SingleReport {
                     DAYOFWEEK(l.scanned_at) as day_of_week,
                     COUNT(*) as scan_count
                 FROM {$this->log_table} l
+                JOIN {$this->main_table} t ON l.tracker_id = t.id
                 {$where_clause}
                 GROUP BY day_of_week
                 ORDER BY day_of_week";
