@@ -3,16 +3,22 @@
 class QRCodeTracker_DB {
     private $main_table;
     private $log_table;
+    private $teams_table;
+    private $user_teams_table;
 
     public function __construct() {
         global $wpdb;
         $this->main_table = $wpdb->prefix . 'qr_tracker';
         $this->log_table = $wpdb->prefix . 'qr_tracker_logs';
+        $this->teams_table = $wpdb->prefix . 'qr_tracker_teams';
+        $this->user_teams_table = $wpdb->prefix . 'qr_tracker_user_teams';
     }
 
     public function install() {
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
+        
+        // Main QR tracker table
         $sql_main = "CREATE TABLE {$this->main_table} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             url TEXT NOT NULL,
@@ -25,8 +31,19 @@ class QRCodeTracker_DB {
             last_scanned DATETIME DEFAULT NULL,
             message_1 LONGTEXT,
             message_2 LONGTEXT,
-            PRIMARY KEY (id)
+            show_popup TINYINT(1) DEFAULT 1,
+            shop_link VARCHAR(255),
+            shop_logo VARCHAR(255),
+            show_shop_link TINYINT(1) DEFAULT 1,
+            team_id BIGINT UNSIGNED DEFAULT NULL,
+            PRIMARY KEY (id),
+            KEY team_id (team_id),
+            KEY postcode (postcode),
+            KEY city (city),
+            KEY tree (tree)
         ) $charset_collate;";
+        
+        // Scan logs table
         $sql_log = "CREATE TABLE {$this->log_table} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             tracker_id BIGINT UNSIGNED NOT NULL,
@@ -44,13 +61,61 @@ class QRCodeTracker_DB {
             KEY scanned_at_postcode (scanned_at, postcode),
             KEY scanned_at_tree (scanned_at, tree)
         ) $charset_collate;";
+        
+        // Teams/Areas table
+        $sql_teams = "CREATE TABLE {$this->teams_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            name VARCHAR(100) NOT NULL,
+            description TEXT,
+            city VARCHAR(64),
+            postcode VARCHAR(32),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY city (city),
+            KEY postcode (postcode)
+        ) $charset_collate;";
+        
+        // User-Team relationships table
+        $sql_user_teams = "CREATE TABLE {$this->user_teams_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id BIGINT UNSIGNED NOT NULL,
+            team_id BIGINT UNSIGNED NOT NULL,
+            role ENUM('admin', 'member') DEFAULT 'member',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY user_team (user_id, team_id),
+            KEY user_id (user_id),
+            KEY team_id (team_id)
+        ) $charset_collate;";
+        
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql_main);
         dbDelta($sql_log);
+        dbDelta($sql_teams);
+        dbDelta($sql_user_teams);
+        
+        // Insert default team if none exists
+        $this->insert_default_team();
     }
 
     public function maybe_upgrade_schema() {
         global $wpdb;
+        
+        // Check if teams table exists
+        $teams_table_exists = $wpdb->get_var("SHOW TABLES LIKE '{$this->teams_table}'");
+        if (!$teams_table_exists) {
+            $this->create_teams_tables();
+        }
+        
+        // Check if team_id column exists in main table
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'team_id'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN team_id BIGINT UNSIGNED DEFAULT NULL AFTER show_shop_link");
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD INDEX team_id (team_id)");
+        }
+        
+        // Existing upgrade logic
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'message_1'");
         if (empty($columns)) {
             $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN message_1 LONGTEXT AFTER last_scanned");
@@ -84,8 +149,93 @@ class QRCodeTracker_DB {
             $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN city VARCHAR(64) AFTER postcode");
         }
         
+        // Add shop link and logo fields
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'shop_link'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN shop_link VARCHAR(255) AFTER show_popup");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'shop_logo'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN shop_logo VARCHAR(255) AFTER shop_link");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'show_shop_link'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN show_shop_link TINYINT(1) DEFAULT 1 AFTER shop_logo");
+        }
+        
         // Add performance indexes for existing installations
         $this->add_performance_indexes();
+    }
+    
+    private function create_teams_tables() {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+        
+        // Teams/Areas table
+        $sql_teams = "CREATE TABLE {$this->teams_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            name VARCHAR(100) NOT NULL,
+            description TEXT,
+            city VARCHAR(64),
+            postcode VARCHAR(32),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY city (city),
+            KEY postcode (postcode)
+        ) $charset_collate;";
+        
+        // User-Team relationships table
+        $sql_user_teams = "CREATE TABLE {$this->user_teams_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id BIGINT UNSIGNED NOT NULL,
+            team_id BIGINT UNSIGNED NOT NULL,
+            role ENUM('admin', 'member') DEFAULT 'member',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY user_team (user_id, team_id),
+            KEY user_id (user_id),
+            KEY team_id (team_id)
+        ) $charset_collate;";
+        
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql_teams);
+        dbDelta($sql_user_teams);
+        
+        // Insert default team if none exists
+        $this->insert_default_team();
+    }
+    
+    private function insert_default_team() {
+        global $wpdb;
+        
+        // Check if any teams exist
+        $team_count = $wpdb->get_var("SELECT COUNT(*) FROM {$this->teams_table}");
+        
+        if ($team_count == 0) {
+            // Insert default team
+            $wpdb->insert($this->teams_table, [
+                'name' => 'Default Team',
+                'description' => 'Default team for existing QR codes',
+                'city' => 'Default',
+                'postcode' => 'DEFAULT'
+            ]);
+            
+            $default_team_id = $wpdb->insert_id;
+            
+            // Assign all existing QR codes to default team
+            $wpdb->query("UPDATE {$this->main_table} SET team_id = {$default_team_id} WHERE team_id IS NULL");
+            
+            // Assign current user to default team as admin
+            $current_user_id = get_current_user_id();
+            if ($current_user_id) {
+                $wpdb->insert($this->user_teams_table, [
+                    'user_id' => $current_user_id,
+                    'team_id' => $default_team_id,
+                    'role' => 'admin'
+                ]);
+            }
+        }
     }
     
     private function add_performance_indexes() {
@@ -119,9 +269,13 @@ class QRCodeTracker_DB {
             global $wpdb;
             $main_table = $wpdb->prefix . 'qr_tracker';
             $log_table = $wpdb->prefix . 'qr_tracker_logs';
+            $teams_table = $wpdb->prefix . 'qr_tracker_teams';
+            $user_teams_table = $wpdb->prefix . 'qr_tracker_user_teams';
 
             $wpdb->query("DROP TABLE IF EXISTS {$main_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$log_table}");
+            $wpdb->query("DROP TABLE IF EXISTS {$teams_table}");
+            $wpdb->query("DROP TABLE IF EXISTS {$user_teams_table}");
 
             delete_option('qr_tracker_delete_on_uninstall');
         }

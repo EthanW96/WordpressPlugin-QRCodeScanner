@@ -4,12 +4,47 @@ class QRCodeTracker_ReportingIDReport {
     private $main_table;
     private $log_table;
     private $tracker;
+    private $teams;
 
-    public function __construct($tracker) {
+    public function __construct($tracker, $teams) {
         global $wpdb;
         $this->main_table = $wpdb->prefix . 'qr_tracker';
         $this->log_table = $wpdb->prefix . 'qr_tracker_logs';
         $this->tracker = $tracker;
+        $this->teams = $teams;
+    }
+
+    /**
+     * Build team access restrictions for queries
+     * @return array Array with WHERE clause and parameters
+     */
+    private function build_team_access_restrictions() {
+        if (!$this->teams) {
+            return ['', []];
+        }
+        
+        $user_id = get_current_user_id();
+        if (!$user_id) {
+            return ['', []];
+        }
+        
+        // Super admins can access all data
+        if (current_user_can('manage_network')) {
+            return ['', []];
+        }
+        
+        // Get user's accessible teams
+        $accessible_teams = $this->teams->get_accessible_teams();
+        if (empty($accessible_teams)) {
+            // User has no teams, return no access
+            return [' AND 1=0', []];
+        }
+        
+        // Build team restriction
+        $team_ids = array_column($accessible_teams, 'id');
+        $placeholders = implode(',', array_fill(0, count($team_ids), '%d'));
+        
+        return [" AND t.team_id IN ($placeholders)", $team_ids];
     }
 
     /**
@@ -79,7 +114,8 @@ class QRCodeTracker_ReportingIDReport {
     private function display_reporting_id_details($reporting_id) {
         global $wpdb;
         
-        // Get reporting ID statistics
+        // Get reporting ID statistics with team access restrictions
+        list($team_restriction, $team_params) = $this->build_team_access_restrictions();
         $reporting_id_stats = $wpdb->get_row($wpdb->prepare(
             "SELECT 
                 COUNT(DISTINCT t.id) as total_qr_codes,
@@ -89,8 +125,8 @@ class QRCodeTracker_ReportingIDReport {
                 COUNT(DISTINCT t.city) as unique_cities,
                 COUNT(DISTINCT t.tree) as unique_trees
             FROM {$this->main_table} t
-            WHERE t.reporting_id = %s",
-            $reporting_id
+            WHERE t.reporting_id = %s{$team_restriction}",
+            array_merge([$reporting_id], $team_params)
         ));
 
         echo '<div style="background: #fff; border: 1px solid #ddd; padding: 20px; margin: 20px 0; border-radius: 4px;">';

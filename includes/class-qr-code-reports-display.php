@@ -7,12 +7,47 @@ class QRCodeTracker_ReportsDisplay {
     private $main_table;
     private $log_table;
     private $search;
+    private $teams;
 
-    public function __construct($search) {
+    public function __construct($search, $teams) {
         global $wpdb;
         $this->main_table = $wpdb->prefix . 'qr_tracker';
         $this->log_table = $wpdb->prefix . 'qr_tracker_logs';
         $this->search = $search;
+        $this->teams = $teams;
+    }
+
+    /**
+     * Build team access restrictions for queries
+     * @return array Array with WHERE clause and parameters
+     */
+    private function build_team_access_restrictions() {
+        if (!$this->teams) {
+            return ['', []];
+        }
+        
+        $user_id = get_current_user_id();
+        if (!$user_id) {
+            return ['', []];
+        }
+        
+        // Super admins can access all data
+        if (current_user_can('manage_network')) {
+            return ['', []];
+        }
+        
+        // Get user's accessible teams
+        $accessible_teams = $this->teams->get_accessible_teams();
+        if (empty($accessible_teams)) {
+            // User has no teams, return no access
+            return [' AND 1=0', []];
+        }
+        
+        // Build team restriction
+        $team_ids = array_column($accessible_teams, 'id');
+        $placeholders = implode(',', array_fill(0, count($team_ids), '%d'));
+        
+        return [" AND t.team_id IN ($placeholders)", $team_ids];
     }
 
     /**
@@ -50,6 +85,11 @@ class QRCodeTracker_ReportsDisplay {
         // Build WHERE clause for date filtering
         $where_clause = "WHERE 1=1";
         $where_params = [];
+        
+        // Add team access restrictions
+        list($team_restriction, $team_params) = $this->build_team_access_restrictions();
+        $where_clause .= $team_restriction;
+        $where_params = array_merge($where_params, $team_params);
         
         if (!empty($date_from)) {
             $where_clause .= " AND l.scanned_at >= %s";
@@ -122,30 +162,32 @@ class QRCodeTracker_ReportsDisplay {
             }
         }
     
-        // Get available postcodes, trees, and cities for filters - only those with scan data
-        $postcodes = $wpdb->get_col("
+        // Get available postcodes, trees, and cities for filters - only those with scan data and team access
+        list($team_restriction, $team_params) = $this->build_team_access_restrictions();
+        
+        $postcodes = $wpdb->get_col($wpdb->prepare("
             SELECT DISTINCT l.postcode 
             FROM {$this->log_table} l 
             JOIN {$this->main_table} t ON l.tracker_id = t.id 
-            WHERE l.postcode IS NOT NULL AND l.postcode != '' 
+            WHERE l.postcode IS NOT NULL AND l.postcode != '' {$team_restriction}
             ORDER BY l.postcode
-        ");
+        ", $team_params));
         
-        $trees = $wpdb->get_col("
+        $trees = $wpdb->get_col($wpdb->prepare("
             SELECT DISTINCT l.tree 
             FROM {$this->log_table} l 
             JOIN {$this->main_table} t ON l.tracker_id = t.id 
-            WHERE l.tree IS NOT NULL AND l.tree != '' 
+            WHERE l.tree IS NOT NULL AND l.tree != '' {$team_restriction}
             ORDER BY l.tree
-        ");
+        ", $team_params));
         
-        $cities = $wpdb->get_col("
+        $cities = $wpdb->get_col($wpdb->prepare("
             SELECT DISTINCT l.city 
             FROM {$this->log_table} l 
             JOIN {$this->main_table} t ON l.tracker_id = t.id 
-            WHERE l.city IS NOT NULL AND l.city != '' 
+            WHERE l.city IS NOT NULL AND l.city != '' {$team_restriction}
             ORDER BY l.city
-        ");
+        ", $team_params));
     
         $this->display_styles();
         $this->display_search_interface($search_terms, $view_type, $date_from, $date_to, $postcode_filter, $tree_filter, $city_filter, $reporting_id_filter, $postcodes, $trees, $cities);

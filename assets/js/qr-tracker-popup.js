@@ -125,6 +125,11 @@
                 if (response.success && response.message_1 && response.message_2) {
                     $('#qr-tracker-message-1').html(response.message_1);
                     $('#qr-tracker-message-2').html(response.message_2);
+                    
+                    // Update shop link if available
+                    if (response.shop_link_html) {
+                        $('.qr-shop-link-container').html(response.shop_link_html);
+                    }
                 }
             },
             error: function(xhr, status, error) {

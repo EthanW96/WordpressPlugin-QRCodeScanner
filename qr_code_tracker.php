@@ -2,7 +2,7 @@
 /*
 Plugin Name: QR Code Tracker
 Description: Generate and track QR code links with query strings, including scan tracking and postcode rollups, plus dynamic HTML messages via shortcodes.
-Version: 0.9993
+Version: 0.9994
 Author: Ethan Widen
 */
 
@@ -14,6 +14,7 @@ if (file_exists(__DIR__ . '/vendor/autoload.php')) {
 
 require_once __DIR__ . '/includes/class-qr-code-db.php';
 require_once __DIR__ . '/includes/class-qr-code-admin.php';
+require_once __DIR__ . '/includes/class-qr-code-teams.php';
 require_once __DIR__ . '/includes/class-qr-code-export.php';
 require_once __DIR__ . '/includes/class-qr-code-report.php';
 require_once __DIR__ . '/includes/class-qr-code-single-report.php';
@@ -32,6 +33,7 @@ class QRCodeTracker {
     private $db;
     private $export;
     private $popup;
+    private $teams;
 
     public function __construct() {
         global $wpdb;
@@ -43,7 +45,8 @@ class QRCodeTracker {
         register_uninstall_hook(__FILE__, ['QRCodeTracker_DB', 'uninstall']);
         add_action('plugins_loaded', [$this->db, 'maybe_upgrade_schema']);
 
-        $this->admin = new QRCodeTracker_Admin($this);
+        $this->teams = new QRCodeTracker_Teams();
+        $this->admin = new QRCodeTracker_Admin($this, $this->teams);
         add_action('admin_menu', [$this->admin, 'admin_menu']);
 
         $this->export = new QRCodeTracker_Export();
@@ -55,6 +58,7 @@ class QRCodeTracker {
         add_action('wp', [$this, 'track_visit']);
         add_shortcode('qr_tracker_message_1', [$this, 'shortcode_message_1']);
         add_shortcode('qr_tracker_message_2', [$this, 'shortcode_message_2']);
+        add_shortcode('qr_tracker_shop_link', [$this, 'shortcode_shop_link']);
         add_action('admin_action_qr_tracker_download_qr', [$this, 'handle_download_qr']);
     }
 
@@ -191,9 +195,44 @@ class QRCodeTracker {
 
     public function shortcode_message_2() {
         $tracker = $this->get_current_tracker();
-        return $tracker && !empty($tracker->message_2) ? $tracker->message_2 : '';
+        return $tracker && !empty($tracker->message_2) ? $tracker->message_2 : 'Thank you for visiting! Look below to receive a free book, make a comment, listen to a song, and watch a children\'s story.';
     }
 
+    public function shortcode_shop_link($atts = []) {
+        $tracker = $this->get_current_tracker();
+        
+        if (!$tracker) {
+            return '';
+        }
+        
+        // Check if shop link should be shown for this QR code
+        if (!$tracker->show_shop_link) {
+            return '';
+        }
+        
+        // Get shop link and logo from QR code entry, fallback to defaults
+        $shop_link = !empty($tracker->shop_link) ? $tracker->shop_link : get_option('qr_tracker_default_shop_link', '');
+        $shop_logo = !empty($tracker->shop_logo) ? $tracker->shop_logo : get_option('qr_tracker_default_shop_logo', '');
+        
+        if (empty($shop_link) || empty($shop_logo)) {
+            return '';
+        }
+        
+        // Parse shortcode attributes
+        $atts = shortcode_atts([
+            'class' => 'qr-shop-link',
+            'target' => '_blank',
+            'max_width' => '200px'
+        ], $atts, 'qr_tracker_shop_link');
+        
+        $output = '<div class="' . esc_attr($atts['class']) . '">';
+        $output .= '<a href="' . esc_url($shop_link) . '" target="' . esc_attr($atts['target']) . '" rel="noopener noreferrer">';
+        $output .= '<img src="' . esc_url($shop_logo) . '" alt="Shop Logo" style="max-width: ' . esc_attr($atts['max_width']) . '; height: auto;">';
+        $output .= '</a>';
+        $output .= '</div>';
+        
+        return $output;
+    }
 
 
     // 3. Add a helper to generate a QR code image as a data URI

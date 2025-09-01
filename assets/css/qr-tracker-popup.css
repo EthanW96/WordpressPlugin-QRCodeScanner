@@ -172,4 +172,28 @@
 .qr-tracker-popup-trigger:focus {
     outline: 2px solid #0073aa;
     outline-offset: 2px;
+}
+
+/* Shop Link Styles */
+.qr-shop-link {
+    text-align: center;
+    margin: 20px 0;
+}
+
+.qr-shop-link img {
+    max-width: 200px;
+    height: auto;
+    border-radius: 5px;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.qr-shop-link img:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.qr-shop-link-container {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #e0e0e0;
 } 

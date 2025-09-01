@@ -4,12 +4,14 @@ class QRCodeTracker_SingleReport {
     private $main_table;
     private $log_table;
     private $tracker;
+    private $teams;
 
-    public function __construct($tracker) {
+    public function __construct($tracker, $teams) {
         global $wpdb;
         $this->main_table = $wpdb->prefix . 'qr_tracker';
         $this->log_table = $wpdb->prefix . 'qr_tracker_logs';
         $this->tracker = $tracker;
+        $this->teams = $teams;
     }
 
     /**
@@ -38,6 +40,15 @@ class QRCodeTracker_SingleReport {
         if (!$qr_code) {
             echo '<div class="wrap"><h1>QR Code Report</h1>';
             echo '<div class="error"><p>QR code not found.</p></div>';
+            echo '<p><a href="' . admin_url('admin.php?page=qr-tracker') . '" class="button">Back to QR Tracker</a></p>';
+            echo '</div>';
+            return;
+        }
+
+        // Check team access permissions
+        if ($this->teams && !$this->teams->user_can_access_team(get_current_user_id(), $qr_code->team_id)) {
+            echo '<div class="wrap"><h1>QR Code Report</h1>';
+            echo '<div class="error"><p>You do not have permission to view this QR code report.</p></div>';
             echo '<p><a href="' . admin_url('admin.php?page=qr-tracker') . '" class="button">Back to QR Tracker</a></p>';
             echo '</div>';
             return;

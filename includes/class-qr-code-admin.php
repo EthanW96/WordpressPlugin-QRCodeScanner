@@ -4,12 +4,14 @@ class QRCodeTracker_Admin {
     private $main_table;
     private $log_table;
     private $tracker;
+    private $teams;
 
-    public function __construct($tracker) {
+    public function __construct($tracker, $teams) {
         global $wpdb;
         $this->main_table = $wpdb->prefix . 'qr_tracker';
         $this->log_table = $wpdb->prefix . 'qr_tracker_logs';
         $this->tracker = $tracker;
+        $this->teams = $teams;
         
         // Initialize search functionality
         require_once plugin_dir_path(__FILE__) . 'class-qr-code-search.php';
@@ -20,14 +22,19 @@ class QRCodeTracker_Admin {
         add_menu_page('QR Tracker', 'QR Tracker', 'manage_options', 'qr-tracker', [$this, 'admin_page'], 'data:image/svg+xml;base64,' . base64_encode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h6v6H3V3zm2 2v2h2V5H5zm8-2h6v6h-6V3zm2 2v2h2V5h-2zM3 11h6v6H3v-6zm2 2v2h2v-2H5zm8 0h6v6h-6v-6zm2 2v2h2v-2h-2z"/></svg>'));
         add_submenu_page('qr-tracker', 'Scan Logs', 'Scan Logs', 'manage_options', 'qr-scan-logs', [$this, 'scan_logs_page']);
         add_submenu_page('qr-tracker', 'Reports', 'Reports', 'manage_options', 'qr-reports', [$this, 'reports_page']);
+        add_submenu_page('qr-tracker', 'Teams', 'Teams', 'manage_options', 'qr-teams', [$this, 'teams_page']);
         // Hidden pages - accessible but not shown in menu
         add_submenu_page('qr-tracker', 'Single QR Report', 'Single QR Report', 'manage_options', 'qr-single-report', [$this, 'single_report_page']);
         add_submenu_page('qr-tracker', 'City Report', 'City Report', 'manage_options', 'qr-city-report', [$this, 'city_report_page']);
         add_submenu_page('qr-tracker', 'Reporting ID Report', 'Reporting ID Report', 'manage_options', 'qr-reporting-id-report', [$this, 'reporting_id_report_page']);
-        add_submenu_page('qr-tracker', 'Settings', 'Settings', 'manage_options', 'qr-settings', [$this, 'settings_page']);
+        // Add notification badge for orphaned QR codes
+        $orphaned_count = $this->teams->get_orphaned_qr_codes_count();
+        $settings_title = $orphaned_count > 0 ? "Settings <span class='update-plugins count-{$orphaned_count}'><span class='plugin-count'>{$orphaned_count}</span></span>" : 'Settings';
+        add_submenu_page('qr-tracker', 'Settings', $settings_title, 'manage_options', 'qr-settings', [$this, 'settings_page']);
         
         // Hide the hidden pages from the menu
         add_action('admin_head', [$this, 'hide_hidden_menu_items']);
+        add_action('admin_head', [$this, 'add_admin_styles']);
     }
 
     public function admin_page() {
@@ -44,6 +51,10 @@ class QRCodeTracker_Admin {
             $message_1 = wp_kses_post($_POST['qr_message_1']);
             $message_2 = wp_kses_post($_POST['qr_message_2']);
             $show_popup = isset($_POST['qr_show_popup']) ? 1 : 0;
+            $shop_link = esc_url_raw($_POST['qr_shop_link']);
+            $shop_logo = esc_url_raw($_POST['qr_shop_logo']);
+            $show_shop_link = isset($_POST['qr_show_shop_link']) ? 1 : 0;
+            $team_id = !empty($_POST['qr_team']) ? intval($_POST['qr_team']) : null;
             
             // Validate fields for spaces and special characters
             $validation_errors = [];
@@ -60,6 +71,11 @@ class QRCodeTracker_Admin {
                 $validation_errors[] = 'Tree cannot contain spaces or special characters.';
             }
             
+            // Validate team access
+            if ($team_id && !$this->teams->user_can_access_team(get_current_user_id(), $team_id)) {
+                $validation_errors[] = 'You do not have access to the selected team.';
+            }
+            
             if (!empty($validation_errors)) {
                 echo '<div class="error"><p><strong>Validation Errors:</strong></p><ul>';
                 foreach ($validation_errors as $error) {
@@ -74,7 +90,7 @@ class QRCodeTracker_Admin {
                 if ($existing) {
                     echo '<div class="error"><p>Error: A QR code with this URL already exists (ID: ' . $existing->id . ', Postcode: ' . $existing->postcode . ', Tree: ' . $existing->tree . '). Please use a different URL.</p></div>';
                 } else {
-                    $wpdb->insert($this->main_table, compact('url', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup'));
+                    $wpdb->insert($this->main_table, compact('url', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id'));
                     echo '<div class="updated"><p>QR Code entry saved.</p></div>';
                 }
             }
@@ -93,6 +109,10 @@ class QRCodeTracker_Admin {
                 $message_1 = wp_kses_post($_POST['qr_message_1']);
                 $message_2 = wp_kses_post($_POST['qr_message_2']);
                 $show_popup = isset($_POST['qr_show_popup']) ? 1 : 0;
+                $shop_link = esc_url_raw($_POST['qr_shop_link']);
+                $shop_logo = esc_url_raw($_POST['qr_shop_logo']);
+                $show_shop_link = isset($_POST['qr_show_shop_link']) ? 1 : 0;
+                $team_id = !empty($_POST['qr_team']) ? intval($_POST['qr_team']) : null;
                 
                 // Validate fields for spaces and special characters
                 $validation_errors = [];
@@ -101,12 +121,17 @@ class QRCodeTracker_Admin {
                     $validation_errors[] = 'Postcode cannot contain spaces or special characters (including hyphens).';
                 }
                 
-                            if (preg_match('/[\s\W]/', $city) && !preg_match('/^[A-Za-z0-9-]+$/', $city)) {
-                $validation_errors[] = 'City cannot contain spaces or special characters (except hyphens).';
-            }
+                if (preg_match('/[\s\W]/', $city) && !preg_match('/^[A-Za-z0-9-]+$/', $city)) {
+                    $validation_errors[] = 'City cannot contain spaces or special characters (except hyphens).';
+                }
                 
                 if (preg_match('/[\s\W]/', $tree)) {
                     $validation_errors[] = 'Tree cannot contain spaces or special characters.';
+                }
+                
+                // Validate team access
+                if ($team_id && !$this->teams->user_can_access_team(get_current_user_id(), $team_id)) {
+                    $validation_errors[] = 'You do not have access to the selected team.';
                 }
                 
                 if (!empty($validation_errors)) {
@@ -120,10 +145,10 @@ class QRCodeTracker_Admin {
                     
                     // If no scans exist, allow URL editing
                     if ($row->scan_count == 0) {
-                        $update_data = compact('url', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup');
+                        $update_data = compact('url', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
                     } else {
                         // If scans exist, only update non-URL fields
-                        $update_data = compact('postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup');
+                        $update_data = compact('postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
                     }
                     
                     $wpdb->update($this->main_table, $update_data, ['id' => $edit_id]);
@@ -136,14 +161,21 @@ class QRCodeTracker_Admin {
 
         if (isset($_GET['delete_id'])) {
             $delete_id = intval($_GET['delete_id']);
-            $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count FROM {$this->main_table} WHERE id = %d", $delete_id));
+            $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count, team_id FROM {$this->main_table} WHERE id = %d", $delete_id));
             
-            if ($row && $row->scan_count == 0) {
-                // Only allow deletion if no scans exist
-                $wpdb->delete($this->main_table, ['id' => $delete_id]);
-                echo '<div class="updated"><p>QR Code entry deleted.</p></div>';
+            if ($row) {
+                // Check if user can access this QR code
+                if ($row->team_id && !$this->teams->user_can_access_team(get_current_user_id(), $row->team_id)) {
+                    echo '<div class="error"><p>You do not have permission to delete this QR code.</p></div>';
+                } elseif ($row->scan_count == 0) {
+                    // Only allow deletion if no scans exist
+                    $wpdb->delete($this->main_table, ['id' => $delete_id]);
+                    echo '<div class="updated"><p>QR Code entry deleted.</p></div>';
+                } else {
+                    echo '<div class="error"><p>Cannot delete QR code with existing scan data. Use the merge function instead.</p></div>';
+                }
             } else {
-                echo '<div class="error"><p>Cannot delete QR code with existing scan data. Use the merge function instead.</p></div>';
+                echo '<div class="error"><p>QR Code not found.</p></div>';
             }
         }
 
@@ -210,7 +242,12 @@ class QRCodeTracker_Admin {
             $edit_id = intval($_GET['edit_id']);
             $edit_data = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->main_table} WHERE id = %d", $edit_id));
             if ($edit_data) {
-                $editing = true;
+                // Check if user can access this QR code
+                if ($edit_data->team_id && !$this->teams->user_can_access_team(get_current_user_id(), $edit_data->team_id)) {
+                    echo '<div class="error"><p>You do not have permission to edit this QR code.</p></div>';
+                } else {
+                    $editing = true;
+                }
             } else {
                 echo '<div class="error"><p>QR Code not found.</p></div>';
             }
@@ -223,7 +260,12 @@ class QRCodeTracker_Admin {
             $merge_id = intval($_GET['merge_id']);
             $merge_data = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->main_table} WHERE id = %d", $merge_id));
             if ($merge_data && $merge_data->scan_count > 0) {
-                $merging = true;
+                // Check if user can access this QR code
+                if ($merge_data->team_id && !$this->teams->user_can_access_team(get_current_user_id(), $merge_data->team_id)) {
+                    echo '<div class="error"><p>You do not have permission to merge this QR code.</p></div>';
+                } else {
+                    $merging = true;
+                }
             } else {
                 echo '<div class="error"><p>Cannot merge QR code with no scan data. Use delete instead.</p></div>';
             }
@@ -231,11 +273,11 @@ class QRCodeTracker_Admin {
 
         // Display the add QR code form at the top
         if ($merging && $merge_data) {
-            // Get all other QR codes for target selection
-            $target_options = $wpdb->get_results($wpdb->prepare(
-                "SELECT id, postcode, tree, label, url FROM {$this->main_table} WHERE id != %d ORDER BY postcode, tree",
-                $merge_data->id
-            ));
+            // Get accessible QR codes for target selection (excluding the source)
+            $target_options = $this->teams->get_accessible_qr_codes();
+            $target_options = array_filter($target_options, function($option) use ($merge_data) {
+                return $option->id != $merge_data->id;
+            });
             
             echo '<h2>Merge QR Code</h2>
             <p><strong>Source QR Code:</strong> Postcode: ' . esc_html($merge_data->postcode) . ' - Tree: ' . esc_html($merge_data->tree) . ' (' . $merge_data->scan_count . ' scans)</p>
@@ -315,7 +357,27 @@ class QRCodeTracker_Admin {
                         <td>'; wp_editor($edit_data->message_2, 'qr_message_2', ['textarea_rows' => 5]); echo '<p class="description"><strong>Shortcode:</strong> <code>[qr_tracker_message_2]</code> - Use this shortcode in your WordPress pages/posts to display this message when someone scans the QR code.</p></td></tr>
                     <tr><th><label for="qr_show_popup">Show Popup:</label></th>
                         <td><input type="checkbox" name="qr_show_popup" id="qr_show_popup" value="1"' . ($edit_data->show_popup ? ' checked' : '') . '> <label for="qr_show_popup">Display popup with messages when QR code is scanned</label><p class="description">If checked, a popup will appear showing both messages when someone scans this QR code.</p></td></tr>
-                </table>
+                    <tr><th><label for="qr_shop_link">Shop Link:</label></th>
+                        <td><input type="url" name="qr_shop_link" id="qr_shop_link" value="' . esc_attr($edit_data->shop_link) . '" placeholder="https://example.com/shop"><p class="description">URL to your shop. Leave empty to use default from settings.</p></td></tr>
+                    <tr><th><label for="qr_shop_logo">Shop Logo URL:</label></th>
+                        <td><input type="url" name="qr_shop_logo" id="qr_shop_logo" value="' . esc_attr($edit_data->shop_logo) . '" placeholder="https://example.com/logo.png"><p class="description">URL to your shop logo image. Leave empty to use default from settings.</p></td></tr>
+                    <tr><th><label for="qr_show_shop_link">Show Shop Link:</label></th>
+                        <td><input type="checkbox" name="qr_show_shop_link" id="qr_show_shop_link" value="1"' . ($edit_data->show_shop_link ? ' checked' : '') . '> <label for="qr_show_shop_link">Display shop logo as clickable link when QR code is scanned</label><p class="description">If checked, the shop logo will be displayed as a clickable link using the <code>[qr_tracker_shop_link]</code> shortcode. Both shop link and logo URL must be set.</p></td></tr>';
+            
+            // Team selection
+            $accessible_teams = $this->teams->get_accessible_teams();
+            echo '<tr><th><label for="qr_team">Team:</label></th><td>';
+            echo '<select name="qr_team" id="qr_team">';
+            echo '<option value="">No Team</option>';
+            foreach ($accessible_teams as $team) {
+                $selected = ($edit_data->team_id == $team->id) ? ' selected' : '';
+                echo '<option value="' . $team->id . '"' . $selected . '>' . esc_html($team->name) . '</option>';
+            }
+            echo '</select>';
+            echo '<p class="description">Select the team that manages this QR code. You can only assign QR codes to teams you are a member of.</p>';
+            echo '</td></tr>';
+            
+            echo '</table>
                 <p><input type="submit" name="qr_edit_submit" class="button button-primary" value="Update QR Code"></p>
             </form>';
             
@@ -435,7 +497,26 @@ class QRCodeTracker_Admin {
                         <td>'; wp_editor('', 'qr_message_2', ['textarea_rows' => 5]); echo '<p class="description"><strong>Shortcode:</strong> <code>[qr_tracker_message_2]</code> - Use this shortcode in your WordPress pages/posts to display this message when someone scans the QR code.</p></td></tr>
                     <tr><th><label for="qr_show_popup">Show Popup:</label></th>
                         <td><input type="checkbox" name="qr_show_popup" id="qr_show_popup" value="1" checked> <label for="qr_show_popup">Display popup with messages when QR code is scanned</label><p class="description">If checked, a popup will appear showing both messages when someone scans this QR code.</p></td></tr>
-                </table>
+                    <tr><th><label for="qr_shop_link">Shop Link:</label></th>
+                        <td><input type="url" name="qr_shop_link" id="qr_shop_link" placeholder="https://example.com/shop"><p class="description">URL to your shop. Leave empty to use default from settings.</p></td></tr>
+                    <tr><th><label for="qr_shop_logo">Shop Logo URL:</label></th>
+                        <td><input type="url" name="qr_shop_logo" id="qr_shop_logo" placeholder="https://example.com/logo.png"><p class="description">URL to your shop logo image. Leave empty to use default from settings.</p></td></tr>
+                    <tr><th><label for="qr_show_shop_link">Show Shop Link:</label></th>
+                        <td><input type="checkbox" name="qr_show_shop_link" id="qr_show_shop_link" value="1" checked> <label for="qr_show_shop_link">Display shop logo as clickable link when QR code is scanned</label><p class="description">If checked, the shop logo will be displayed as a clickable link using the <code>[qr_tracker_shop_link]</code> shortcode. Both shop link and logo URL must be set.</p></td></tr>';
+            
+            // Team selection
+            $accessible_teams = $this->teams->get_accessible_teams();
+            echo '<tr><th><label for="qr_team">Team:</label></th><td>';
+            echo '<select name="qr_team" id="qr_team">';
+            echo '<option value="">No Team</option>';
+            foreach ($accessible_teams as $team) {
+                echo '<option value="' . $team->id . '">' . esc_html($team->name) . '</option>';
+            }
+            echo '</select>';
+            echo '<p class="description">Select the team that manages this QR code. You can only assign QR codes to teams you are a member of.</p>';
+            echo '</td></tr>';
+            
+            echo '</table>
                 <p><input type="submit" name="qr_submit" class="button button-primary" value="Save QR Code"></p>
             </form>
             <script>
@@ -530,15 +611,26 @@ class QRCodeTracker_Admin {
         }
 
         // Now display the Tracked QR Codes table
-        $entries = $wpdb->get_results("SELECT * FROM {$this->main_table} ORDER BY postcode, label");
-        echo '<h2>Tracked QR Codes</h2><table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>Popup</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Last Scanned</th><th>Actions</th></tr></thead><tbody>';
+        $entries = $this->teams->get_accessible_qr_codes();
+        echo '<h2>Tracked QR Codes</h2><table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>Popup</th><th>Shop Link</th><th>Team</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Last Scanned</th><th>Actions</th></tr></thead><tbody>';
         foreach ($entries as $row) {
             $delete_url = esc_url(add_query_arg(['delete_id' => $row->id]));
             $edit_url = esc_url(add_query_arg(['edit_id' => $row->id]));
             $merge_url = esc_url(add_query_arg(['merge_id' => $row->id]));
             $download_url = esc_url(admin_url('admin.php?action=qr_tracker_download_qr&id=' . $row->id));
             $popup_status = $row->show_popup ? '<span style="color: green;">✓ Enabled</span>' : '<span style="color: #666;">✗ Disabled</span>';
-            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td><code>{$row->url}</code></td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>{$row->last_scanned}</td>";
+            $shop_link_status = $row->show_shop_link ? '<span style="color: green;">✓ Enabled</span>' : '<span style="color: #666;">✗ Disabled</span>';
+            
+            // Get team name
+            $team_name = 'No Team';
+            if ($row->team_id) {
+                $team = $this->teams->get_team($row->team_id);
+                if ($team) {
+                    $team_name = esc_html($team->name);
+                }
+            }
+            
+            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td><code>{$row->url}</code></td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>{$row->last_scanned}</td>";
             echo "<td>";
             if ($row->scan_count == 0) {
                 echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a> ";
@@ -557,9 +649,10 @@ class QRCodeTracker_Admin {
         echo '</tbody></table>';
 
         // Display quick summary
-        $total_qr_codes = $wpdb->get_var("SELECT COUNT(*) FROM {$this->main_table}");
-        $total_scans = $wpdb->get_var("SELECT SUM(scan_count) FROM {$this->main_table}");
-        $active_qr_codes = $wpdb->get_var("SELECT COUNT(*) FROM {$this->main_table} WHERE scan_count > 0");
+        $accessible_teams = $this->teams->get_accessible_teams();
+        $total_qr_codes = count($entries);
+        $total_scans = array_sum(array_column($entries, 'scan_count'));
+        $active_qr_codes = count(array_filter($entries, function($entry) { return $entry->scan_count > 0; }));
         $recent_scans = $wpdb->get_var("SELECT COUNT(*) FROM {$this->log_table} WHERE scanned_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
         
         echo '<h2>Quick Summary</h2>';
@@ -611,19 +704,27 @@ class QRCodeTracker_Admin {
         public function reports_page() {
         // Use the new reports display class
         require_once plugin_dir_path(__FILE__) . 'class-qr-code-reports-display.php';
-        $reports_display = new QRCodeTracker_ReportsDisplay($this->search);
+        $reports_display = new QRCodeTracker_ReportsDisplay($this->search, $this->teams);
         $reports_display->display_reports_page();
     }
 
     public function settings_page() {
-        $plugin_version = '0.9993';
+        $plugin_version = '0.9994';
         if (isset($_POST['qr_tracker_settings_submit'])) {
             check_admin_referer('qr_tracker_settings');
             $delete_on_uninstall = isset($_POST['qr_tracker_delete_on_uninstall']) ? 1 : 0;
             update_option('qr_tracker_delete_on_uninstall', $delete_on_uninstall);
+            
+            $default_shop_link = esc_url_raw($_POST['qr_tracker_default_shop_link']);
+            $default_shop_logo = esc_url_raw($_POST['qr_tracker_default_shop_logo']);
+            update_option('qr_tracker_default_shop_link', $default_shop_link);
+            update_option('qr_tracker_default_shop_logo', $default_shop_logo);
+            
             echo '<div class="updated"><p>Settings saved.</p></div>';
         }
         $delete_on_uninstall = get_option('qr_tracker_delete_on_uninstall', 0);
+        $default_shop_link = get_option('qr_tracker_default_shop_link', '');
+        $default_shop_logo = get_option('qr_tracker_default_shop_logo', '');
         echo '<div class="wrap"><h1>QR Code Tracker Settings</h1>';
         echo '<div style="margin-bottom:20px;padding:10px 15px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;max-width:600px;">';
         echo '<strong>Plugin Version:</strong> ' . esc_html($plugin_version) . '<br>';
@@ -631,6 +732,8 @@ class QRCodeTracker_Admin {
         echo '<ul style="margin-top:8px;">';
         echo '<li><code>[qr_tracker_message_1]</code> — Displays the first custom message for the current QR code scan.</li>';
         echo '<li><code>[qr_tracker_message_2]</code> — Displays the second custom message for the current QR code scan.</li>';
+        echo '<li><code>[qr_tracker_shop_link]</code> — Displays shop logo as a clickable link for the current QR code scan.</li>';
+        echo '<li><code>[qr_tracker_shop_link max_width="300px"]</code> — Customize the logo size.</li>';
         echo '<li><code>[qr_tracker_popup]</code> — Displays a button that triggers the popup with both messages.</li>';
         echo '<li><code>[qr_tracker_popup text="Custom Text"]</code> — Customize the button text.</li>';
         echo '</ul>';
@@ -643,9 +746,172 @@ class QRCodeTracker_Admin {
         echo '<label><input type="checkbox" name="qr_tracker_delete_on_uninstall" value="1"' . checked(1, $delete_on_uninstall, false) . '> Delete all plugin data when the plugin is uninstalled</label>';
         echo '<p class="description">If checked, all QR code data and logs will be permanently deleted when you uninstall the plugin.</p>';
         echo '</td></tr>';
+        echo '<tr><th scope="row">Default Shop Link</th><td>';
+        echo '<input type="url" name="qr_tracker_default_shop_link" value="' . esc_attr($default_shop_link) . '" placeholder="https://example.com/shop" style="width: 100%;">';
+        echo '<p class="description">Default shop URL to use when individual QR codes don\'t have their own shop link set.</p>';
+        echo '</td></tr>';
+        echo '<tr><th scope="row">Default Shop Logo</th><td>';
+        echo '<input type="url" name="qr_tracker_default_shop_logo" value="' . esc_attr($default_shop_logo) . '" placeholder="https://example.com/logo.png" style="width: 100%;">';
+        echo '<p class="description">Default shop logo URL to use when individual QR codes don\'t have their own logo set.</p>';
+        echo '</td></tr>';
         echo '</table>';
         echo '<p><input type="submit" name="qr_tracker_settings_submit" class="button button-primary" value="Save Settings"></p>';
         echo '</form>';
+
+        // Handle orphaned QR codes reassignment
+        if (isset($_POST['reassign_orphaned_qr_codes']) && isset($_POST['team_id']) && isset($_POST['qr_code_ids'])) {
+            check_admin_referer('qr_tracker_orphaned_qr_codes');
+            $team_id = intval($_POST['team_id']);
+            $qr_code_ids = array_map('intval', $_POST['qr_code_ids']);
+            
+            if ($this->teams->reassign_orphaned_qr_codes($team_id, $qr_code_ids)) {
+                echo '<div class="updated"><p>Selected QR codes have been reassigned to the team successfully.</p></div>';
+            } else {
+                echo '<div class="error"><p>Failed to reassign QR codes. Please try again.</p></div>';
+            }
+        }
+
+        // Display orphaned QR codes section
+        $this->display_orphaned_qr_codes_section();
+        
+        echo '</div>';
+    }
+
+    /**
+     * Add admin styles for notification badges and orphaned QR codes section
+     */
+    public function add_admin_styles() {
+        echo '<style>
+        .update-plugins {
+            display: inline-block;
+            vertical-align: top;
+            box-sizing: border-box;
+            height: 17px;
+            min-width: 18px;
+            padding: 0 5px;
+            font-size: 9px;
+            line-height: 17px;
+            font-weight: 600;
+            border-radius: 10px;
+            background: #d63638;
+            color: #fff;
+            text-align: center;
+            z-index: 26;
+            margin-left: 5px;
+        }
+        
+        .plugin-count {
+            color: #fff;
+        }
+        
+        .orphaned-qr-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: #fff;
+            border: 1px solid #ccd0d4;
+            border-radius: 4px;
+        }
+        
+        .orphaned-qr-section h2 {
+            margin-top: 0;
+            color: #d63638;
+        }
+        
+        .orphaned-qr-section .description {
+            color: #666;
+            font-style: italic;
+        }
+        </style>';
+    }
+
+    /**
+     * Display orphaned QR codes section in settings
+     */
+    private function display_orphaned_qr_codes_section() {
+        $orphaned_qr_codes = $this->teams->get_orphaned_qr_codes();
+        $accessible_teams = $this->teams->get_accessible_teams();
+        
+        if (empty($orphaned_qr_codes)) {
+            echo '<div class="notice notice-success" style="margin-top: 20px;"><p>All QR codes are properly assigned to teams. No orphaned QR codes found.</p></div>';
+            return;
+        }
+        
+        echo '<div class="orphaned-qr-section">';
+        echo '<h2>Orphaned QR Codes</h2>';
+        echo '<p class="description">The following QR codes are not assigned to any team. Select them and assign them to a team to prevent them from becoming orphaned.</p>';
+        
+        if (empty($accessible_teams)) {
+            echo '<div class="notice notice-warning"><p>No teams available. Please create a team first before reassigning QR codes.</p></div>';
+            echo '</div>';
+            return;
+        }
+        
+        echo '<form method="post">';
+        wp_nonce_field('qr_tracker_orphaned_qr_codes');
+        echo '<table class="widefat" style="margin-bottom: 15px;">';
+        echo '<thead><tr>';
+        echo '<th style="width: 30px;"><input type="checkbox" id="select-all-orphaned" onclick="toggleAllOrphaned(this)"></th>';
+        echo '<th>Postcode</th>';
+        echo '<th>City</th>';
+        echo '<th>Tree</th>';
+        echo '<th>Label</th>';
+        echo '<th>Reporting ID</th>';
+        echo '<th>Scan Count</th>';
+        echo '<th>Last Scanned</th>';
+        echo '</tr></thead><tbody>';
+        
+        foreach ($orphaned_qr_codes as $qr_code) {
+            echo '<tr>';
+            echo '<td><input type="checkbox" name="qr_code_ids[]" value="' . $qr_code->id . '" class="orphaned-qr-checkbox"></td>';
+            echo '<td>' . esc_html($qr_code->postcode) . '</td>';
+            echo '<td>' . esc_html($qr_code->city) . '</td>';
+            echo '<td>' . esc_html($qr_code->tree) . '</td>';
+            echo '<td>' . esc_html($qr_code->label) . '</td>';
+            echo '<td>' . esc_html($qr_code->reporting_id) . '</td>';
+            echo '<td>' . number_format($qr_code->scan_count) . '</td>';
+            echo '<td>' . esc_html($qr_code->last_scanned ?: 'Never') . '</td>';
+            echo '</tr>';
+        }
+        
+        echo '</tbody></table>';
+        
+        echo '<div style="display: flex; align-items: center; gap: 15px;">';
+        echo '<label for="team_id"><strong>Assign to Team:</strong></label>';
+        echo '<select name="team_id" id="team_id" required style="min-width: 200px;">';
+        echo '<option value="">Select a team...</option>';
+        foreach ($accessible_teams as $team) {
+            echo '<option value="' . $team->id . '">' . esc_html($team->name) . ' (' . esc_html($team->city) . ')</option>';
+        }
+        echo '</select>';
+        echo '<input type="submit" name="reassign_orphaned_qr_codes" class="button button-primary" value="Reassign Selected QR Codes" onclick="return confirmReassignment()">';
+        echo '</div>';
+        echo '</form>';
+        
+        echo '<script>
+        function toggleAllOrphaned(checkbox) {
+            var checkboxes = document.querySelectorAll(".orphaned-qr-checkbox");
+            checkboxes.forEach(function(cb) {
+                cb.checked = checkbox.checked;
+            });
+        }
+        
+        function confirmReassignment() {
+            var selectedQRCodes = document.querySelectorAll(".orphaned-qr-checkbox:checked");
+            var selectedTeam = document.getElementById("team_id").value;
+            
+            if (selectedQRCodes.length === 0) {
+                alert("Please select at least one QR code to reassign.");
+                return false;
+            }
+            
+            if (!selectedTeam) {
+                alert("Please select a team to assign the QR codes to.");
+                return false;
+            }
+            
+            return confirm("Are you sure you want to reassign " + selectedQRCodes.length + " QR code(s) to the selected team?");
+        }
+        </script>';
         echo '</div>';
     }
 
@@ -1535,7 +1801,7 @@ window.showRollupDayChart = function() {
         require_once plugin_dir_path(__FILE__) . 'class-qr-code-single-report.php';
         
         // Create instance and display the page
-        $single_report = new QRCodeTracker_SingleReport($this->tracker);
+        $single_report = new QRCodeTracker_SingleReport($this->tracker, $this->teams);
         $single_report->display_single_report_page();
     }
 
@@ -1547,7 +1813,7 @@ window.showRollupDayChart = function() {
         require_once plugin_dir_path(__FILE__) . 'class-qr-code-city-report.php';
         
         // Create instance and display the page
-        $city_report = new QRCodeTracker_CityReport($this->tracker);
+        $city_report = new QRCodeTracker_CityReport($this->tracker, $this->teams);
         $city_report->display_city_report_page();
     }
 
@@ -1559,7 +1825,321 @@ window.showRollupDayChart = function() {
         require_once plugin_dir_path(__FILE__) . 'class-qr-code-reporting-id-report.php';
         
         // Create instance and display the page
-        $reporting_id_report = new QRCodeTracker_ReportingIDReport($this->tracker);
+        $reporting_id_report = new QRCodeTracker_ReportingIDReport($this->tracker, $this->teams);
         $reporting_id_report->display_reporting_id_report_page();
+    }
+
+    /**
+     * Display teams management page
+     */
+    public function teams_page() {
+        global $wpdb;
+        
+        echo '<div class="wrap"><h1>QR Tracker Teams</h1>';
+        
+        // Handle form submissions
+        if (isset($_POST['create_team'])) {
+            $name = sanitize_text_field($_POST['team_name']);
+            $description = sanitize_textarea_field($_POST['team_description']);
+            $city = sanitize_text_field($_POST['team_city']);
+            $postcode = sanitize_text_field($_POST['team_postcode']);
+            
+            if (!empty($name)) {
+                $team_id = $this->teams->create_team($name, $description, $city, $postcode);
+                if ($team_id) {
+                    echo '<div class="updated"><p>Team created successfully.</p></div>';
+                } else {
+                    echo '<div class="error"><p>Error creating team.</p></div>';
+                }
+            } else {
+                echo '<div class="error"><p>Team name is required.</p></div>';
+            }
+        }
+        
+        if (isset($_POST['update_team'])) {
+            $team_id = intval($_POST['team_id']);
+            $name = sanitize_text_field($_POST['team_name']);
+            $description = sanitize_textarea_field($_POST['team_description']);
+            $city = sanitize_text_field($_POST['team_city']);
+            $postcode = sanitize_text_field($_POST['team_postcode']);
+            
+            if (!empty($name) && $this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {
+                $result = $this->teams->update_team($team_id, $name, $description, $city, $postcode);
+                if ($result !== false) {
+                    echo '<div class="updated"><p>Team updated successfully.</p></div>';
+                } else {
+                    echo '<div class="error"><p>Error updating team.</p></div>';
+                }
+            } else {
+                echo '<div class="error"><p>Team name is required or you don\'t have permission to edit this team.</p></div>';
+            }
+        }
+        
+        if (isset($_POST['delete_team'])) {
+            $team_id = intval($_POST['team_id']);
+            
+            if ($this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {
+                $result = $this->teams->delete_team($team_id);
+                if ($result !== false) {
+                    echo '<div class="updated"><p>Team deleted successfully.</p></div>';
+                } else {
+                    echo '<div class="error"><p>Error deleting team.</p></div>';
+                }
+            } else {
+                echo '<div class="error"><p>You don\'t have permission to delete this team.</p></div>';
+            }
+        }
+        
+        if (isset($_POST['add_user_to_team'])) {
+            $team_id = intval($_POST['team_id']);
+            $user_id = intval($_POST['user_id']);
+            $role = sanitize_text_field($_POST['user_role']);
+            
+            if ($this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {
+                $result = $this->teams->add_user_to_team($user_id, $team_id, $role);
+                if ($result !== false) {
+                    echo '<div class="updated"><p>User added to team successfully.</p></div>';
+                } else {
+                    echo '<div class="error"><p>Error adding user to team.</p></div>';
+                }
+            } else {
+                echo '<div class="error"><p>You don\'t have permission to manage this team.</p></div>';
+            }
+        }
+        
+        if (isset($_POST['remove_user_from_team'])) {
+            $team_id = intval($_POST['team_id']);
+            $user_id = intval($_POST['user_id']);
+            
+            if ($this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {
+                $result = $this->teams->remove_user_from_team($user_id, $team_id);
+                if ($result !== false) {
+                    echo '<div class="updated"><p>User removed from team successfully.</p></div>';
+                } else {
+                    echo '<div class="error"><p>Error removing user from team.</p></div>';
+                }
+            } else {
+                echo '<div class="error"><p>You don\'t have permission to manage this team.</p></div>';
+            }
+        }
+
+        if (isset($_POST['leave_team'])) {
+            $team_id = intval($_POST['team_id']);
+            $user_id = get_current_user_id();
+            
+            $result = $this->teams->leave_team($user_id, $team_id);
+            if ($result['success']) {
+                echo '<div class="updated"><p>' . esc_html($result['message']) . '</p></div>';
+            } else {
+                echo '<div class="error"><p>' . esc_html($result['message']) . '</p></div>';
+            }
+        }
+
+        if (isset($_POST['transfer_admin_role'])) {
+            $team_id = intval($_POST['team_id']);
+            $new_admin_id = intval($_POST['new_admin_id']);
+            $current_admin_id = get_current_user_id();
+            
+            $result = $this->teams->transfer_admin_role($current_admin_id, $new_admin_id, $team_id);
+            if ($result['success']) {
+                echo '<div class="updated"><p>' . esc_html($result['message']) . '</p></div>';
+            } else {
+                echo '<div class="error"><p>' . esc_html($result['message']) . '</p></div>';
+            }
+        }
+        
+        // Display create team form
+        echo '<h2>Create New Team</h2>';
+        echo '<form method="post" style="max-width: 600px; margin-bottom: 30px;">';
+        echo '<table class="form-table">';
+        echo '<tr><th><label for="team_name">Team Name:</label></th><td><input type="text" name="team_name" id="team_name" required style="width: 100%;"></td></tr>';
+        echo '<tr><th><label for="team_description">Description:</label></th><td><textarea name="team_description" id="team_description" rows="3" style="width: 100%;"></textarea></td></tr>';
+        echo '<tr><th><label for="team_city">City:</label></th><td><input type="text" name="team_city" id="team_city" style="width: 100%;"></td></tr>';
+        echo '<tr><th><label for="team_postcode">Postcode:</label></th><td><input type="text" name="team_postcode" id="team_postcode" style="width: 100%;"></td></tr>';
+        echo '</table>';
+        echo '<p><input type="submit" name="create_team" class="button button-primary" value="Create Team"></p>';
+        echo '</form>';
+        
+        // Display teams list
+        $teams = $this->teams->get_all_teams_stats();
+        echo '<h2>Teams Overview</h2>';
+        echo '<table class="widefat"><thead><tr><th>Team Name</th><th>City</th><th>Postcode</th><th>QR Codes</th><th>Total Scans</th><th>Active QR Codes</th><th>Members</th><th>Actions</th></tr></thead><tbody>';
+        
+        foreach ($teams as $team) {
+            $edit_url = esc_url(add_query_arg(['edit_team' => $team->id]));
+            $manage_url = esc_url(add_query_arg(['manage_team' => $team->id]));
+            
+            echo "<tr>";
+            echo "<td><strong>" . esc_html($team->name) . "</strong></td>";
+            echo "<td>" . esc_html($team->city) . "</td>";
+            echo "<td>" . esc_html($team->postcode) . "</td>";
+            echo "<td>" . number_format($team->total_qr_codes) . "</td>";
+            echo "<td>" . number_format($team->total_scans) . "</td>";
+            echo "<td>" . number_format($team->active_qr_codes) . "</td>";
+            echo "<td>" . number_format($team->member_count) . "</td>";
+            echo "<td>";
+            
+            if ($this->teams->user_can_manage_team(get_current_user_id(), $team->id)) {
+                echo "<a href='$edit_url' class='button button-secondary'>Edit</a> ";
+                echo "<a href='$manage_url' class='button button-secondary'>Manage Members</a> ";
+                
+                if ($team->name !== 'Default Team') {
+                    echo "<form method='post' style='display: inline;' onsubmit='return confirm(\"Are you sure you want to delete this team? All QR codes will be moved to the Default Team.\");'>";
+                    echo "<input type='hidden' name='team_id' value='{$team->id}'>";
+                    echo "<input type='submit' name='delete_team' class='button button-link-delete' value='Delete'>";
+                    echo "</form>";
+                }
+            } elseif ($this->teams->user_can_access_team(get_current_user_id(), $team->id)) {
+                echo "<a href='$manage_url' class='button button-secondary'>View Members</a> ";
+                
+                // Add leave team button for team members
+                echo "<form method='post' style='display: inline;' onsubmit='return confirm(\"Are you sure you want to leave this team?\");'>";
+                echo "<input type='hidden' name='team_id' value='{$team->id}'>";
+                echo "<input type='submit' name='leave_team' class='button button-link-delete' value='Leave Team'>";
+                echo "</form>";
+            } else {
+                echo "<a href='$manage_url' class='button button-secondary'>View Members</a>";
+            }
+            
+            echo "</td></tr>";
+        }
+        
+        echo '</tbody></table>';
+        
+        // Handle team editing
+        if (isset($_GET['edit_team'])) {
+            $team_id = intval($_GET['edit_team']);
+            $team = $this->teams->get_team($team_id);
+            
+            if ($team && $this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {
+                echo '<h2>Edit Team: ' . esc_html($team->name) . '</h2>';
+                echo '<form method="post" style="max-width: 600px;">';
+                echo '<input type="hidden" name="team_id" value="' . $team_id . '">';
+                echo '<table class="form-table">';
+                echo '<tr><th><label for="team_name">Team Name:</label></th><td><input type="text" name="team_name" id="team_name" value="' . esc_attr($team->name) . '" required style="width: 100%;"></td></tr>';
+                echo '<tr><th><label for="team_description">Description:</label></th><td><textarea name="team_description" id="team_description" rows="3" style="width: 100%;">' . esc_textarea($team->description) . '</textarea></td></tr>';
+                echo '<tr><th><label for="team_city">City:</label></th><td><input type="text" name="team_city" id="team_city" value="' . esc_attr($team->city) . '" style="width: 100%;"></td></tr>';
+                echo '<tr><th><label for="team_postcode">Postcode:</label></th><td><input type="text" name="team_postcode" id="team_postcode" value="' . esc_attr($team->postcode) . '" style="width: 100%;"></td></tr>';
+                echo '</table>';
+                echo '<p><input type="submit" name="update_team" class="button button-primary" value="Update Team"></p>';
+                echo '</form>';
+            }
+        }
+        
+        // Handle team member management
+        if (isset($_GET['manage_team'])) {
+            $team_id = intval($_GET['manage_team']);
+            $team = $this->teams->get_team($team_id);
+            
+            if ($team && $this->teams->user_can_access_team(get_current_user_id(), $team_id)) {
+                echo '<h2>Manage Team: ' . esc_html($team->name) . '</h2>';
+                
+                // Display current members
+                $members = $this->teams->get_team_members($team_id);
+                echo '<h3>Current Members</h3>';
+                echo '<table class="widefat"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Joined</th><th>Actions</th></tr></thead><tbody>';
+                
+                foreach ($members as $member) {
+                    echo "<tr>";
+                    echo "<td>" . esc_html($member->display_name) . " (" . esc_html($member->user_login) . ")</td>";
+                    echo "<td>" . esc_html($member->user_email) . "</td>";
+                    echo "<td>" . esc_html(ucfirst($member->role)) . "</td>";
+                    echo "<td>" . esc_html($member->created_at) . "</td>";
+                    echo "<td>";
+                    
+                    // Show different actions based on user role and permissions
+                    if ($member->ID == get_current_user_id()) {
+                        // Current user - show leave team option
+                        echo "<form method='post' style='display: inline;' onsubmit='return confirm(\"Are you sure you want to leave this team?\");'>";
+                        echo "<input type='hidden' name='team_id' value='{$team_id}'>";
+                        echo "<input type='submit' name='leave_team' class='button button-link-delete' value='Leave Team'>";
+                        echo "</form>";
+                    } elseif ($this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {
+                        // Team admin can remove other members
+                        echo "<form method='post' style='display: inline;' onsubmit='return confirm(\"Are you sure you want to remove this user from the team?\");'>";
+                        echo "<input type='hidden' name='team_id' value='{$team_id}'>";
+                        echo "<input type='hidden' name='user_id' value='{$member->ID}'>";
+                        echo "<input type='submit' name='remove_user_from_team' class='button button-link-delete' value='Remove'>";
+                        echo "</form>";
+                    }
+                    
+                    echo "</td></tr>";
+                }
+                
+                echo '</tbody></table>';
+                
+                // Transfer admin role form (for current admin)
+                if ($this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {
+                    $current_user_role = null;
+                    foreach ($members as $member) {
+                        if ($member->ID == get_current_user_id()) {
+                            $current_user_role = $member->role;
+                            break;
+                        }
+                    }
+                    
+                    if ($current_user_role === 'admin') {
+                        $admin_count = 0;
+                        foreach ($members as $member) {
+                            if ($member->role === 'admin') {
+                                $admin_count++;
+                            }
+                        }
+                        
+                        if ($admin_count > 1) {
+                            echo '<h3>Transfer Admin Role</h3>';
+                            echo '<p class="description">Transfer your admin role to another team member before leaving the team.</p>';
+                            echo '<form method="post" style="max-width: 600px;">';
+                            echo '<input type="hidden" name="team_id" value="' . $team_id . '">';
+                            echo '<table class="form-table">';
+                            echo '<tr><th><label for="new_admin_id">Transfer Admin Role to:</label></th><td>';
+                            echo '<select name="new_admin_id" id="new_admin_id" required style="width: 100%;">';
+                            echo '<option value="">Select a team member...</option>';
+                            
+                            foreach ($members as $member) {
+                                if ($member->ID != get_current_user_id() && $member->role === 'member') {
+                                    echo '<option value="' . $member->ID . '">' . esc_html($member->display_name) . ' (' . esc_html($member->user_login) . ')</option>';
+                                }
+                            }
+                            
+                            echo '</select></td></tr>';
+                            echo '</table>';
+                            echo '<p><input type="submit" name="transfer_admin_role" class="button button-secondary" value="Transfer Admin Role" onclick="return confirm(\"Are you sure you want to transfer your admin role? You will become a regular member.\");"></p>';
+                            echo '</form>';
+                        } else {
+                            echo '<div class="notice notice-warning"><p><strong>Note:</strong> You are the only admin of this team. You must assign another member as admin before you can leave the team.</p></div>';
+                        }
+                    }
+                }
+                
+                // Add new member form
+                if ($this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {
+                    echo '<h3>Add New Member</h3>';
+                    echo '<form method="post" style="max-width: 600px;">';
+                    echo '<input type="hidden" name="team_id" value="' . $team_id . '">';
+                    echo '<table class="form-table">';
+                    echo '<tr><th><label for="user_id">User:</label></th><td>';
+                    echo '<select name="user_id" id="user_id" required style="width: 100%;">';
+                    echo '<option value="">Select a user...</option>';
+                    
+                    $available_users = $this->teams->get_users_not_in_team($team_id);
+                    foreach ($available_users as $user) {
+                        echo '<option value="' . $user->ID . '">' . esc_html($user->display_name) . ' (' . esc_html($user->user_login) . ')</option>';
+                    }
+                    
+                    echo '</select></td></tr>';
+                    echo '<tr><th><label for="user_role">Role:</label></th><td>';
+                    echo '<select name="user_role" id="user_role" required style="width: 100%;">';
+                    echo '<option value="member">Member</option>';
+                    echo '<option value="admin">Admin</option>';
+                    echo '</select></td></tr>';
+                    echo '</table>';
+                    echo '<p><input type="submit" name="add_user_to_team" class="button button-primary" value="Add Member"></p>';
+                    echo '</form>';
+                }
+            }
+        }
+        
+        echo '</div>';
     }
 } 

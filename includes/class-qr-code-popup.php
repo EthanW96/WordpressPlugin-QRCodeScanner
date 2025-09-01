@@ -51,6 +51,33 @@ class QRCodeTracker_Popup {
     }
 
     /**
+     * Get shop link HTML for popup
+     */
+    private function get_shop_link_html() {
+        $current_tracker = $this->tracker->get_current_tracker();
+        
+        if (!$current_tracker || !$current_tracker->show_shop_link) {
+            return '';
+        }
+        
+        // Get shop link and logo from QR code entry, fallback to defaults
+        $shop_link = !empty($current_tracker->shop_link) ? $current_tracker->shop_link : get_option('qr_tracker_default_shop_link', '');
+        $shop_logo = !empty($current_tracker->shop_logo) ? $current_tracker->shop_logo : get_option('qr_tracker_default_shop_logo', '');
+        
+        if (empty($shop_link) || empty($shop_logo)) {
+            return '';
+        }
+        
+        $output = '<div class="qr-shop-link">';
+        $output .= '<a href="' . esc_url($shop_link) . '" target="_blank" rel="noopener noreferrer">';
+        $output .= '<img src="' . esc_url($shop_logo) . '" alt="Shop Logo" style="max-width: 200px; height: auto;">';
+        $output .= '</a>';
+        $output .= '</div>';
+        
+        return $output;
+    }
+
+    /**
      * Render the popup HTML structure
      */
     public function render_popup() {
@@ -59,6 +86,7 @@ class QRCodeTracker_Popup {
         }
 
         $current_tracker = $this->tracker->get_current_tracker();
+        $shop_link_html = $this->get_shop_link_html();
         ?>
         <div id="qr-tracker-popup" class="qr-tracker-popup" style="display: none;">
             <div class="qr-tracker-popup-content">
@@ -73,6 +101,11 @@ class QRCodeTracker_Popup {
                         <div class="qr-tracker-message" id="qr-tracker-message-2">
                             <?php echo wp_kses_post($current_tracker->message_2); ?>
                         </div>
+                        <?php if (!empty($shop_link_html)): ?>
+                            <div class="qr-shop-link-container">
+                                <?php echo $shop_link_html; ?>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -98,7 +131,8 @@ class QRCodeTracker_Popup {
             'message_1' => $current_tracker->message_1,
             'message_2' => $current_tracker->message_2,
             'postcode' => $current_tracker->postcode,
-            'tree' => $current_tracker->tree
+            'tree' => $current_tracker->tree,
+            'shop_link_html' => $this->get_shop_link_html()
         ];
 
         wp_send_json($response);
