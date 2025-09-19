@@ -96,10 +96,10 @@ class QRCodeTracker_Popup {
                 <div class="qr-tracker-popup-body">
                     <div class="qr-tracker-message-container">
                         <div class="qr-tracker-message" id="qr-tracker-message-1">
-                            <?php echo wp_kses_post($current_tracker->message_1); ?>
+                            <?php echo wp_kses_post(do_shortcode($current_tracker->message_1)); ?>
                         </div>
                         <div class="qr-tracker-message" id="qr-tracker-message-2">
-                            <?php echo wp_kses_post($current_tracker->message_2); ?>
+                            <?php echo wp_kses_post(do_shortcode($current_tracker->message_2)); ?>
                         </div>
                         <?php if (!empty($shop_link_html)): ?>
                             <div class="qr-shop-link-container">
@@ -128,8 +128,8 @@ class QRCodeTracker_Popup {
 
         $response = [
             'success' => true,
-            'message_1' => $current_tracker->message_1,
-            'message_2' => $current_tracker->message_2,
+            'message_1' => do_shortcode($current_tracker->message_1),
+            'message_2' => do_shortcode($current_tracker->message_2),
             'postcode' => $current_tracker->postcode,
             'tree' => $current_tracker->tree,
             'shop_link_html' => $this->get_shop_link_html()

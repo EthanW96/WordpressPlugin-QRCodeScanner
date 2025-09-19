@@ -20,6 +20,7 @@ require_once __DIR__ . '/includes/class-qr-code-report.php';
 require_once __DIR__ . '/includes/class-qr-code-single-report.php';
 require_once __DIR__ . '/includes/class-qr-code-city-report.php';
 require_once __DIR__ . '/includes/class-qr-code-popup.php';
+require_once __DIR__ . '/includes/class-qr-code-permissions.php';
 
 // 1. Add QR code library import at the top (after class QRCodeTracker {)
 use chillerlan\QRCode\QRCode;
@@ -48,6 +49,9 @@ class QRCodeTracker {
         $this->teams = new QRCodeTracker_Teams();
         $this->admin = new QRCodeTracker_Admin($this, $this->teams);
         add_action('admin_menu', [$this->admin, 'admin_menu']);
+
+        // Initialize permissions system
+        new QRCodeTracker_Permissions();
 
         $this->export = new QRCodeTracker_Export();
         add_action('admin_action_qr_tracker_export', [$this->export, 'handle_csv_export']);
@@ -120,23 +124,38 @@ class QRCodeTracker {
     public function track_visit() {
         global $wpdb;
         
-        // Get the current URL in multiple ways to ensure we catch it
-        $current_url = home_url(add_query_arg(null, null));
-        $request_uri = home_url($_SERVER['REQUEST_URI']);
+        // First, try to match by extracting postcode, city, and tree from current URL
+        $postcode = isset($_GET['postcode']) ? sanitize_text_field($_GET['postcode']) : '';
+        $city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
+        $tree = isset($_GET['tree']) ? sanitize_text_field($_GET['tree']) : '';
         
-        // Also try without trailing slash variations
-        $current_url_no_slash = rtrim($current_url, '/');
-        $request_uri_no_slash = rtrim($request_uri, '/');
+        $row = null;
+        if (!empty($postcode) && !empty($city) && !empty($tree)) {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$this->main_table} WHERE postcode = %s AND city = %s AND tree = %s", 
+                $postcode, $city, $tree
+            ));
+        }
         
-        // Find the exact URL match in the database - try multiple variations
-        // Also try adding/removing trailing slash before query parameters
-        $current_url_alt = str_replace('/?', '?', $current_url);
-        $request_uri_alt = str_replace('/?', '?', $request_uri);
-        
-        $row = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$this->main_table} WHERE url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR url = %s", 
-            $current_url, $request_uri, $current_url_no_slash, $request_uri_no_slash, $current_url_alt, $request_uri_alt
-        ));
+        // Fallback to exact URL matching for backward compatibility
+        if (!$row) {
+            $current_url = home_url(add_query_arg(null, null));
+            $request_uri = home_url($_SERVER['REQUEST_URI']);
+            
+            // Also try without trailing slash variations
+            $current_url_no_slash = rtrim($current_url, '/');
+            $request_uri_no_slash = rtrim($request_uri, '/');
+            
+            // Find the exact URL match in the database - try multiple variations
+            // Also try adding/removing trailing slash before query parameters
+            $current_url_alt = str_replace('/?', '?', $current_url);
+            $request_uri_alt = str_replace('/?', '?', $request_uri);
+            
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$this->main_table} WHERE url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR url = %s", 
+                $current_url, $request_uri, $current_url_no_slash, $request_uri_no_slash, $current_url_alt, $request_uri_alt
+            ));
+        }
 
         if ($row) {
             $wpdb->update(
@@ -167,7 +186,23 @@ class QRCodeTracker {
 
         global $wpdb;
         
-        // Get the current URL in multiple ways to ensure we catch it
+        // First, try to match by extracting postcode, city, and tree from current URL
+        $postcode = isset($_GET['postcode']) ? sanitize_text_field($_GET['postcode']) : '';
+        $city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
+        $tree = isset($_GET['tree']) ? sanitize_text_field($_GET['tree']) : '';
+        
+        if (!empty($postcode) && !empty($city) && !empty($tree)) {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$this->main_table} WHERE postcode = %s AND city = %s AND tree = %s", 
+                $postcode, $city, $tree
+            ));
+            if ($row) {
+                $this->current_tracker = $row;
+                return $row;
+            }
+        }
+        
+        // Fallback to exact URL matching for backward compatibility
         $current_url = home_url(add_query_arg(null, null));
         $request_uri = home_url($_SERVER['REQUEST_URI']);
         
@@ -190,12 +225,18 @@ class QRCodeTracker {
 
     public function shortcode_message_1() {
         $tracker = $this->get_current_tracker();
-        return $tracker && !empty($tracker->message_1) ? $tracker->message_1 : '';
+        if ($tracker && !empty($tracker->message_1)) {
+            return do_shortcode($tracker->message_1);
+        }
+        return '';
     }
 
     public function shortcode_message_2() {
         $tracker = $this->get_current_tracker();
-        return $tracker && !empty($tracker->message_2) ? $tracker->message_2 : 'Thank you for visiting! Look below to receive a free book, make a comment, listen to a song, and watch a children\'s story.';
+        if ($tracker && !empty($tracker->message_2)) {
+            return do_shortcode($tracker->message_2);
+        }
+        return do_shortcode('Thank you for visiting! Look below to receive a free book, make a comment, listen to a song, and watch a children\'s story.');
     }
 
     public function shortcode_shop_link($atts = []) {
@@ -248,8 +289,8 @@ class QRCodeTracker {
     }
 
     public function handle_download_qr() {
-        if (!current_user_can('manage_options')) {
-            wp_die('Unauthorized');
+        if (!QRCodeTracker_Permissions::can_download_qr_codes()) {
+            QRCodeTracker_Permissions::die_with_permission_error('qr_tracker_download_qr_codes');
         }
         global $wpdb;
         $id = isset($_GET['id']) ? intval($_GET['id']) : 0;

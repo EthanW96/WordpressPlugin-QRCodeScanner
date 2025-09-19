@@ -64,7 +64,7 @@ class QRCodeTracker_Teams {
         global $wpdb;
         
         // Super admins can access all teams
-        if (current_user_can('manage_network')) {
+        if (current_user_can('manage_network') || QRCodeTracker_Permissions::can_manage_all_teams()) {
             return true;
         }
         
@@ -84,7 +84,7 @@ class QRCodeTracker_Teams {
         global $wpdb;
         
         // Super admins can manage all teams
-        if (current_user_can('manage_network')) {
+        if (current_user_can('manage_network') || QRCodeTracker_Permissions::can_manage_all_teams()) {
             return true;
         }
         
@@ -108,7 +108,7 @@ class QRCodeTracker_Teams {
         }
         
         // Super admins can access all teams
-        if (current_user_can('manage_network')) {
+        if (current_user_can('manage_network') || QRCodeTracker_Permissions::can_manage_all_teams()) {
             return $this->get_all_teams();
         }
         
@@ -138,7 +138,7 @@ class QRCodeTracker_Teams {
         }
         
         // Super admins can access all QR codes
-        if (current_user_can('manage_network')) {
+        if (current_user_can('manage_network') || QRCodeTracker_Permissions::can_view_all_data()) {
             return $wpdb->get_results("SELECT * FROM {$this->main_table} ORDER BY postcode, label");
         }
         
@@ -160,14 +160,13 @@ class QRCodeTracker_Teams {
     /**
      * Create a new team
      */
-    public function create_team($name, $description = '', $city = '', $postcode = '') {
+    public function create_team($name, $description = '', $city = '') {
         global $wpdb;
         
         $result = $wpdb->insert($this->teams_table, [
             'name' => sanitize_text_field($name),
             'description' => sanitize_textarea_field($description),
-            'city' => sanitize_text_field($city),
-            'postcode' => sanitize_text_field($postcode)
+            'city' => sanitize_text_field($city)
         ]);
         
         if ($result) {
@@ -192,14 +191,13 @@ class QRCodeTracker_Teams {
     /**
      * Update team
      */
-    public function update_team($team_id, $name, $description = '', $city = '', $postcode = '') {
+    public function update_team($team_id, $name, $description = '', $city = '') {
         global $wpdb;
         
         return $wpdb->update($this->teams_table, [
             'name' => sanitize_text_field($name),
             'description' => sanitize_textarea_field($description),
-            'city' => sanitize_text_field($city),
-            'postcode' => sanitize_text_field($postcode)
+            'city' => sanitize_text_field($city)
         ], ['id' => $team_id]);
     }
 
@@ -391,7 +389,6 @@ class QRCodeTracker_Teams {
                 t.id,
                 t.name,
                 t.city,
-                t.postcode,
                 COALESCE(qr_stats.total_qr_codes, 0) as total_qr_codes,
                 COALESCE(qr_stats.total_scans, 0) as total_scans,
                 COALESCE(qr_stats.active_qr_codes, 0) as active_qr_codes,

@@ -12,8 +12,8 @@ class QRCodeTracker_Export {
 
     public function handle_csv_export() {
         // Check permissions
-        if (!current_user_can('manage_options')) {
-            wp_die('Unauthorized access');
+        if (!QRCodeTracker_Permissions::can_export_data()) {
+            QRCodeTracker_Permissions::die_with_permission_error('qr_tracker_export_data');
         }
         
         global $wpdb;
