@@ -68,7 +68,15 @@ class QRCodeTracker_Popup {
             return '';
         }
         
-        $output = '<div class="qr-shop-link">';
+        $output = '';
+        
+        // Add the Advent gifts banner
+        $output .= '<div class="qr-advent-banner" style="background: #f7c334; padding: 15px; margin: 20px 0; text-align: center; border-radius: 4px;">';
+        $output .= '<p style="margin: 0; color: #000; font-weight: bold; font-size: 16px;">For all your hand-crafted Advent gifts visit:</p>';
+        $output .= '</div>';
+        
+        // Add the shop link
+        $output .= '<div class="qr-shop-link">';
         $output .= '<a href="' . esc_url($shop_link) . '" target="_blank" rel="noopener noreferrer">';
         $output .= '<img src="' . esc_url($shop_logo) . '" alt="Shop Logo" style="max-width: 200px; height: auto;">';
         $output .= '</a>';

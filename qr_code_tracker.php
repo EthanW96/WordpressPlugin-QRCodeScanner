@@ -242,23 +242,6 @@ class QRCodeTracker {
     public function shortcode_shop_link($atts = []) {
         $tracker = $this->get_current_tracker();
         
-        if (!$tracker) {
-            return '';
-        }
-        
-        // Check if shop link should be shown for this QR code
-        if (!$tracker->show_shop_link) {
-            return '';
-        }
-        
-        // Get shop link and logo from QR code entry, fallback to defaults
-        $shop_link = !empty($tracker->shop_link) ? $tracker->shop_link : get_option('qr_tracker_default_shop_link', '');
-        $shop_logo = !empty($tracker->shop_logo) ? $tracker->shop_logo : get_option('qr_tracker_default_shop_logo', '');
-        
-        if (empty($shop_link) || empty($shop_logo)) {
-            return '';
-        }
-        
         // Parse shortcode attributes
         $atts = shortcode_atts([
             'class' => 'qr-shop-link',
@@ -266,11 +249,56 @@ class QRCodeTracker {
             'max_width' => '200px'
         ], $atts, 'qr_tracker_shop_link');
         
-        $output = '<div class="' . esc_attr($atts['class']) . '">';
-        $output .= '<a href="' . esc_url($shop_link) . '" target="' . esc_attr($atts['target']) . '" rel="noopener noreferrer">';
-        $output .= '<img src="' . esc_url($shop_logo) . '" alt="Shop Logo" style="max-width: ' . esc_attr($atts['max_width']) . '; height: auto;">';
-        $output .= '</a>';
-        $output .= '</div>';
+        $output = '';
+        
+        // Check if we have QR code information
+        if ($tracker) {
+            // We have QR code information - check if shop link should be shown
+            if (!$tracker->show_shop_link) {
+                return '';
+            }
+            
+            // Get shop link and logo from QR code entry, fallback to defaults
+            $shop_link = !empty($tracker->shop_link) ? $tracker->shop_link : get_option('qr_tracker_default_shop_link', '');
+            $shop_logo = !empty($tracker->shop_logo) ? $tracker->shop_logo : get_option('qr_tracker_default_shop_logo', '');
+            
+            if (empty($shop_link) || empty($shop_logo)) {
+                return '';
+            }
+            
+            // Add the Advent gifts banner
+            $output .= '<div class="qr-advent-banner" style="background: #f7c334; padding: 15px; margin: 20px 0; text-align: center; border-radius: 4px;">';
+            $output .= '<p style="margin: 0; color: #000; font-weight: bold; font-size: 16px;">For all your hand-crafted Advent gifts visit:</p>';
+            
+            // Add the shop link
+            $output .= '<div class="' . esc_attr($atts['class']) . '">';
+            $output .= '<a href="' . esc_url($shop_link) . '" target="' . esc_attr($atts['target']) . '" rel="noopener noreferrer">';
+            $output .= '<img src="' . esc_url($shop_logo) . '" alt="Shop Logo" style="max-width: ' . esc_attr($atts['max_width']) . '; height: auto;">';
+            $output .= '</a>';
+            $output .= '</div>';
+            $output .= '</div>';
+            
+        } else {
+            // No QR code information - show banner and default shop link
+            $shop_link = get_option('qr_tracker_default_shop_link', '');
+            $shop_logo = get_option('qr_tracker_default_shop_logo', '');
+            
+            if (empty($shop_link) || empty($shop_logo)) {
+                return '';
+            }
+            
+            // Add the Advent gifts banner
+            $output .= '<div class="qr-advent-banner" style="background: #f7c334; padding: 15px; margin: 20px 0; text-align: center; border-radius: 4px;">';
+            $output .= '<p style="margin: 0; color: #000; font-weight: bold; font-size: 16px;">For all your hand-crafted Advent gifts visit:</p>';
+            
+            // Add the default shop link
+            $output .= '<div class="' . esc_attr($atts['class']) . '">';
+            $output .= '<a href="' . esc_url($shop_link) . '" target="' . esc_attr($atts['target']) . '" rel="noopener noreferrer">';
+            $output .= '<img src="' . esc_url($shop_logo) . '" alt="Shop Logo" style="max-width: ' . esc_attr($atts['max_width']) . '; height: auto;">';
+            $output .= '</a>';
+            $output .= '</div>';
+            $output .= '</div>';
+        }
         
         return $output;
     }
