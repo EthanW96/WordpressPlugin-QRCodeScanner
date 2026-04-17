@@ -1,6 +1,11 @@
 <?php
 
 class QRCodeTracker_WooCommerce {
+    private const DEFAULT_REFERRAL_PREFIX = 'REF';
+    private const DEFAULT_REFERRAL_CODE_LENGTH = 8;
+    private const DEFAULT_POSTCODE_PREFIX = 'WC';
+    private const DEFAULT_CITY_NAME = 'Woo';
+
     private $tracker;
     private $main_table;
 
@@ -120,7 +125,7 @@ class QRCodeTracker_WooCommerce {
         $pay_forward_recipient = sanitize_text_field((string) $order->get_meta('_qr_tree_pay_forward_recipient'));
 
         if ($referral_code === '') {
-            $referral_code = 'REF' . strtoupper($this->tracker->generate_unique_tracker_code(8));
+            $referral_code = self::DEFAULT_REFERRAL_PREFIX . strtoupper($this->tracker->generate_unique_tracker_code(self::DEFAULT_REFERRAL_CODE_LENGTH));
         }
 
         $referral_url = add_query_arg('ref', rawurlencode($referral_code), home_url('/'));
@@ -136,8 +141,9 @@ class QRCodeTracker_WooCommerce {
                 $unique = $this->tracker->generate_unique_tracker_url(6);
 
                 $tree_value = $this->sanitize_tree_value($product_name, $item_id, $i);
-                $postcode_value = $billing_postcode !== '' ? preg_replace('/[^A-Z0-9]/', '', $billing_postcode) : 'WC' . $order_id;
-                $city_value = $billing_city !== '' ? preg_replace('/[^A-Za-z0-9-]/', '', $billing_city) : 'Woo';
+                // Billing postcode is uppercased before sanitizing, so only A-Z and 0-9 are allowed here.
+                $postcode_value = $billing_postcode !== '' ? preg_replace('/[^A-Z0-9]/', '', $billing_postcode) : self::DEFAULT_POSTCODE_PREFIX . $order_id;
+                $city_value = $billing_city !== '' ? preg_replace('/[^A-Za-z0-9-]/', '', $billing_city) : self::DEFAULT_CITY_NAME;
 
                 $label = sprintf('Order %d %s (%d/%d)', $order_id, $product_name, $i, $quantity);
                 $wpdb->insert($this->main_table, [

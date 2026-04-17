@@ -695,7 +695,7 @@ class QRCodeTracker_Admin {
             $purchase_status = !empty($row->purchase_status) ? esc_html($row->purchase_status) : 'ready';
 
             $purchase_details = '—';
-            if (!empty($row->buyer_name) || !empty($row->contact_emails) || !empty($row->report_emails) || !empty($row->referral_code) || !empty($row->pay_tree_forward_type) || !empty($row->woocommerce_order_id)) {
+            if ($this->has_purchase_details($row)) {
                 $details = [];
                 if (!empty($row->woocommerce_order_id)) {
                     $details[] = '<strong>Order:</strong> #' . esc_html($row->woocommerce_order_id);
@@ -780,6 +780,15 @@ class QRCodeTracker_Admin {
         echo '</div>';
         echo '</div>';
         echo '<p><a href="' . admin_url('admin.php?page=qr-reports') . '" class="button button-primary">View Detailed Reports</a></p>';
+    }
+
+    private function has_purchase_details($row) {
+        return !empty($row->buyer_name)
+            || !empty($row->contact_emails)
+            || !empty($row->report_emails)
+            || !empty($row->referral_code)
+            || !empty($row->pay_tree_forward_type)
+            || !empty($row->woocommerce_order_id);
     }
 
     // 2. Add a helper to generate the URL from postcode, city, and tree

@@ -12,6 +12,7 @@ if (file_exists(__DIR__ . '/vendor/autoload.php')) {
     require_once __DIR__ . '/vendor/autoload.php';
 }
 
+require_once __DIR__ . '/includes/class-qr-code-utils.php';
 require_once __DIR__ . '/includes/class-qr-code-db.php';
 require_once __DIR__ . '/includes/class-qr-code-admin.php';
 require_once __DIR__ . '/includes/class-qr-code-teams.php';
@@ -142,23 +143,7 @@ class QRCodeTracker {
         
         // Fallback to exact URL matching for backward compatibility
         if (!$row) {
-            $current_url = home_url(add_query_arg(null, null));
-            $request_uri = home_url($_SERVER['REQUEST_URI']);
-            
-            // Also try without trailing slash variations
-            $current_url_no_slash = rtrim($current_url, '/');
-            $request_uri_no_slash = rtrim($request_uri, '/');
-            
-            // Find the exact URL match in the database - try multiple variations
-            // Also try adding/removing trailing slash before query parameters
-            $current_url_alt = str_replace('/?', '?', $current_url);
-            $request_uri_alt = str_replace('/?', '?', $request_uri);
-            
-            $row = $wpdb->get_row($wpdb->prepare(
-                "SELECT * FROM {$this->main_table} WHERE url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s",
-                $current_url, $request_uri, $current_url_no_slash, $request_uri_no_slash, $current_url_alt, $request_uri_alt,
-                $current_url, $request_uri, $current_url_no_slash, $request_uri_no_slash, $current_url_alt, $request_uri_alt
-            ));
+            $row = $this->get_tracker_row_by_urls($this->get_current_request_url_variations());
         }
 
         if ($row) {
@@ -207,23 +192,7 @@ class QRCodeTracker {
         }
         
         // Fallback to exact URL matching for backward compatibility
-        $current_url = home_url(add_query_arg(null, null));
-        $request_uri = home_url($_SERVER['REQUEST_URI']);
-        
-        // Also try without trailing slash variations
-        $current_url_no_slash = rtrim($current_url, '/');
-        $request_uri_no_slash = rtrim($request_uri, '/');
-        
-        // Find the exact URL match in the database - try multiple variations
-        // Also try adding/removing trailing slash before query parameters
-        $current_url_alt = str_replace('/?', '?', $current_url);
-        $request_uri_alt = str_replace('/?', '?', $request_uri);
-        
-        $row = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$this->main_table} WHERE url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s",
-            $current_url, $request_uri, $current_url_no_slash, $request_uri_no_slash, $current_url_alt, $request_uri_alt,
-            $current_url, $request_uri, $current_url_no_slash, $request_uri_no_slash, $current_url_alt, $request_uri_alt
-        ));
+        $row = $this->get_tracker_row_by_urls($this->get_current_request_url_variations());
         $this->current_tracker = $row;
         return $row;
     }
@@ -364,28 +333,7 @@ class QRCodeTracker {
     }
 
     public function generate_unique_tracker_code($length = 6) {
-        global $wpdb;
-
-        $characters = 'abcdefghijklmnopqrstuvwxyz0123456789';
-        $max_attempts = 30;
-
-        for ($attempt = 0; $attempt < $max_attempts; $attempt++) {
-            $code = '';
-            for ($i = 0; $i < $length; $i++) {
-                $code .= $characters[wp_rand(0, strlen($characters) - 1)];
-            }
-
-            $exists = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$this->main_table} WHERE unique_code = %s",
-                $code
-            ));
-
-            if ($exists === 0) {
-                return $code;
-            }
-        }
-
-        return substr(wp_hash(uniqid((string) wp_rand(), true)), 0, max(8, $length));
+        return QRCodeTracker_Utils::generate_unique_code($this->main_table, 'unique_code', $length);
     }
 
     public function generate_unique_tracker_url($length = 6) {
@@ -394,6 +342,35 @@ class QRCodeTracker {
             'code' => $code,
             'url' => home_url('/' . $code)
         ];
+    }
+
+    private function get_current_request_url_variations() {
+        $current_url = home_url(add_query_arg(null, null));
+        $request_uri = home_url($_SERVER['REQUEST_URI']);
+
+        return [
+            $current_url,
+            $request_uri,
+            rtrim($current_url, '/'),
+            rtrim($request_uri, '/'),
+            str_replace('/?', '?', $current_url),
+            str_replace('/?', '?', $request_uri),
+        ];
+    }
+
+    private function get_tracker_row_by_urls($variations) {
+        global $wpdb;
+
+        $variations = array_values(array_unique(array_filter($variations)));
+        if (empty($variations)) {
+            return null;
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($variations), '%s'));
+        $params = array_merge($variations, $variations);
+
+        $sql = "SELECT * FROM {$this->main_table} WHERE url IN ({$placeholders}) OR legacy_url IN ({$placeholders})";
+        return $wpdb->get_row($wpdb->prepare($sql, $params));
     }
 }
 

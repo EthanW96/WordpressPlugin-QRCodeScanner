@@ -261,9 +261,10 @@ class QRCodeTracker_DB {
         }
 
         foreach ($rows as $row) {
-            $unique_code = $this->generate_unique_code($wpdb);
+            $unique_code = QRCodeTracker_Utils::generate_unique_code($this->main_table, 'unique_code', 6);
             $new_url = home_url('/' . $unique_code);
 
+            // Preserve any existing legacy URL value and only fallback to current URL when missing.
             $legacy_url = !empty($row->legacy_url) ? $row->legacy_url : $row->url;
 
             $wpdb->update(
@@ -277,28 +278,6 @@ class QRCodeTracker_DB {
                 ['id' => $row->id]
             );
         }
-    }
-
-    private function generate_unique_code($wpdb, $length = 6) {
-        $characters = 'abcdefghijklmnopqrstuvwxyz0123456789';
-
-        for ($attempt = 0; $attempt < 30; $attempt++) {
-            $code = '';
-            for ($i = 0; $i < $length; $i++) {
-                $code .= $characters[wp_rand(0, strlen($characters) - 1)];
-            }
-
-            $exists = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$this->main_table} WHERE unique_code = %s",
-                $code
-            ));
-
-            if ($exists === 0) {
-                return $code;
-            }
-        }
-
-        return substr(wp_hash(uniqid((string) wp_rand(), true)), 0, max(8, $length));
     }
     
     private function create_teams_tables() {
