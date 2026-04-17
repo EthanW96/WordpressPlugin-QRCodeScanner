@@ -379,6 +379,12 @@ class QRCodeTracker_Admin {
             } else {
                 echo '<div class="notice notice-info"><p><strong>Important:</strong> Postcode, City, and Tree fields cannot contain spaces or special characters. Only letters, numbers, and hyphens are allowed.</p></div>';
             }
+            if (!empty($edit_data->short_code)) {
+                $anonymous_url = $this->tracker->generate_anonymous_tracker_url($edit_data->short_code);
+                if (!empty($anonymous_url)) {
+                    echo '<div class="notice notice-info"><p><strong>Anonymous Link:</strong> <a href="' . esc_url($anonymous_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($anonymous_url) . '</a><br><span class="description">Share this short link externally. Existing legacy links continue to work.</span></p></div>';
+                }
+            }
             echo '<form method="post" id="qr-edit-form">
                 <input type="hidden" name="qr_edit_id" value="' . $edit_data->id . '">
                 <table class="form-table">';
@@ -703,8 +709,14 @@ class QRCodeTracker_Admin {
                     $team_name = esc_html($team->name);
                 }
             }
+
+            $url_display = '<code>' . esc_html($row->url) . '</code>';
+            $anonymous_url = !empty($row->short_code) ? $this->tracker->generate_anonymous_tracker_url($row->short_code) : '';
+            if (!empty($anonymous_url) && untrailingslashit($anonymous_url) !== untrailingslashit($row->url)) {
+                $url_display .= '<br><code>' . esc_html($anonymous_url) . '</code><br><span class="description">Anonymous link</span>';
+            }
             
-            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td><code>{$row->url}</code></td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>{$row->last_scanned}</td>";
+            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td>{$url_display}</td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>{$row->last_scanned}</td>";
             echo "<td>";
             if ($row->scan_count == 0) {
                 echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a> ";
