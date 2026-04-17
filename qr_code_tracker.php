@@ -27,6 +27,8 @@ use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 
 class QRCodeTracker {
+    private const CHRISTMAS_IDENTIFIER_LENGTH = 6;
+    private const CHRISTMAS_FALLBACK_HASH_ALGO = 'sha256';
     private $main_table;
     private $log_table;
     private $current_tracker = null;
@@ -327,7 +329,11 @@ class QRCodeTracker {
             wp_die('QR code not found');
         }
         $export_type = isset($_GET['export']) ? sanitize_key(wp_unslash($_GET['export'])) : '';
-        $url = $export_type === 'christmas' ? $this->get_merry_christmas_qr_payload($row) : $row->url;
+        $tiny_identifier = '';
+        if ($export_type === 'christmas') {
+            $tiny_identifier = $this->get_tiny_identifier($row);
+        }
+        $url = $export_type === 'christmas' ? $this->get_merry_christmas_qr_payload($tiny_identifier) : $row->url;
         // High-res QR code (e.g., 2000x2000 px)
         $options = new QROptions([
             'outputType' => QRCode::OUTPUT_IMAGE_PNG,
@@ -343,7 +349,7 @@ class QRCodeTracker {
         $tree = preg_replace('/[^a-zA-Z0-9_-]/', '', $row->tree);
         $filename = ($postcode ? $postcode : 'qr') . ($city ? '-' . $city : '') . ($tree ? '-' . $tree : '');
         if ($export_type === 'christmas') {
-            $filename .= '-merry-christmas-' . $this->get_tiny_identifier($row);
+            $filename .= '-merry-christmas-' . $tiny_identifier;
         }
         $filename .= '.png';
         header('Content-Type: image/png');
@@ -353,15 +359,15 @@ class QRCodeTracker {
         exit;
     }
 
-    private function get_merry_christmas_qr_payload($row) {
-        return 'Merry Christmas ' . $this->get_tiny_identifier($row);
+    private function get_merry_christmas_qr_payload($tiny_identifier) {
+        return 'Merry Christmas ' . $tiny_identifier;
     }
 
     private function get_tiny_identifier($row) {
         $id = isset($row->id) ? (int) $row->id : 0;
 
         if ($id > 0) {
-            return str_pad(strtoupper(base_convert((string) $id, 10, 36)), 6, '0', STR_PAD_LEFT);
+            return str_pad(strtoupper(base_convert((string) $id, 10, 36)), self::CHRISTMAS_IDENTIFIER_LENGTH, '0', STR_PAD_LEFT);
         }
 
         $fallback_seed = implode('|', [
@@ -371,8 +377,10 @@ class QRCodeTracker {
             (string) ($row->tree ?? ''),
             (string) ($row->label ?? ''),
             (string) ($row->reporting_id ?? ''),
+            (string) microtime(true),
+            (string) wp_rand(),
         ]);
-        return strtoupper(substr(hash('sha256', $fallback_seed), 0, 6));
+        return strtoupper(substr(hash(self::CHRISTMAS_FALLBACK_HASH_ALGO, $fallback_seed), 0, self::CHRISTMAS_IDENTIFIER_LENGTH));
     }
 
     public function generate_tracker_url($postcode, $city, $tree) {
