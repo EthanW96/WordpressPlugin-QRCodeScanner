@@ -333,6 +333,7 @@ class QRCodeTracker {
             wp_die('QR code not found');
         }
         $export_type = isset($_GET['export']) ? sanitize_key(wp_unslash($_GET['export'])) : '';
+        $export_type = in_array($export_type, ['', 'christmas'], true) ? $export_type : '';
         $tiny_identifier = '';
         if ($export_type === 'christmas') {
             $tiny_identifier = $this->get_tiny_identifier($row);
@@ -373,7 +374,7 @@ class QRCodeTracker {
         if ($id > 0) {
             $identifier = strtoupper(base_convert((string) $id, 10, 36));
             if (strlen($identifier) > self::CHRISTMAS_IDENTIFIER_LENGTH) {
-                return substr($identifier, -self::CHRISTMAS_IDENTIFIER_LENGTH);
+                return strtoupper(substr(hash(self::CHRISTMAS_FALLBACK_HASH_ALGO, (string) $id), 0, self::CHRISTMAS_IDENTIFIER_LENGTH));
             }
             return str_pad($identifier, self::CHRISTMAS_IDENTIFIER_LENGTH, '0', STR_PAD_LEFT);
         }
