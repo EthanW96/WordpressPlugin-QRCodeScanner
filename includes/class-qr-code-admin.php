@@ -119,14 +119,15 @@ class QRCodeTracker_Admin {
                 }
                 echo '</ul></div>';
             } else {
-                $url = $this->tracker->generate_tracker_url($postcode, $city, $tree);
+                $short_code = $this->tracker->generate_unique_short_code();
+                $url = $this->tracker->generate_tracker_url($postcode, $city, $tree, $short_code);
                 
-                // Check for duplicate URL
-                $existing = $wpdb->get_row($wpdb->prepare("SELECT id, postcode, tree FROM {$this->main_table} WHERE url = %s", $url));
+                // Check for duplicate URL/short code
+                $existing = $wpdb->get_row($wpdb->prepare("SELECT id, postcode, tree FROM {$this->main_table} WHERE url = %s OR short_code = %s", $url, $short_code));
                 if ($existing) {
-                    echo '<div class="error"><p>Error: A QR code with this URL already exists (ID: ' . $existing->id . ', Postcode: ' . $existing->postcode . ', Tree: ' . $existing->tree . '). Please use a different URL.</p></div>';
+                    echo '<div class="error"><p>Error: A QR code with this URL or short code already exists (ID: ' . $existing->id . ', Postcode: ' . $existing->postcode . ', Tree: ' . $existing->tree . '). Please try again.</p></div>';
                 } else {
-                    $wpdb->insert($this->main_table, compact('url', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id'));
+                    $wpdb->insert($this->main_table, compact('url', 'short_code', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id'));
                     echo '<div class="updated"><p>QR Code entry saved.</p></div>';
                 }
             }
@@ -140,7 +141,7 @@ class QRCodeTracker_Admin {
             }
             $postcode = strtoupper(sanitize_text_field($_POST['qr_postcode']));
             $edit_id = intval($_POST['qr_edit_id']);
-            $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count, url FROM {$this->main_table} WHERE id = %d", $edit_id));
+            $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count, url, short_code FROM {$this->main_table} WHERE id = %d", $edit_id));
             
             if ($row) {
                 $city = sanitize_text_field($_POST['qr_city']);
@@ -186,14 +187,15 @@ class QRCodeTracker_Admin {
                     }
                     echo '</ul></div>';
                 } else {
-                    $url = $this->tracker->generate_tracker_url($postcode, $city, $tree);
+                    $short_code = !empty($row->short_code) ? $row->short_code : $this->tracker->generate_unique_short_code();
+                    $url = $this->tracker->generate_tracker_url($postcode, $city, $tree, $short_code);
                     
                     // If no scans exist, allow URL editing
                     if ($row->scan_count == 0) {
-                        $update_data = compact('url', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
+                        $update_data = compact('url', 'short_code', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
                     } else {
                         // If scans exist, only update non-URL fields
-                        $update_data = compact('postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
+                        $update_data = compact('short_code', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
                     }
                     
                     $wpdb->update($this->main_table, $update_data, ['id' => $edit_id]);
@@ -750,14 +752,8 @@ class QRCodeTracker_Admin {
     }
 
     // 2. Add a helper to generate the URL from postcode, city, and tree
-    private function generate_tracker_url($postcode, $city, $tree) {
-        $base = home_url('/');
-        $params = [
-            'postcode' => $postcode,
-            'city' => $city,
-            'tree' => $tree
-        ];
-        return add_query_arg($params, $base);
+    private function generate_tracker_url($postcode, $city, $tree, $short_code = '') {
+        return $this->tracker->generate_tracker_url($postcode, $city, $tree, $short_code);
     }
 
 
@@ -814,12 +810,35 @@ class QRCodeTracker_Admin {
             $default_shop_logo = esc_url_raw($_POST['qr_tracker_default_shop_logo']);
             update_option('qr_tracker_default_shop_link', $default_shop_link);
             update_option('qr_tracker_default_shop_logo', $default_shop_logo);
+
+            $tree_product_ids = isset($_POST['qr_tracker_tree_product_ids']) && is_array($_POST['qr_tracker_tree_product_ids'])
+                ? array_values(array_unique(array_filter(array_map('intval', wp_unslash($_POST['qr_tracker_tree_product_ids'])))))
+                : [];
+            update_option('qr_tracker_tree_product_ids', $tree_product_ids);
             
             echo '<div class="updated"><p>Settings saved.</p></div>';
         }
         $delete_on_uninstall = get_option('qr_tracker_delete_on_uninstall', 0);
         $default_shop_link = get_option('qr_tracker_default_shop_link', '');
         $default_shop_logo = get_option('qr_tracker_default_shop_logo', '');
+        $tree_product_ids = get_option('qr_tracker_tree_product_ids', []);
+        if (!is_array($tree_product_ids)) {
+            $tree_product_ids = [];
+        }
+
+        $available_tree_products = [];
+        if (post_type_exists('product')) {
+            $available_tree_products = get_posts([
+                'post_type' => 'product',
+                'post_status' => ['publish', 'private'],
+                'posts_per_page' => -1,
+                'orderby' => 'title',
+                'order' => 'ASC',
+                'fields' => 'ids',
+                'suppress_filters' => false,
+            ]);
+        }
+
         echo '<div class="wrap"><h1>QR Code Tracker Settings</h1>';
         echo '<div style="margin-bottom:20px;padding:10px 15px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;max-width:600px;">';
         echo '<strong>Plugin Version:</strong> ' . esc_html($plugin_version) . '<br>';
@@ -848,6 +867,26 @@ class QRCodeTracker_Admin {
         echo '<tr><th scope="row">Default Shop Logo</th><td>';
         echo '<input type="url" name="qr_tracker_default_shop_logo" value="' . esc_attr($default_shop_logo) . '" placeholder="https://example.com/logo.png" style="width: 100%;">';
         echo '<p class="description">Default shop logo URL to use when individual QR codes don\'t have their own logo set.</p>';
+        echo '</td></tr>';
+        echo '<tr><th scope="row">Tree Product Selection</th><td>';
+        if (!post_type_exists('product')) {
+            echo '<p class="description">WooCommerce products are unavailable. Activate WooCommerce to configure this setting.</p>';
+        } elseif (empty($available_tree_products)) {
+            echo '<p class="description">No WooCommerce products found.</p>';
+        } else {
+            echo '<select name="qr_tracker_tree_product_ids[]" multiple size="12" style="width: 100%; max-width: 600px;">';
+            foreach ($available_tree_products as $product_id) {
+                $title = get_the_title($product_id);
+                if ($title === '') {
+                    $title = '(no title)';
+                }
+                echo '<option value="' . esc_attr($product_id) . '"' . selected(in_array((int) $product_id, $tree_product_ids, true), true, false) . '>';
+                echo esc_html($title . ' (ID: ' . $product_id . ')');
+                echo '</option>';
+            }
+            echo '</select>';
+            echo '<p class="description">Select zero, one, or many WooCommerce products that should show the Advent Tree purchase fields. Hold Ctrl (Windows) or Command (Mac) to select multiple products.</p>';
+        }
         echo '</td></tr>';
         echo '</table>';
         echo '<p><input type="submit" name="qr_tracker_settings_submit" class="button button-primary" value="Save Settings"></p>';
