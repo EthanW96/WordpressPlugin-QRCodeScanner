@@ -364,7 +364,14 @@ class QRCodeTracker {
             return str_pad(strtoupper(base_convert((string) $id, 10, 36)), 6, '0', STR_PAD_LEFT);
         }
 
-        $fallback_seed = (string) ($row->postcode ?? '') . '|' . (string) ($row->city ?? '') . '|' . (string) ($row->tree ?? '');
+        $fallback_seed = implode('|', [
+            (string) ($row->url ?? ''),
+            (string) ($row->postcode ?? ''),
+            (string) ($row->city ?? ''),
+            (string) ($row->tree ?? ''),
+            (string) ($row->label ?? ''),
+            (string) ($row->reporting_id ?? ''),
+        ]);
         return strtoupper(substr(hash('sha256', $fallback_seed), 0, 6));
     }
 
