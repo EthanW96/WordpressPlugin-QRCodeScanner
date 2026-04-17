@@ -125,7 +125,7 @@ class QRCodeTracker_Admin {
                 // Check for duplicate URL/short code
                 $existing = $wpdb->get_row($wpdb->prepare("SELECT id, postcode, tree FROM {$this->main_table} WHERE url = %s OR short_code = %s", $url, $short_code));
                 if ($existing) {
-                    echo '<div class="error"><p>Error: A QR code with this URL already exists (ID: ' . $existing->id . ', Postcode: ' . $existing->postcode . ', Tree: ' . $existing->tree . '). Please use a different URL.</p></div>';
+                    echo '<div class="error"><p>Error: A QR code with this URL or short code already exists (ID: ' . $existing->id . ', Postcode: ' . $existing->postcode . ', Tree: ' . $existing->tree . '). Please try again.</p></div>';
                 } else {
                     $wpdb->insert($this->main_table, compact('url', 'short_code', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id'));
                     echo '<div class="updated"><p>QR Code entry saved.</p></div>';

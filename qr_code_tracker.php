@@ -454,7 +454,7 @@ class QRCodeTracker {
             'type'        => 'text',
             'class'       => ['form-row-wide'],
             'label'       => 'Contact email(s)',
-            'description' => 'Comma-separated if multiple.',
+            'description' => 'Separate multiple emails with commas, spaces, or semicolons.',
             'required'    => true,
         ], isset($_POST['contact_emails']) ? sanitize_text_field(wp_unslash($_POST['contact_emails'])) : '');
 
@@ -462,7 +462,7 @@ class QRCodeTracker {
             'type'        => 'text',
             'class'       => ['form-row-wide'],
             'label'       => 'Report email(s)',
-            'description' => 'Weekly report recipient(s), comma-separated.',
+            'description' => 'Weekly report recipient(s), separated by commas, spaces, or semicolons.',
         ], isset($_POST['report_emails']) ? sanitize_text_field(wp_unslash($_POST['report_emails'])) : '');
 
         woocommerce_form_field('org_or_individual_name', [
