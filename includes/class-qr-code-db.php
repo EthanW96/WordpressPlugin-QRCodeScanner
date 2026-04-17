@@ -23,6 +23,7 @@ class QRCodeTracker_DB {
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             url TEXT NOT NULL,
             short_code VARCHAR(16) DEFAULT NULL,
+            edit_token VARCHAR(64) DEFAULT NULL,
             postcode VARCHAR(32),
             city VARCHAR(64),
             tree VARCHAR(64),
@@ -40,6 +41,7 @@ class QRCodeTracker_DB {
             PRIMARY KEY (id),
             KEY team_id (team_id),
             KEY short_code (short_code),
+            KEY edit_token (edit_token),
             KEY postcode (postcode),
             KEY city (city),
             KEY tree (tree)
@@ -121,6 +123,11 @@ class QRCodeTracker_DB {
             $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN short_code VARCHAR(16) DEFAULT NULL AFTER url");
             $wpdb->query("ALTER TABLE {$this->main_table} ADD INDEX short_code (short_code)");
         }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'edit_token'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN edit_token VARCHAR(64) DEFAULT NULL AFTER short_code");
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD INDEX edit_token (edit_token)");
+        }
         
         // Existing upgrade logic
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'message_1'");
@@ -173,6 +180,7 @@ class QRCodeTracker_DB {
         // Add performance indexes for existing installations
         $this->add_performance_indexes();
         $this->populate_missing_short_codes();
+        $this->populate_missing_edit_tokens();
     }
     
     private function create_teams_tables() {
@@ -312,6 +320,36 @@ class QRCodeTracker_DB {
             $wpdb->update(
                 $this->main_table,
                 ['short_code' => $this->generate_unique_short_code()],
+                ['id' => $row->id]
+            );
+        }
+    }
+
+    private function generate_unique_edit_token($length = 32) {
+        global $wpdb;
+
+        do {
+            $token = strtolower(wp_generate_password($length, false, false));
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$this->main_table} WHERE edit_token = %s LIMIT 1",
+                $token
+            ));
+        } while ($exists);
+
+        return $token;
+    }
+
+    private function populate_missing_edit_tokens() {
+        global $wpdb;
+        $rows = $wpdb->get_results("SELECT id FROM {$this->main_table} WHERE edit_token IS NULL OR edit_token = ''");
+        if (empty($rows)) {
+            return;
+        }
+
+        foreach ($rows as $row) {
+            $wpdb->update(
+                $this->main_table,
+                ['edit_token' => $this->generate_unique_edit_token()],
                 ['id' => $row->id]
             );
         }
