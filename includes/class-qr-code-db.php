@@ -22,6 +22,8 @@ class QRCodeTracker_DB {
         $sql_main = "CREATE TABLE {$this->main_table} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             url TEXT NOT NULL,
+            legacy_url TEXT NULL,
+            unique_code VARCHAR(32) NULL,
             postcode VARCHAR(32),
             city VARCHAR(64),
             tree VARCHAR(64),
@@ -35,9 +37,22 @@ class QRCodeTracker_DB {
             shop_link VARCHAR(255),
             shop_logo VARCHAR(255),
             show_shop_link TINYINT(1) DEFAULT 1,
+            qr_source VARCHAR(32) DEFAULT 'manual',
+            purchase_status VARCHAR(32) DEFAULT 'ready',
+            contact_emails TEXT NULL,
+            report_emails TEXT NULL,
+            buyer_name VARCHAR(190) NULL,
+            referral_code VARCHAR(64) NULL,
+            referral_url TEXT NULL,
+            pay_tree_forward_type VARCHAR(32) NULL,
+            pay_tree_forward_recipient VARCHAR(190) NULL,
+            woocommerce_order_id BIGINT UNSIGNED NULL,
+            woocommerce_item_id BIGINT UNSIGNED NULL,
             team_id BIGINT UNSIGNED DEFAULT NULL,
             PRIMARY KEY (id),
             KEY team_id (team_id),
+            KEY unique_code (unique_code),
+            KEY woocommerce_order_id (woocommerce_order_id),
             KEY postcode (postcode),
             KEY city (city),
             KEY tree (tree)
@@ -162,9 +177,128 @@ class QRCodeTracker_DB {
         if (empty($columns)) {
             $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN show_shop_link TINYINT(1) DEFAULT 1 AFTER shop_logo");
         }
+
+        // Add unique URL support and WooCommerce purchase metadata fields
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'legacy_url'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN legacy_url TEXT NULL AFTER url");
+        }
+
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'unique_code'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN unique_code VARCHAR(32) NULL AFTER legacy_url");
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD INDEX unique_code (unique_code)");
+        }
+
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'qr_source'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN qr_source VARCHAR(32) DEFAULT 'manual' AFTER show_shop_link");
+        }
+
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'purchase_status'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN purchase_status VARCHAR(32) DEFAULT 'ready' AFTER qr_source");
+        }
+
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'contact_emails'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN contact_emails TEXT NULL AFTER purchase_status");
+        }
+
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'report_emails'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN report_emails TEXT NULL AFTER contact_emails");
+        }
+
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'buyer_name'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN buyer_name VARCHAR(190) NULL AFTER report_emails");
+        }
+
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'referral_code'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN referral_code VARCHAR(64) NULL AFTER buyer_name");
+        }
+
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'referral_url'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN referral_url TEXT NULL AFTER referral_code");
+        }
+
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'pay_tree_forward_type'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN pay_tree_forward_type VARCHAR(32) NULL AFTER referral_url");
+        }
+
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'pay_tree_forward_recipient'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN pay_tree_forward_recipient VARCHAR(190) NULL AFTER pay_tree_forward_type");
+        }
+
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'woocommerce_order_id'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN woocommerce_order_id BIGINT UNSIGNED NULL AFTER pay_tree_forward_recipient");
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD INDEX woocommerce_order_id (woocommerce_order_id)");
+        }
+
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'woocommerce_item_id'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN woocommerce_item_id BIGINT UNSIGNED NULL AFTER woocommerce_order_id");
+        }
+
+        $this->migrate_existing_qr_urls_to_unique_codes();
         
         // Add performance indexes for existing installations
         $this->add_performance_indexes();
+    }
+
+    private function migrate_existing_qr_urls_to_unique_codes() {
+        global $wpdb;
+
+        $rows = $wpdb->get_results("SELECT id, url, legacy_url, unique_code FROM {$this->main_table} WHERE unique_code IS NULL OR unique_code = ''");
+        if (empty($rows)) {
+            return;
+        }
+
+        foreach ($rows as $row) {
+            $unique_code = $this->generate_unique_code($wpdb);
+            $new_url = home_url('/' . $unique_code);
+
+            $legacy_url = !empty($row->legacy_url) ? $row->legacy_url : $row->url;
+
+            $wpdb->update(
+                $this->main_table,
+                [
+                    'legacy_url' => $legacy_url,
+                    'unique_code' => $unique_code,
+                    'url' => $new_url,
+                    'qr_source' => 'manual'
+                ],
+                ['id' => $row->id]
+            );
+        }
+    }
+
+    private function generate_unique_code($wpdb, $length = 6) {
+        $characters = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+        for ($attempt = 0; $attempt < 30; $attempt++) {
+            $code = '';
+            for ($i = 0; $i < $length; $i++) {
+                $code .= $characters[wp_rand(0, strlen($characters) - 1)];
+            }
+
+            $exists = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$this->main_table} WHERE unique_code = %s",
+                $code
+            ));
+
+            if ($exists === 0) {
+                return $code;
+            }
+        }
+
+        return substr(wp_hash(uniqid((string) wp_rand(), true)), 0, max(8, $length));
     }
     
     private function create_teams_tables() {

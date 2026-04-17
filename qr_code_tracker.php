@@ -21,6 +21,7 @@ require_once __DIR__ . '/includes/class-qr-code-single-report.php';
 require_once __DIR__ . '/includes/class-qr-code-city-report.php';
 require_once __DIR__ . '/includes/class-qr-code-popup.php';
 require_once __DIR__ . '/includes/class-qr-code-permissions.php';
+require_once __DIR__ . '/includes/class-qr-code-woocommerce.php';
 
 // 1. Add QR code library import at the top (after class QRCodeTracker {)
 use chillerlan\QRCode\QRCode;
@@ -35,6 +36,7 @@ class QRCodeTracker {
     private $export;
     private $popup;
     private $teams;
+    private $woocommerce;
 
     public function __construct() {
         global $wpdb;
@@ -58,6 +60,7 @@ class QRCodeTracker {
 
         // Initialize popup functionality
         $this->popup = new QRCodeTracker_Popup($this);
+        $this->woocommerce = new QRCodeTracker_WooCommerce($this);
 
         add_action('wp', [$this, 'track_visit']);
         add_shortcode('qr_tracker_message_1', [$this, 'shortcode_message_1']);
@@ -152,7 +155,8 @@ class QRCodeTracker {
             $request_uri_alt = str_replace('/?', '?', $request_uri);
             
             $row = $wpdb->get_row($wpdb->prepare(
-                "SELECT * FROM {$this->main_table} WHERE url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR url = %s", 
+                "SELECT * FROM {$this->main_table} WHERE url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s",
+                $current_url, $request_uri, $current_url_no_slash, $request_uri_no_slash, $current_url_alt, $request_uri_alt,
                 $current_url, $request_uri, $current_url_no_slash, $request_uri_no_slash, $current_url_alt, $request_uri_alt
             ));
         }
@@ -216,7 +220,8 @@ class QRCodeTracker {
         $request_uri_alt = str_replace('/?', '?', $request_uri);
         
         $row = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$this->main_table} WHERE url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR url = %s", 
+            "SELECT * FROM {$this->main_table} WHERE url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s OR legacy_url = %s",
+            $current_url, $request_uri, $current_url_no_slash, $request_uri_no_slash, $current_url_alt, $request_uri_alt,
             $current_url, $request_uri, $current_url_no_slash, $request_uri_no_slash, $current_url_alt, $request_uri_alt
         ));
         $this->current_tracker = $row;
@@ -356,6 +361,39 @@ class QRCodeTracker {
             'tree' => $tree
         ];
         return add_query_arg($params, $base);
+    }
+
+    public function generate_unique_tracker_code($length = 6) {
+        global $wpdb;
+
+        $characters = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        $max_attempts = 30;
+
+        for ($attempt = 0; $attempt < $max_attempts; $attempt++) {
+            $code = '';
+            for ($i = 0; $i < $length; $i++) {
+                $code .= $characters[wp_rand(0, strlen($characters) - 1)];
+            }
+
+            $exists = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$this->main_table} WHERE unique_code = %s",
+                $code
+            ));
+
+            if ($exists === 0) {
+                return $code;
+            }
+        }
+
+        return substr(wp_hash(uniqid((string) wp_rand(), true)), 0, max(8, $length));
+    }
+
+    public function generate_unique_tracker_url($length = 6) {
+        $code = $this->generate_unique_tracker_code($length);
+        return [
+            'code' => $code,
+            'url' => home_url('/' . $code)
+        ];
     }
 }
 

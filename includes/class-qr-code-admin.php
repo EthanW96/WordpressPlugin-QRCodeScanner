@@ -684,7 +684,7 @@ class QRCodeTracker_Admin {
 
         // Now display the Tracked QR Codes table
         $entries = $this->teams->get_accessible_qr_codes();
-        echo '<h2>Tracked QR Codes</h2><table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>Popup</th><th>Shop Link</th><th>Team</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Last Scanned</th><th>Actions</th></tr></thead><tbody>';
+        echo '<h2>Tracked QR Codes</h2><table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>Purchase Status</th><th>Purchase Details</th><th>Popup</th><th>Shop Link</th><th>Team</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Last Scanned</th><th>Actions</th></tr></thead><tbody>';
         foreach ($entries as $row) {
             $delete_url = esc_url(add_query_arg(['delete_id' => $row->id]));
             $edit_url = esc_url(add_query_arg(['edit_id' => $row->id]));
@@ -692,6 +692,39 @@ class QRCodeTracker_Admin {
             $download_url = esc_url(admin_url('admin.php?action=qr_tracker_download_qr&id=' . $row->id));
             $popup_status = $row->show_popup ? '<span style="color: green;">✓ Enabled</span>' : '<span style="color: #666;">✗ Disabled</span>';
             $shop_link_status = $row->show_shop_link ? '<span style="color: green;">✓ Enabled</span>' : '<span style="color: #666;">✗ Disabled</span>';
+            $purchase_status = !empty($row->purchase_status) ? esc_html($row->purchase_status) : 'ready';
+
+            $purchase_details = '—';
+            if (!empty($row->buyer_name) || !empty($row->contact_emails) || !empty($row->report_emails) || !empty($row->referral_code) || !empty($row->pay_tree_forward_type) || !empty($row->woocommerce_order_id)) {
+                $details = [];
+                if (!empty($row->woocommerce_order_id)) {
+                    $details[] = '<strong>Order:</strong> #' . esc_html($row->woocommerce_order_id);
+                }
+                if (!empty($row->buyer_name)) {
+                    $details[] = '<strong>Name:</strong> ' . esc_html($row->buyer_name);
+                }
+                if (!empty($row->contact_emails)) {
+                    $details[] = '<strong>Contact:</strong> ' . esc_html($row->contact_emails);
+                }
+                if (!empty($row->report_emails)) {
+                    $details[] = '<strong>Weekly Reports:</strong> ' . esc_html($row->report_emails);
+                }
+                if (!empty($row->referral_code)) {
+                    $referral_text = '<strong>Referral:</strong> ' . esc_html($row->referral_code);
+                    if (!empty($row->referral_url)) {
+                        $referral_text .= ' (<a href="' . esc_url($row->referral_url) . '" target="_blank" rel="noopener noreferrer">link</a>)';
+                    }
+                    $details[] = $referral_text;
+                }
+                if (!empty($row->pay_tree_forward_type)) {
+                    $forward_text = '<strong>Pay Forward:</strong> ' . esc_html($row->pay_tree_forward_type);
+                    if (!empty($row->pay_tree_forward_recipient)) {
+                        $forward_text .= ' - ' . esc_html($row->pay_tree_forward_recipient);
+                    }
+                    $details[] = $forward_text;
+                }
+                $purchase_details = implode('<br>', $details);
+            }
             
             // Get team name
             $team_name = 'No Team';
@@ -702,7 +735,7 @@ class QRCodeTracker_Admin {
                 }
             }
             
-            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td><code>{$row->url}</code></td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>{$row->last_scanned}</td>";
+            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$purchase_status}</td><td>{$purchase_details}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td><code>{$row->url}</code></td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>{$row->last_scanned}</td>";
             echo "<td>";
             if ($row->scan_count == 0) {
                 echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a> ";
