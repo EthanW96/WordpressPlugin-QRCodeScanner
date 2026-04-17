@@ -27,9 +27,13 @@ use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 
 class QRCodeTracker {
+    private const SHORT_CODE_MIN_LENGTH = 6;
+    private const SHORT_CODE_MAX_LENGTH = 16;
+
     private $main_table;
     private $log_table;
     private $current_tracker = null;
+    private $current_request_url = '';
     private $visit_debug = null;
     private $admin;
     private $db;
@@ -523,7 +527,102 @@ class QRCodeTracker {
         return add_query_arg($params, $base);
     }
 
-    public function generate_unique_short_code($length = 6) {
+    public function generate_anonymous_tracker_url($short_code) {
+        $short_code = strtolower(sanitize_text_field((string) $short_code));
+        if (empty($short_code)) {
+            return '';
+        }
+        return home_url('/' . rawurlencode($short_code));
+    }
+
+    private function get_short_code_from_request_path() {
+        $this->current_request_url = '';
+
+        if (empty($_SERVER['REQUEST_URI'])) {
+            return '';
+        }
+
+        $request_uri = wp_unslash($_SERVER['REQUEST_URI']);
+        $request_path = wp_parse_url($request_uri, PHP_URL_PATH);
+        if (!is_string($request_path)) {
+            return '';
+        }
+        $request_query = wp_parse_url($request_uri, PHP_URL_QUERY);
+        $this->current_request_url = home_url($request_path . ($request_query ? '?' . $request_query : ''));
+
+        $request_path = trim($request_path, '/');
+        if ($request_path === '') {
+            return '';
+        }
+
+        $home_path = wp_parse_url(home_url('/'), PHP_URL_PATH);
+        if (is_string($home_path)) {
+            $home_path = trim($home_path, '/');
+            if ($home_path !== '') {
+                if (strpos($request_path, $home_path . '/') === 0) {
+                    $request_path = substr($request_path, strlen($home_path) + 1);
+                } elseif ($request_path === $home_path) {
+                    $request_path = '';
+                }
+            }
+        }
+
+        if ($request_path === '' || strpos($request_path, '/') !== false) {
+            return '';
+        }
+
+        $short_code_pattern = '/^[a-z0-9]{' . self::SHORT_CODE_MIN_LENGTH . ',' . self::SHORT_CODE_MAX_LENGTH . '}$/';
+        if (!preg_match($short_code_pattern, $request_path)) {
+            return '';
+        }
+
+        return strtolower($request_path);
+    }
+
+    public function handle_anonymous_short_code_redirect() {
+        if (is_admin() || wp_doing_ajax()) {
+            return;
+        }
+
+        if (isset($_GET['qr']) || isset($_GET['postcode']) || isset($_GET['city']) || isset($_GET['tree'])) {
+            return;
+        }
+
+        $short_code = $this->get_short_code_from_request_path();
+        if (empty($short_code)) {
+            return;
+        }
+
+        global $wpdb;
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT url FROM {$this->main_table} WHERE short_code = %s LIMIT 1",
+            $short_code
+        ));
+
+        if (!$row || empty($row->url)) {
+            return;
+        }
+
+        $current_url = $this->current_request_url;
+        if (empty($current_url)) {
+            return;
+        }
+        $stored_url = esc_url_raw($row->url);
+
+        if (empty($stored_url)) {
+            return;
+        }
+
+        // Prevent redirect loops when the anonymous URL already resolves to the stored URL.
+        if (untrailingslashit($current_url) === untrailingslashit($stored_url)) {
+            return;
+        }
+
+        wp_safe_redirect($stored_url, 302);
+        exit;
+    }
+
+    public function generate_unique_short_code($length = self::SHORT_CODE_MIN_LENGTH) {
         global $wpdb;
         $characters = 'abcdefghijklmnopqrstuvwxyz0123456789';
         $max_index = strlen($characters) - 1;
