@@ -326,7 +326,8 @@ class QRCodeTracker {
         if (!$row) {
             wp_die('QR code not found');
         }
-        $url = $row->url;
+        $export_type = isset($_GET['export']) ? sanitize_key(wp_unslash($_GET['export'])) : '';
+        $url = $export_type === 'christmas' ? $this->get_merry_christmas_qr_payload($row) : $row->url;
         // High-res QR code (e.g., 2000x2000 px)
         $options = new QROptions([
             'outputType' => QRCode::OUTPUT_IMAGE_PNG,
@@ -340,12 +341,24 @@ class QRCodeTracker {
         $postcode = preg_replace('/[^a-zA-Z0-9_-]/', '', $row->postcode);
         $city = preg_replace('/[^a-zA-Z0-9_-]/', '', $row->city);
         $tree = preg_replace('/[^a-zA-Z0-9_-]/', '', $row->tree);
-        $filename = ($postcode ? $postcode : 'qr') . ($city ? '-' . $city : '') . ($tree ? '-' . $tree : '') . '.png';
+        $filename = ($postcode ? $postcode : 'qr') . ($city ? '-' . $city : '') . ($tree ? '-' . $tree : '');
+        if ($export_type === 'christmas') {
+            $filename .= '-merry-christmas-' . $this->get_tiny_identifier($row);
+        }
+        $filename .= '.png';
         header('Content-Type: image/png');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         header('Content-Length: ' . strlen($imageData));
         echo $imageData;
         exit;
+    }
+
+    private function get_merry_christmas_qr_payload($row) {
+        return 'Merry Christmas ' . $this->get_tiny_identifier($row);
+    }
+
+    private function get_tiny_identifier($row) {
+        return strtoupper(base_convert((string) max(1, (int) $row->id), 10, 36));
     }
 
     public function generate_tracker_url($postcode, $city, $tree) {

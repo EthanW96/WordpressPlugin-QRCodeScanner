@@ -690,6 +690,7 @@ class QRCodeTracker_Admin {
             $edit_url = esc_url(add_query_arg(['edit_id' => $row->id]));
             $merge_url = esc_url(add_query_arg(['merge_id' => $row->id]));
             $download_url = esc_url(admin_url('admin.php?action=qr_tracker_download_qr&id=' . $row->id));
+            $christmas_download_url = esc_url(admin_url('admin.php?action=qr_tracker_download_qr&id=' . $row->id . '&export=christmas'));
             $popup_status = $row->show_popup ? '<span style="color: green;">✓ Enabled</span>' : '<span style="color: #666;">✗ Disabled</span>';
             $shop_link_status = $row->show_shop_link ? '<span style="color: green;">✓ Enabled</span>' : '<span style="color: #666;">✗ Disabled</span>';
             
@@ -712,6 +713,7 @@ class QRCodeTracker_Admin {
                 echo "<a href=\"$merge_url\" class=\"button button-secondary\">Merge</a> ";
             }
             echo "<a href='$download_url' class='button' target='_blank'>Download QR Image</a> ";
+            echo "<a href='$christmas_download_url' class='button button-primary' target='_blank'>Export Merry Christmas QR</a> ";
             if ($row->scan_count > 0) {
                 $report_url = esc_url(admin_url('admin.php?page=qr-single-report&qr_id=' . $row->id));
                 echo "<a href='$report_url' class='button button-primary'>Report</a> ";
