@@ -361,11 +361,11 @@ class QRCodeTracker {
         $id = isset($row->id) ? (int) $row->id : 0;
 
         if ($id > 0) {
-            return strtoupper(base_convert((string) $id, 10, 36));
+            return str_pad(strtoupper(base_convert((string) $id, 10, 36)), 6, '0', STR_PAD_LEFT);
         }
 
         $fallback_seed = (string) ($row->postcode ?? '') . '|' . (string) ($row->city ?? '') . '|' . (string) ($row->tree ?? '');
-        return strtoupper(substr(hash('crc32b', $fallback_seed), 0, 6));
+        return strtoupper(substr(hash('sha256', $fallback_seed), 0, 6));
     }
 
     public function generate_tracker_url($postcode, $city, $tree) {
