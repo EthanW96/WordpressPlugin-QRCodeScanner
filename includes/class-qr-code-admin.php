@@ -120,6 +120,7 @@ class QRCodeTracker_Admin {
                 echo '</ul></div>';
             } else {
                 $short_code = $this->tracker->generate_unique_short_code();
+                $edit_token = $this->tracker->generate_unique_edit_token();
                 $url = $this->tracker->generate_tracker_url($postcode, $city, $tree, $short_code);
                 
                 // Check for duplicate URL/short code
@@ -127,7 +128,7 @@ class QRCodeTracker_Admin {
                 if ($existing) {
                     echo '<div class="error"><p>Error: A QR code with this URL or short code already exists (ID: ' . $existing->id . ', Postcode: ' . $existing->postcode . ', Tree: ' . $existing->tree . '). Please try again.</p></div>';
                 } else {
-                    $wpdb->insert($this->main_table, compact('url', 'short_code', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id'));
+                    $wpdb->insert($this->main_table, compact('url', 'short_code', 'edit_token', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id'));
                     echo '<div class="updated"><p>QR Code entry saved.</p></div>';
                 }
             }
@@ -141,7 +142,7 @@ class QRCodeTracker_Admin {
             }
             $postcode = strtoupper(sanitize_text_field($_POST['qr_postcode']));
             $edit_id = intval($_POST['qr_edit_id']);
-            $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count, url, short_code FROM {$this->main_table} WHERE id = %d", $edit_id));
+            $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count, url, short_code, edit_token FROM {$this->main_table} WHERE id = %d", $edit_id));
             
             if ($row) {
                 $city = sanitize_text_field($_POST['qr_city']);
@@ -187,6 +188,10 @@ class QRCodeTracker_Admin {
                     }
                     echo '</ul></div>';
                 } else {
+                    if (empty($row->edit_token)) {
+                        $row->edit_token = $this->tracker->generate_unique_edit_token();
+                        $wpdb->update($this->main_table, ['edit_token' => $row->edit_token], ['id' => $edit_id]);
+                    }
                     $short_code = !empty($row->short_code) ? $row->short_code : $this->tracker->generate_unique_short_code();
                     $url = $this->tracker->generate_tracker_url($postcode, $city, $tree, $short_code);
                     
@@ -378,6 +383,20 @@ class QRCodeTracker_Admin {
                 echo '<div class="notice notice-warning"><p><strong>Note:</strong> This QR code has ' . number_format($edit_data->scan_count) . ' scan(s). The URL is auto-generated and locked to preserve tracking data. <br>Because the URL is based on postcode, city, and tree, <strong>these fields cannot be edited</strong> once scans exist. You can still edit other fields or use the merge function to redistribute scans.</p></div>';
             } else {
                 echo '<div class="notice notice-info"><p><strong>Important:</strong> Postcode, City, and Tree fields cannot contain spaces or special characters. Only letters, numbers, and hyphens are allowed.</p></div>';
+            }
+            if (!empty($edit_data->short_code)) {
+                $anonymous_url = $this->tracker->generate_anonymous_tracker_url($edit_data->short_code);
+                if (!empty($anonymous_url)) {
+                    echo '<div class="notice notice-info"><p><strong>Anonymous Link:</strong> <a href="' . esc_url($anonymous_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($anonymous_url) . '</a><br><span class="description">Share this short link externally. Existing legacy links continue to work.</span></p></div>';
+                }
+            }
+            if (empty($edit_data->edit_token)) {
+                $edit_data->edit_token = $this->tracker->generate_unique_edit_token();
+                $wpdb->update($this->main_table, ['edit_token' => $edit_data->edit_token], ['id' => $edit_data->id]);
+            }
+            $management_url = !empty($edit_data->edit_token) ? $this->tracker->generate_qr_management_url($edit_data->edit_token) : '';
+            if (!empty($management_url)) {
+                echo '<div class="notice notice-info"><p><strong>Management Link:</strong> <a href="' . esc_url($management_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($management_url) . '</a><br><span class="description">Share this link with someone who can create/log in to a WordPress account and edit this QR code\'s message/details.</span></p></div>';
             }
             echo '<form method="post" id="qr-edit-form">
                 <input type="hidden" name="qr_edit_id" value="' . $edit_data->id . '">
@@ -702,6 +721,21 @@ class QRCodeTracker_Admin {
                 if ($team) {
                     $team_name = esc_html($team->name);
                 }
+            }
+
+            if (empty($row->edit_token)) {
+                $row->edit_token = $this->tracker->generate_unique_edit_token();
+                $wpdb->update($this->main_table, ['edit_token' => $row->edit_token], ['id' => $row->id]);
+            }
+
+            $url_display = '<code>' . esc_html($row->url) . '</code>';
+            $anonymous_url = !empty($row->short_code) ? $this->tracker->generate_anonymous_tracker_url($row->short_code) : '';
+            if (!empty($anonymous_url) && untrailingslashit($anonymous_url) !== untrailingslashit($row->url)) {
+                $url_display .= '<br><code>' . esc_html($anonymous_url) . '</code><br><span class="description">Anonymous link</span>';
+            }
+            $management_url = !empty($row->edit_token) ? $this->tracker->generate_qr_management_url($row->edit_token) : '';
+            if (!empty($management_url)) {
+                $url_display .= '<br><code>' . esc_html($management_url) . '</code><br><span class="description">Management link</span>';
             }
             
             echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td><code>{$row->url}</code></td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>{$row->last_scanned}</td>";

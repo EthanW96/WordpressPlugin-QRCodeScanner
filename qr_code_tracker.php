@@ -29,6 +29,9 @@ use chillerlan\QRCode\QROptions;
 class QRCodeTracker {
     private const SHORT_CODE_MIN_LENGTH = 6;
     private const SHORT_CODE_MAX_LENGTH = 16;
+    private const EDIT_TOKEN_LENGTH = 32;
+    private const EDIT_TOKEN_MIN_LENGTH = 16;
+    private const EDIT_TOKEN_MAX_LENGTH = 64;
 
     private $main_table;
     private $log_table;
@@ -66,6 +69,8 @@ class QRCodeTracker {
 
         add_action('wp', [$this, 'track_visit'], 0);
         add_action('template_redirect', [$this, 'handle_legacy_short_code_redirect'], 0);
+        add_action('template_redirect', [$this, 'handle_qr_management_request']);
+        add_action('template_redirect', [$this, 'handle_anonymous_short_code_redirect']);
         add_action('wp_footer', [$this, 'render_visit_debug_message'], 99);
         add_shortcode('qr_tracker_message_1', [$this, 'shortcode_message_1']);
         add_shortcode('qr_tracker_message_2', [$this, 'shortcode_message_2']);
@@ -535,6 +540,28 @@ class QRCodeTracker {
         return home_url('/' . rawurlencode($short_code));
     }
 
+    public function generate_qr_management_url($edit_token) {
+        $edit_token = strtolower(sanitize_text_field((string) $edit_token));
+        if (empty($edit_token)) {
+            return '';
+        }
+        return add_query_arg(['qr_manage' => $edit_token], home_url('/'));
+    }
+
+    public function generate_unique_edit_token($length = self::EDIT_TOKEN_LENGTH) {
+        global $wpdb;
+
+        do {
+            $token = strtolower(wp_generate_password($length, false, false));
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$this->main_table} WHERE edit_token = %s LIMIT 1",
+                $token
+            ));
+        } while ($exists);
+
+        return $token;
+    }
+
     private function get_short_code_from_request_path() {
         $this->current_request_url = '';
 
@@ -584,7 +611,7 @@ class QRCodeTracker {
             return;
         }
 
-        if (isset($_GET['qr']) || isset($_GET['postcode']) || isset($_GET['city']) || isset($_GET['tree'])) {
+        if (isset($_GET['qr']) || isset($_GET['postcode']) || isset($_GET['city']) || isset($_GET['tree']) || isset($_GET['qr_manage'])) {
             return;
         }
 
@@ -619,6 +646,86 @@ class QRCodeTracker {
         }
 
         wp_safe_redirect($stored_url, 302);
+        exit;
+    }
+
+    public function handle_qr_management_request() {
+        if (is_admin() || wp_doing_ajax()) {
+            return;
+        }
+
+        $edit_token = isset($_GET['qr_manage']) ? strtolower(sanitize_text_field(wp_unslash($_GET['qr_manage']))) : '';
+        if (empty($edit_token)) {
+            return;
+        }
+        if (!preg_match('/^[a-z0-9]{' . self::EDIT_TOKEN_MIN_LENGTH . ',' . self::EDIT_TOKEN_MAX_LENGTH . '}$/', $edit_token)) {
+            wp_die('Invalid QR code management link.', 'QR Code Manager', ['response' => 404]);
+        }
+
+        global $wpdb;
+        $qr_code = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$this->main_table} WHERE edit_token = %s LIMIT 1",
+            $edit_token
+        ));
+
+        if (!$qr_code) {
+            wp_die('Invalid QR code management link.', 'QR Code Manager', ['response' => 404]);
+        }
+
+        if (!is_user_logged_in()) {
+            $request_url = esc_url_raw(home_url(wp_unslash($_SERVER['REQUEST_URI'])));
+            $login_url = wp_login_url($request_url);
+            $register_url = add_query_arg(['redirect_to' => $request_url], wp_registration_url());
+            $message = '<p>You must log in to manage this QR code.</p>';
+            $message .= '<p><a class="button button-primary" href="' . esc_url($login_url) . '">Log in</a></p>';
+            if (get_option('users_can_register')) {
+                $message .= '<p><a href="' . esc_url($register_url) . '">Create an account</a></p>';
+            }
+            wp_die($message, 'QR Code Manager', ['response' => 403]);
+        }
+
+        $notice = '';
+        if (isset($_POST['qr_manage_submit'])) {
+            check_admin_referer('qr_manage_' . $qr_code->id);
+
+            $update_data = [
+                'label' => isset($_POST['qr_label']) ? sanitize_text_field(wp_unslash($_POST['qr_label'])) : '',
+                'reporting_id' => isset($_POST['qr_reporting_id']) ? sanitize_text_field(wp_unslash($_POST['qr_reporting_id'])) : '',
+                'message_1' => isset($_POST['qr_message_1']) ? wp_kses_post(wp_unslash($_POST['qr_message_1'])) : '',
+                'message_2' => isset($_POST['qr_message_2']) ? wp_kses_post(wp_unslash($_POST['qr_message_2'])) : '',
+                'show_popup' => isset($_POST['qr_show_popup']) ? 1 : 0,
+                'shop_link' => isset($_POST['qr_shop_link']) ? esc_url_raw(wp_unslash($_POST['qr_shop_link'])) : '',
+                'shop_logo' => isset($_POST['qr_shop_logo']) ? esc_url_raw(wp_unslash($_POST['qr_shop_logo'])) : '',
+                'show_shop_link' => isset($_POST['qr_show_shop_link']) ? 1 : 0,
+            ];
+
+            $wpdb->update($this->main_table, $update_data, ['id' => $qr_code->id]);
+            $qr_code = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->main_table} WHERE id = %d", $qr_code->id));
+            $notice = '<div class="notice notice-success" style="padding:10px;margin:10px 0;"><p>QR code details updated.</p></div>';
+        }
+
+        status_header(200);
+        nocache_headers();
+        get_header();
+        echo '<div class="wrap" style="max-width:900px;margin:40px auto;padding:20px;">';
+        echo '<h1>Manage QR Code</h1>';
+        echo '<p><strong>Postcode:</strong> ' . esc_html($qr_code->postcode) . ' &nbsp; <strong>City:</strong> ' . esc_html($qr_code->city) . ' &nbsp; <strong>Tree:</strong> ' . esc_html($qr_code->tree) . '</p>';
+        echo $notice;
+        echo '<form method="post">';
+        wp_nonce_field('qr_manage_' . $qr_code->id);
+        echo '<table class="form-table">';
+        echo '<tr><th><label for="qr_label">Label</label></th><td><input type="text" id="qr_label" name="qr_label" value="' . esc_attr($qr_code->label) . '" class="regular-text"></td></tr>';
+        echo '<tr><th><label for="qr_reporting_id">Reporting ID</label></th><td><input type="text" id="qr_reporting_id" name="qr_reporting_id" value="' . esc_attr($qr_code->reporting_id) . '" class="regular-text"></td></tr>';
+        echo '<tr><th><label for="qr_message_1">Message 1</label></th><td><textarea id="qr_message_1" name="qr_message_1" rows="6" class="large-text">' . esc_textarea($qr_code->message_1) . '</textarea></td></tr>';
+        echo '<tr><th><label for="qr_message_2">Message 2</label></th><td><textarea id="qr_message_2" name="qr_message_2" rows="6" class="large-text">' . esc_textarea($qr_code->message_2) . '</textarea></td></tr>';
+        echo '<tr><th><label for="qr_show_popup">Show Popup</label></th><td><input type="checkbox" id="qr_show_popup" name="qr_show_popup" value="1"' . checked((int) $qr_code->show_popup, 1, false) . '></td></tr>';
+        echo '<tr><th><label for="qr_shop_link">Shop Link</label></th><td><input type="url" id="qr_shop_link" name="qr_shop_link" value="' . esc_attr($qr_code->shop_link) . '" class="regular-text"></td></tr>';
+        echo '<tr><th><label for="qr_shop_logo">Shop Logo URL</label></th><td><input type="url" id="qr_shop_logo" name="qr_shop_logo" value="' . esc_attr($qr_code->shop_logo) . '" class="regular-text"></td></tr>';
+        echo '<tr><th><label for="qr_show_shop_link">Show Shop Link</label></th><td><input type="checkbox" id="qr_show_shop_link" name="qr_show_shop_link" value="1"' . checked((int) $qr_code->show_shop_link, 1, false) . '></td></tr>';
+        echo '</table>';
+        echo '<p><button type="submit" name="qr_manage_submit" class="button button-primary">Update QR Code</button></p>';
+        echo '</form></div>';
+        get_footer();
         exit;
     }
 
@@ -1035,6 +1142,7 @@ class QRCodeTracker {
         $wpdb->insert($this->main_table, [
             'url' => $url,
             'short_code' => $short_code,
+            'edit_token' => $this->generate_unique_edit_token(),
             'postcode' => $tree_data['postcode'],
             'city' => $tree_data['city'],
             'tree' => $tree_data['tree'],
