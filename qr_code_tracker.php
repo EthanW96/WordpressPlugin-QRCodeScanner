@@ -673,7 +673,7 @@ class QRCodeTracker {
         }
 
         if (!is_user_logged_in()) {
-            $request_url = esc_url_raw(home_url(wp_unslash($_SERVER['REQUEST_URI'])));
+            $request_url = esc_url_raw(add_query_arg([]));
             $login_url = wp_login_url($request_url);
             $register_url = add_query_arg(['redirect_to' => $request_url], wp_registration_url());
             $message = '<p>You must log in to manage this QR code.</p>';
@@ -699,9 +699,13 @@ class QRCodeTracker {
                 'show_shop_link' => isset($_POST['qr_show_shop_link']) ? 1 : 0,
             ];
 
-            $wpdb->update($this->main_table, $update_data, ['id' => $qr_code->id]);
-            $qr_code = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->main_table} WHERE id = %d", $qr_code->id));
-            $notice = '<div class="notice notice-success" style="padding:10px;margin:10px 0;"><p>QR code details updated.</p></div>';
+            $update_result = $wpdb->update($this->main_table, $update_data, ['id' => $qr_code->id]);
+            if ($update_result === false) {
+                $notice = '<div class="notice notice-error" style="padding:10px;margin:10px 0;"><p>Unable to update QR code details. Please try again.</p></div>';
+            } else {
+                $qr_code = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->main_table} WHERE id = %d", $qr_code->id));
+                $notice = '<div class="notice notice-success" style="padding:10px;margin:10px 0;"><p>QR code details updated.</p></div>';
+            }
         }
 
         status_header(200);
@@ -710,7 +714,7 @@ class QRCodeTracker {
         echo '<div class="wrap" style="max-width:900px;margin:40px auto;padding:20px;">';
         echo '<h1>Manage QR Code</h1>';
         echo '<p><strong>Postcode:</strong> ' . esc_html($qr_code->postcode) . ' &nbsp; <strong>City:</strong> ' . esc_html($qr_code->city) . ' &nbsp; <strong>Tree:</strong> ' . esc_html($qr_code->tree) . '</p>';
-        echo $notice;
+        echo wp_kses_post($notice);
         echo '<form method="post">';
         wp_nonce_field('qr_manage_' . $qr_code->id);
         echo '<table class="form-table">';
