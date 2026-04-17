@@ -27,9 +27,13 @@ use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 
 class QRCodeTracker {
+    private const SHORT_CODE_MIN_LENGTH = 6;
+    private const SHORT_CODE_MAX_LENGTH = 16;
+
     private $main_table;
     private $log_table;
     private $current_tracker = null;
+    private $current_request_url = '';
     private $admin;
     private $db;
     private $export;
@@ -391,14 +395,19 @@ class QRCodeTracker {
     }
 
     private function get_short_code_from_request_path() {
+        $this->current_request_url = '';
+
         if (empty($_SERVER['REQUEST_URI'])) {
             return '';
         }
 
-        $request_path = wp_parse_url(wp_unslash($_SERVER['REQUEST_URI']), PHP_URL_PATH);
+        $request_uri = wp_unslash($_SERVER['REQUEST_URI']);
+        $request_path = wp_parse_url($request_uri, PHP_URL_PATH);
         if (!is_string($request_path)) {
             return '';
         }
+        $request_query = wp_parse_url($request_uri, PHP_URL_QUERY);
+        $this->current_request_url = home_url($request_path . ($request_query ? '?' . $request_query : ''));
 
         $request_path = trim($request_path, '/');
         if ($request_path === '') {
@@ -421,7 +430,8 @@ class QRCodeTracker {
             return '';
         }
 
-        if (!preg_match('/^[a-z0-9]{6,16}$/i', $request_path)) {
+        $short_code_pattern = '/^[a-z0-9]{' . self::SHORT_CODE_MIN_LENGTH . ',' . self::SHORT_CODE_MAX_LENGTH . '}$/';
+        if (!preg_match($short_code_pattern, $request_path)) {
             return '';
         }
 
@@ -452,16 +462,26 @@ class QRCodeTracker {
             return;
         }
 
-        $current_url = home_url(wp_unslash($_SERVER['REQUEST_URI']));
-        if (untrailingslashit($current_url) === untrailingslashit($row->url)) {
+        $current_url = $this->current_request_url;
+        if (empty($current_url)) {
+            return;
+        }
+        $stored_url = esc_url_raw($row->url);
+
+        if (empty($stored_url)) {
             return;
         }
 
-        wp_safe_redirect($row->url, 302);
+        // Prevent redirect loops when the anonymous URL already resolves to the stored URL.
+        if (untrailingslashit($current_url) === untrailingslashit($stored_url)) {
+            return;
+        }
+
+        wp_safe_redirect($stored_url, 302);
         exit;
     }
 
-    public function generate_unique_short_code($length = 6) {
+    public function generate_unique_short_code($length = self::SHORT_CODE_MIN_LENGTH) {
         global $wpdb;
         $characters = 'abcdefghijklmnopqrstuvwxyz0123456789';
         $max_index = strlen($characters) - 1;
