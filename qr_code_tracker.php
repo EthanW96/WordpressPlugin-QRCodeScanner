@@ -28,6 +28,7 @@ use chillerlan\QRCode\QROptions;
 
 class QRCodeTracker {
     private const CHRISTMAS_IDENTIFIER_LENGTH = 6;
+    private const CHRISTMAS_IDENTIFIER_BASE = 36;
     private const CHRISTMAS_FALLBACK_HASH_ALGO = 'sha256';
     private $main_table;
     private $log_table;
@@ -325,7 +326,7 @@ class QRCodeTracker {
         global $wpdb;
         $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
         $nonce = isset($_GET['_wpnonce']) ? sanitize_text_field(wp_unslash($_GET['_wpnonce'])) : '';
-        if (!$id || !wp_verify_nonce($nonce, 'qr_tracker_download_qr_' . $id)) {
+        if (!$id || !wp_verify_nonce($nonce, 'qr_tracker_download_qr')) {
             wp_die('Invalid download request');
         }
         $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->main_table} WHERE id = %d", $id));
@@ -372,7 +373,7 @@ class QRCodeTracker {
         $id = isset($row->id) ? (int) $row->id : 0;
 
         if ($id > 0) {
-            $identifier = strtoupper(base_convert((string) $id, 10, 36));
+            $identifier = strtoupper(base_convert((string) $id, 10, self::CHRISTMAS_IDENTIFIER_BASE));
             if (strlen($identifier) > self::CHRISTMAS_IDENTIFIER_LENGTH) {
                 return strtoupper(substr(hash(self::CHRISTMAS_FALLBACK_HASH_ALGO, (string) $id), 0, self::CHRISTMAS_IDENTIFIER_LENGTH));
             }

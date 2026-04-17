@@ -689,8 +689,8 @@ class QRCodeTracker_Admin {
             $delete_url = esc_url(add_query_arg(['delete_id' => $row->id]));
             $edit_url = esc_url(add_query_arg(['edit_id' => $row->id]));
             $merge_url = esc_url(add_query_arg(['merge_id' => $row->id]));
-            $download_url = esc_url(wp_nonce_url(admin_url('admin.php?action=qr_tracker_download_qr&id=' . $row->id), 'qr_tracker_download_qr_' . $row->id));
-            $christmas_download_url = esc_url(wp_nonce_url(admin_url('admin.php?action=qr_tracker_download_qr&id=' . $row->id . '&export=christmas'), 'qr_tracker_download_qr_' . $row->id));
+            $download_url = esc_url(wp_nonce_url(admin_url('admin.php?action=qr_tracker_download_qr&id=' . $row->id), 'qr_tracker_download_qr'));
+            $christmas_download_url = esc_url(wp_nonce_url(admin_url('admin.php?action=qr_tracker_download_qr&id=' . $row->id . '&export=christmas'), 'qr_tracker_download_qr'));
             $popup_status = $row->show_popup ? '<span style="color: green;">✓ Enabled</span>' : '<span style="color: #666;">✗ Disabled</span>';
             $shop_link_status = $row->show_shop_link ? '<span style="color: green;">✓ Enabled</span>' : '<span style="color: #666;">✗ Disabled</span>';
             
