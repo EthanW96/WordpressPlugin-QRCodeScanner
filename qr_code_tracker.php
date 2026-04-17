@@ -324,6 +324,10 @@ class QRCodeTracker {
         }
         global $wpdb;
         $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+        $nonce = isset($_GET['_wpnonce']) ? sanitize_text_field(wp_unslash($_GET['_wpnonce'])) : '';
+        if (!$id || !wp_verify_nonce($nonce, 'qr_tracker_download_qr_' . $id)) {
+            wp_die('Invalid download request');
+        }
         $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->main_table} WHERE id = %d", $id));
         if (!$row) {
             wp_die('QR code not found');
@@ -367,7 +371,11 @@ class QRCodeTracker {
         $id = isset($row->id) ? (int) $row->id : 0;
 
         if ($id > 0) {
-            return str_pad(strtoupper(base_convert((string) $id, 10, 36)), self::CHRISTMAS_IDENTIFIER_LENGTH, '0', STR_PAD_LEFT);
+            $identifier = strtoupper(base_convert((string) $id, 10, 36));
+            if (strlen($identifier) > self::CHRISTMAS_IDENTIFIER_LENGTH) {
+                return substr($identifier, -self::CHRISTMAS_IDENTIFIER_LENGTH);
+            }
+            return str_pad($identifier, self::CHRISTMAS_IDENTIFIER_LENGTH, '0', STR_PAD_LEFT);
         }
 
         $fallback_seed = implode('|', [
@@ -377,8 +385,6 @@ class QRCodeTracker {
             (string) ($row->tree ?? ''),
             (string) ($row->label ?? ''),
             (string) ($row->reporting_id ?? ''),
-            (string) microtime(true),
-            (string) wp_rand(),
         ]);
         return strtoupper(substr(hash(self::CHRISTMAS_FALLBACK_HASH_ALGO, $fallback_seed), 0, self::CHRISTMAS_IDENTIFIER_LENGTH));
     }
