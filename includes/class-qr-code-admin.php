@@ -186,18 +186,15 @@ class QRCodeTracker_Admin {
                     }
                     echo '</ul></div>';
                 } else {
-                    $url = $this->tracker->generate_tracker_url($postcode, $city, $tree);
-                    
-                    // If no scans exist, allow URL editing
-                    if ($row->scan_count == 0) {
-                        $update_data = compact('url', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
+                    if ($row->scan_count > 0) {
+                        echo '<div class="error"><p>This QR code already has scan data and can no longer be edited.</p></div>';
                     } else {
-                        // If scans exist, only update non-URL fields
-                        $update_data = compact('postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
+                        $url = $this->tracker->generate_tracker_url($postcode, $city, $tree);
+                        $update_data = compact('url', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
+                        
+                        $wpdb->update($this->main_table, $update_data, ['id' => $edit_id]);
+                        echo '<div class="updated"><p>QR Code entry updated.</p></div>';
                     }
-                    
-                    $wpdb->update($this->main_table, $update_data, ['id' => $edit_id]);
-                    echo '<div class="updated"><p>QR Code entry updated.</p></div>';
                 }
             } else {
                 echo '<div class="error"><p>QR Code not found.</p></div>';
@@ -296,6 +293,8 @@ class QRCodeTracker_Admin {
                 // Check if user can access this QR code
                 if ($edit_data->team_id && !$this->teams->user_can_access_team(get_current_user_id(), $edit_data->team_id)) {
                     echo '<div class="error"><p>You do not have permission to edit this QR code.</p></div>';
+                } elseif ($edit_data->scan_count > 0) {
+                    echo '<div class="error"><p>This QR code already has scan data and can no longer be edited.</p></div>';
                 } else {
                     $editing = true;
                 }
@@ -708,7 +707,6 @@ class QRCodeTracker_Admin {
                 echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a> ";
                 echo "<a href=\"$delete_url\" onclick=\"return confirm('Are you sure you want to delete this QR code?')\" class=\"button button-secondary\">Delete</a> ";
             } else {
-                echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a> ";
                 echo "<a href=\"$merge_url\" class=\"button button-secondary\">Merge</a> ";
             }
             echo "<a href='$download_url' class='button' target='_blank'>Download QR Image</a> ";
