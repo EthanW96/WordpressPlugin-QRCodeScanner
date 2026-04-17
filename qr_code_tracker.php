@@ -59,7 +59,8 @@ class QRCodeTracker {
         // Initialize popup functionality
         $this->popup = new QRCodeTracker_Popup($this);
 
-        add_action('wp', [$this, 'track_visit']);
+        add_action('wp', [$this, 'track_visit'], 0);
+        add_action('template_redirect', [$this, 'handle_legacy_short_code_redirect'], 0);
         add_shortcode('qr_tracker_message_1', [$this, 'shortcode_message_1']);
         add_shortcode('qr_tracker_message_2', [$this, 'shortcode_message_2']);
         add_shortcode('qr_tracker_shop_link', [$this, 'shortcode_shop_link']);
@@ -125,8 +126,13 @@ class QRCodeTracker {
     public function track_visit() {
         global $wpdb;
 
+        if (isset($_GET['_qr_redirect']) && $_GET['_qr_redirect'] === '1') {
+            return;
+        }
+
         // Preferred matching by unique short code.
         $short_code = isset($_GET['qr']) ? sanitize_text_field($_GET['qr']) : '';
+        $scan_source = 'query_short_code';
         if (!empty($short_code)) {
             $row = $wpdb->get_row($wpdb->prepare(
                 "SELECT * FROM {$this->main_table} WHERE short_code = %s",
@@ -134,6 +140,19 @@ class QRCodeTracker {
             ));
         } else {
             $row = null;
+        }
+
+        if (!$row) {
+            $path_short_code = $this->get_path_short_code_from_request();
+            if (!empty($path_short_code) && function_exists('is_404') && is_404()) {
+                $row = $wpdb->get_row($wpdb->prepare(
+                    "SELECT * FROM {$this->main_table} WHERE short_code = %s",
+                    $path_short_code
+                ));
+                if ($row) {
+                    $scan_source = 'legacy_path_short_code';
+                }
+            }
         }
         
         // First, try to match by extracting postcode, city, and tree from current URL
@@ -146,6 +165,9 @@ class QRCodeTracker {
                 "SELECT * FROM {$this->main_table} WHERE postcode = %s AND city = %s AND tree = %s", 
                 $postcode, $city, $tree
             ));
+            if ($row) {
+                $scan_source = 'postcode_city_tree';
+            }
         }
         
         // Fallback to exact URL matching for backward compatibility
@@ -166,9 +188,18 @@ class QRCodeTracker {
                 "SELECT * FROM {$this->main_table} WHERE url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR url = %s", 
                 $current_url, $request_uri, $current_url_no_slash, $request_uri_no_slash, $current_url_alt, $request_uri_alt
             ));
+            if ($row) {
+                $scan_source = 'legacy_url_match';
+            }
         }
 
         if ($row) {
+            $request_uri = isset($_SERVER['REQUEST_URI']) ? sanitize_text_field(wp_unslash($_SERVER['REQUEST_URI'])) : '';
+            $request_uri = substr($request_uri, 0, 255);
+            $remote_addr = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '';
+            $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '';
+            $visitor_hash = hash('sha256', $remote_addr . '|' . $user_agent);
+
             $wpdb->update(
                 $this->main_table,
                 [
@@ -183,11 +214,70 @@ class QRCodeTracker {
                 'postcode' => $row->postcode,
                 'city' => $row->city,
                 'tree' => $row->tree,
-                'scanned_at' => current_time('mysql', 1)
+                'scanned_at' => current_time('mysql', 1),
+                'scan_source' => $scan_source,
+                'request_uri' => $request_uri,
+                'visitor_hash' => $visitor_hash
             ]);
 
             $this->current_tracker = $row;
         }
+    }
+
+    public function handle_legacy_short_code_redirect() {
+        if (is_admin() || wp_doing_ajax() || wp_doing_cron()) {
+            return;
+        }
+
+        if (!function_exists('is_404') || !is_404()) {
+            return;
+        }
+
+        if (isset($_GET['qr']) && $_GET['qr'] !== '') {
+            return;
+        }
+
+        $short_code = $this->get_path_short_code_from_request();
+        if (empty($short_code)) {
+            return;
+        }
+
+        global $wpdb;
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT url FROM {$this->main_table} WHERE short_code = %s",
+            $short_code
+        ));
+
+        if (!$row || empty($row->url)) {
+            return;
+        }
+
+        $redirect_url = add_query_arg('_qr_redirect', '1', $row->url);
+        wp_safe_redirect($redirect_url, 302);
+        exit;
+    }
+
+    private function get_path_short_code_from_request() {
+        if (empty($_SERVER['REQUEST_URI'])) {
+            return '';
+        }
+
+        $request_uri = wp_unslash($_SERVER['REQUEST_URI']);
+        $path = parse_url($request_uri, PHP_URL_PATH);
+        if (!is_string($path)) {
+            return '';
+        }
+
+        $trimmed_path = trim($path, '/');
+        if ($trimmed_path === '' || strpos($trimmed_path, '/') !== false) {
+            return '';
+        }
+
+        if ($trimmed_path === 'wp-admin' || $trimmed_path === 'wp-login.php' || $trimmed_path === 'wp-json') {
+            return '';
+        }
+
+        return sanitize_text_field($trimmed_path);
     }
 
     public function get_current_tracker() {
