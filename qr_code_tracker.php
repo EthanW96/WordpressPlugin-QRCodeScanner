@@ -64,6 +64,7 @@ class QRCodeTracker {
         add_shortcode('qr_tracker_message_2', [$this, 'shortcode_message_2']);
         add_shortcode('qr_tracker_shop_link', [$this, 'shortcode_shop_link']);
         add_action('admin_action_qr_tracker_download_qr', [$this, 'handle_download_qr']);
+        $this->init_woocommerce_tree_fields();
     }
 
 
@@ -123,14 +124,24 @@ class QRCodeTracker {
 
     public function track_visit() {
         global $wpdb;
+
+        // Preferred matching by unique short code.
+        $short_code = isset($_GET['qr']) ? sanitize_text_field($_GET['qr']) : '';
+        if (!empty($short_code)) {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$this->main_table} WHERE short_code = %s",
+                $short_code
+            ));
+        } else {
+            $row = null;
+        }
         
         // First, try to match by extracting postcode, city, and tree from current URL
         $postcode = isset($_GET['postcode']) ? sanitize_text_field($_GET['postcode']) : '';
         $city = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
         $tree = isset($_GET['tree']) ? sanitize_text_field($_GET['tree']) : '';
         
-        $row = null;
-        if (!empty($postcode) && !empty($city) && !empty($tree)) {
+        if (!$row && !empty($postcode) && !empty($city) && !empty($tree)) {
             $row = $wpdb->get_row($wpdb->prepare(
                 "SELECT * FROM {$this->main_table} WHERE postcode = %s AND city = %s AND tree = %s", 
                 $postcode, $city, $tree
@@ -185,6 +196,19 @@ class QRCodeTracker {
         }
 
         global $wpdb;
+
+        // Preferred matching by unique short code.
+        $short_code = isset($_GET['qr']) ? sanitize_text_field($_GET['qr']) : '';
+        if (!empty($short_code)) {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$this->main_table} WHERE short_code = %s",
+                $short_code
+            ));
+            if ($row) {
+                $this->current_tracker = $row;
+                return $row;
+            }
+        }
         
         // First, try to match by extracting postcode, city, and tree from current URL
         $postcode = isset($_GET['postcode']) ? sanitize_text_field($_GET['postcode']) : '';
@@ -348,14 +372,242 @@ class QRCodeTracker {
         exit;
     }
 
-    public function generate_tracker_url($postcode, $city, $tree) {
+    public function generate_tracker_url($postcode, $city, $tree, $short_code = '') {
         $base = home_url('/');
-        $params = [
-            'postcode' => $postcode,
-            'city' => $city,
-            'tree' => $tree
-        ];
+        if (empty($short_code)) {
+            $short_code = $this->generate_unique_short_code();
+        }
+        $params = ['qr' => $short_code];
         return add_query_arg($params, $base);
+    }
+
+    public function generate_unique_short_code($length = 6) {
+        global $wpdb;
+        $characters = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        $max_index = strlen($characters) - 1;
+
+        for ($attempt = 0; $attempt < 20; $attempt++) {
+            $code = '';
+            for ($i = 0; $i < $length; $i++) {
+                $code .= $characters[random_int(0, $max_index)];
+            }
+
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$this->main_table} WHERE short_code = %s LIMIT 1",
+                $code
+            ));
+            if (!$exists) {
+                return $code;
+            }
+        }
+
+        do {
+            $fallback = strtolower(wp_generate_password($length + 2, false, false));
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$this->main_table} WHERE short_code = %s LIMIT 1",
+                $fallback
+            ));
+        } while ($exists);
+
+        return $fallback;
+    }
+
+    private function init_woocommerce_tree_fields() {
+        add_action('woocommerce_before_add_to_cart_button', [$this, 'render_tree_checkout_fields']);
+        add_filter('woocommerce_add_to_cart_validation', [$this, 'validate_tree_checkout_fields'], 10, 2);
+        add_filter('woocommerce_add_cart_item_data', [$this, 'add_tree_checkout_fields_to_cart'], 10, 2);
+        add_filter('woocommerce_get_item_data', [$this, 'display_tree_checkout_fields_in_cart'], 10, 2);
+        add_action('woocommerce_checkout_create_order_line_item', [$this, 'save_tree_checkout_fields_to_order_items'], 10, 3);
+    }
+
+    private function is_tree_product($product_id) {
+        if (has_term('christmas-trees', 'product_cat', $product_id)) {
+            return true;
+        }
+        $parent_id = wp_get_post_parent_id($product_id);
+        return $parent_id ? has_term('christmas-trees', 'product_cat', $parent_id) : false;
+    }
+
+    public function render_tree_checkout_fields() {
+        if (!function_exists('woocommerce_form_field')) {
+            return;
+        }
+
+        global $product;
+        if (!$product || !$this->is_tree_product($product->get_id())) {
+            return;
+        }
+
+        echo '<div class="advent-tree-fields">';
+
+        woocommerce_form_field('purchaser_type', [
+            'type'    => 'select',
+            'class'   => ['form-row-wide'],
+            'label'   => 'Purchasing as',
+            'options' => [
+                'individual' => 'Individual',
+                'org'        => 'Organization',
+            ],
+        ], isset($_POST['purchaser_type']) ? sanitize_text_field(wp_unslash($_POST['purchaser_type'])) : 'individual');
+
+        woocommerce_form_field('contact_emails', [
+            'type'        => 'text',
+            'class'       => ['form-row-wide'],
+            'label'       => 'Contact email(s)',
+            'description' => 'Comma-separated if multiple.',
+            'required'    => true,
+        ], isset($_POST['contact_emails']) ? sanitize_text_field(wp_unslash($_POST['contact_emails'])) : '');
+
+        woocommerce_form_field('report_emails', [
+            'type'        => 'text',
+            'class'       => ['form-row-wide'],
+            'label'       => 'Report email(s)',
+            'description' => 'Weekly report recipient(s), comma-separated.',
+        ], isset($_POST['report_emails']) ? sanitize_text_field(wp_unslash($_POST['report_emails'])) : '');
+
+        woocommerce_form_field('org_or_individual_name', [
+            'type'     => 'text',
+            'class'    => ['form-row-wide'],
+            'label'    => 'Organization / Individual Name',
+            'required' => true,
+        ], isset($_POST['org_or_individual_name']) ? sanitize_text_field(wp_unslash($_POST['org_or_individual_name'])) : '');
+
+        woocommerce_form_field('referral_code', [
+            'type'        => 'text',
+            'class'       => ['form-row-wide'],
+            'label'       => 'Referral Code',
+            'description' => 'Optional sharable referral code.',
+        ], isset($_POST['referral_code']) ? sanitize_text_field(wp_unslash($_POST['referral_code'])) : '');
+
+        woocommerce_form_field('pay_forward_type', [
+            'type'    => 'select',
+            'class'   => ['form-row-wide'],
+            'label'   => 'Pay a Tree Forward?',
+            'options' => [
+                ''         => 'No',
+                'specific' => 'Yes – for a specific person',
+                'general'  => 'Yes – for anyone',
+            ],
+        ], isset($_POST['pay_forward_type']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) : '');
+
+        woocommerce_form_field('pay_forward_contact', [
+            'type'        => 'text',
+            'class'       => ['form-row-wide'],
+            'label'       => 'Pay Forward Recipient (email or name)',
+            'placeholder' => 'Leave blank if general',
+        ], isset($_POST['pay_forward_contact']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_contact'])) : '');
+
+        echo '</div>';
+    }
+
+    private function sanitize_email_list($raw_value) {
+        $emails = preg_split('/[\s,;]+/', (string) $raw_value, -1, PREG_SPLIT_NO_EMPTY);
+        $sanitized = [];
+        foreach ($emails as $email) {
+            $clean = sanitize_email($email);
+            if (!empty($clean) && is_email($clean)) {
+                $sanitized[] = $clean;
+            }
+        }
+        return implode(', ', array_unique($sanitized));
+    }
+
+    public function validate_tree_checkout_fields($passed, $product_id) {
+        if (!$this->is_tree_product($product_id)) {
+            return $passed;
+        }
+
+        $name = isset($_POST['org_or_individual_name']) ? sanitize_text_field(wp_unslash($_POST['org_or_individual_name'])) : '';
+        if (empty($name)) {
+            wc_add_notice('Please enter an organization or individual name.', 'error');
+            return false;
+        }
+
+        $contact_emails = isset($_POST['contact_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['contact_emails'])) : '';
+        if (empty($contact_emails)) {
+            wc_add_notice('Please enter at least one valid contact email.', 'error');
+            return false;
+        }
+
+        $report_emails_raw = isset($_POST['report_emails']) ? wp_unslash($_POST['report_emails']) : '';
+        if (!empty($report_emails_raw) && empty($this->sanitize_email_list($report_emails_raw))) {
+            wc_add_notice('Please enter valid report email(s).', 'error');
+            return false;
+        }
+
+        $pay_forward_type = isset($_POST['pay_forward_type']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) : '';
+        $pay_forward_contact = isset($_POST['pay_forward_contact']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_contact'])) : '';
+        if ($pay_forward_type === 'specific' && empty($pay_forward_contact)) {
+            wc_add_notice('Please provide a recipient for the pay-forward tree.', 'error');
+            return false;
+        }
+
+        return $passed;
+    }
+
+    public function add_tree_checkout_fields_to_cart($cart_item_data, $product_id) {
+        if (!$this->is_tree_product($product_id)) {
+            return $cart_item_data;
+        }
+
+        $field_values = [
+            'purchaser_type' => isset($_POST['purchaser_type']) ? sanitize_text_field(wp_unslash($_POST['purchaser_type'])) : '',
+            'contact_emails' => isset($_POST['contact_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['contact_emails'])) : '',
+            'report_emails' => isset($_POST['report_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['report_emails'])) : '',
+            'org_or_individual_name' => isset($_POST['org_or_individual_name']) ? sanitize_text_field(wp_unslash($_POST['org_or_individual_name'])) : '',
+            'referral_code' => isset($_POST['referral_code']) ? sanitize_text_field(wp_unslash($_POST['referral_code'])) : '',
+            'pay_forward_type' => isset($_POST['pay_forward_type']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) : '',
+            'pay_forward_contact' => isset($_POST['pay_forward_contact']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_contact'])) : '',
+        ];
+
+        foreach ($field_values as $key => $value) {
+            if ($value !== '') {
+                $cart_item_data[$key] = $value;
+            }
+        }
+
+        return $cart_item_data;
+    }
+
+    public function display_tree_checkout_fields_in_cart($item_data, $cart_item) {
+        $labels = [
+            'purchaser_type' => 'Purchasing As',
+            'contact_emails' => 'Contact Email(s)',
+            'report_emails' => 'Report Email(s)',
+            'org_or_individual_name' => 'Organization / Individual Name',
+            'referral_code' => 'Referral Code',
+            'pay_forward_type' => 'Pay Forward',
+            'pay_forward_contact' => 'Pay Forward Recipient',
+        ];
+
+        foreach ($labels as $key => $label) {
+            if (!empty($cart_item[$key])) {
+                $item_data[] = [
+                    'key' => $label,
+                    'value' => wp_kses_post($cart_item[$key]),
+                ];
+            }
+        }
+
+        return $item_data;
+    }
+
+    public function save_tree_checkout_fields_to_order_items($item, $cart_item_key, $values) {
+        $labels = [
+            'purchaser_type' => 'Purchasing As',
+            'contact_emails' => 'Contact Email(s)',
+            'report_emails' => 'Report Email(s)',
+            'org_or_individual_name' => 'Organization / Individual Name',
+            'referral_code' => 'Referral Code',
+            'pay_forward_type' => 'Pay Forward',
+            'pay_forward_contact' => 'Pay Forward Recipient',
+        ];
+
+        foreach ($labels as $field => $label) {
+            if (!empty($values[$field])) {
+                $item->add_meta_data($label, $values[$field]);
+            }
+        }
     }
 }
 

@@ -119,14 +119,15 @@ class QRCodeTracker_Admin {
                 }
                 echo '</ul></div>';
             } else {
-                $url = $this->tracker->generate_tracker_url($postcode, $city, $tree);
+                $short_code = $this->tracker->generate_unique_short_code();
+                $url = $this->tracker->generate_tracker_url($postcode, $city, $tree, $short_code);
                 
-                // Check for duplicate URL
-                $existing = $wpdb->get_row($wpdb->prepare("SELECT id, postcode, tree FROM {$this->main_table} WHERE url = %s", $url));
+                // Check for duplicate URL/short code
+                $existing = $wpdb->get_row($wpdb->prepare("SELECT id, postcode, tree FROM {$this->main_table} WHERE url = %s OR short_code = %s", $url, $short_code));
                 if ($existing) {
                     echo '<div class="error"><p>Error: A QR code with this URL already exists (ID: ' . $existing->id . ', Postcode: ' . $existing->postcode . ', Tree: ' . $existing->tree . '). Please use a different URL.</p></div>';
                 } else {
-                    $wpdb->insert($this->main_table, compact('url', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id'));
+                    $wpdb->insert($this->main_table, compact('url', 'short_code', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id'));
                     echo '<div class="updated"><p>QR Code entry saved.</p></div>';
                 }
             }
@@ -140,7 +141,7 @@ class QRCodeTracker_Admin {
             }
             $postcode = strtoupper(sanitize_text_field($_POST['qr_postcode']));
             $edit_id = intval($_POST['qr_edit_id']);
-            $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count, url FROM {$this->main_table} WHERE id = %d", $edit_id));
+            $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count, url, short_code FROM {$this->main_table} WHERE id = %d", $edit_id));
             
             if ($row) {
                 $city = sanitize_text_field($_POST['qr_city']);
@@ -186,14 +187,15 @@ class QRCodeTracker_Admin {
                     }
                     echo '</ul></div>';
                 } else {
-                    $url = $this->tracker->generate_tracker_url($postcode, $city, $tree);
+                    $short_code = !empty($row->short_code) ? $row->short_code : $this->tracker->generate_unique_short_code();
+                    $url = $this->tracker->generate_tracker_url($postcode, $city, $tree, $short_code);
                     
                     // If no scans exist, allow URL editing
                     if ($row->scan_count == 0) {
-                        $update_data = compact('url', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
+                        $update_data = compact('url', 'short_code', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
                     } else {
                         // If scans exist, only update non-URL fields
-                        $update_data = compact('postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
+                        $update_data = compact('short_code', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
                     }
                     
                     $wpdb->update($this->main_table, $update_data, ['id' => $edit_id]);
@@ -750,14 +752,8 @@ class QRCodeTracker_Admin {
     }
 
     // 2. Add a helper to generate the URL from postcode, city, and tree
-    private function generate_tracker_url($postcode, $city, $tree) {
-        $base = home_url('/');
-        $params = [
-            'postcode' => $postcode,
-            'city' => $city,
-            'tree' => $tree
-        ];
-        return add_query_arg($params, $base);
+    private function generate_tracker_url($postcode, $city, $tree, $short_code = '') {
+        return $this->tracker->generate_tracker_url($postcode, $city, $tree, $short_code);
     }
 
 

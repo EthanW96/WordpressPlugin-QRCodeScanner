@@ -22,6 +22,7 @@ class QRCodeTracker_DB {
         $sql_main = "CREATE TABLE {$this->main_table} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             url TEXT NOT NULL,
+            short_code VARCHAR(16) DEFAULT NULL,
             postcode VARCHAR(32),
             city VARCHAR(64),
             tree VARCHAR(64),
@@ -38,6 +39,7 @@ class QRCodeTracker_DB {
             team_id BIGINT UNSIGNED DEFAULT NULL,
             PRIMARY KEY (id),
             KEY team_id (team_id),
+            KEY short_code (short_code),
             KEY postcode (postcode),
             KEY city (city),
             KEY tree (tree)
@@ -114,6 +116,11 @@ class QRCodeTracker_DB {
             $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN team_id BIGINT UNSIGNED DEFAULT NULL AFTER show_shop_link");
             $wpdb->query("ALTER TABLE {$this->main_table} ADD INDEX team_id (team_id)");
         }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'short_code'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN short_code VARCHAR(16) DEFAULT NULL AFTER url");
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD INDEX short_code (short_code)");
+        }
         
         // Existing upgrade logic
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'message_1'");
@@ -165,6 +172,7 @@ class QRCodeTracker_DB {
         
         // Add performance indexes for existing installations
         $this->add_performance_indexes();
+        $this->populate_missing_short_codes();
     }
     
     private function create_teams_tables() {
@@ -259,6 +267,53 @@ class QRCodeTracker_DB {
             if (!in_array($index_name, $existing_indexes)) {
                 $wpdb->query("ALTER TABLE {$this->log_table} ADD INDEX {$index_name} ({$columns})");
             }
+        }
+    }
+
+    private function generate_unique_short_code($length = 6) {
+        global $wpdb;
+        $characters = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        $max_index = strlen($characters) - 1;
+
+        for ($attempt = 0; $attempt < 20; $attempt++) {
+            $code = '';
+            for ($i = 0; $i < $length; $i++) {
+                $code .= $characters[random_int(0, $max_index)];
+            }
+
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$this->main_table} WHERE short_code = %s LIMIT 1",
+                $code
+            ));
+            if (!$exists) {
+                return $code;
+            }
+        }
+
+        do {
+            $fallback = strtolower(wp_generate_password($length + 2, false, false));
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$this->main_table} WHERE short_code = %s LIMIT 1",
+                $fallback
+            ));
+        } while ($exists);
+
+        return $fallback;
+    }
+
+    private function populate_missing_short_codes() {
+        global $wpdb;
+        $rows = $wpdb->get_results("SELECT id FROM {$this->main_table} WHERE short_code IS NULL OR short_code = ''");
+        if (empty($rows)) {
+            return;
+        }
+
+        foreach ($rows as $row) {
+            $wpdb->update(
+                $this->main_table,
+                ['short_code' => $this->generate_unique_short_code()],
+                ['id' => $row->id]
+            );
         }
     }
 
