@@ -333,6 +333,7 @@ class QRCodeTracker_DB {
             $wpdb->query("DROP TABLE IF EXISTS {$user_teams_table}");
 
             delete_option('qr_tracker_delete_on_uninstall');
+            delete_option('qr_tracker_tree_product_ids');
         }
     }
 } 
