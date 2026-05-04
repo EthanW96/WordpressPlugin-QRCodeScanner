@@ -703,7 +703,7 @@ class QRCodeTracker {
                 check_admin_referer('qr_manage_request_' . $qr_code->id);
                 if ($team_id > 0) {
                     if ($this->submit_qr_access_request($qr_code, $user_id)) {
-                        $request_notice = '<div class="notice notice-success" style="padding:10px;margin:10px 0;"><p>Your access request was submitted and site admins were notified.</p></div>';
+                        $request_notice = '<div class="notice notice-success" style="padding:10px;margin:10px 0;"><p>Your access request was submitted and reviewers were notified.</p></div>';
                     } else {
                         $request_notice = '<div class="notice notice-error" style="padding:10px;margin:10px 0;"><p>Unable to submit your request. Please try again.</p></div>';
                     }
@@ -815,14 +815,14 @@ class QRCodeTracker {
 
     private function notify_admins_of_access_request($qr_code, $user, $request_id) {
         $emails = [];
-        $admin_users = get_users([
-            'role' => 'administrator',
+        $review_users = get_users([
+            'role__in' => ['administrator', QRCodeTracker_Permissions::ACCESS_REQUEST_MANAGER_ROLE],
             'fields' => ['user_email'],
         ]);
 
-        foreach ($admin_users as $admin_user) {
-            if (!empty($admin_user->user_email)) {
-                $emails[] = sanitize_email($admin_user->user_email);
+        foreach ($review_users as $review_user) {
+            if (!empty($review_user->user_email)) {
+                $emails[] = sanitize_email($review_user->user_email);
             }
         }
 
@@ -876,9 +876,9 @@ class QRCodeTracker {
         }
 
         if ($existing_request && $existing_request->status === 'pending') {
-            echo '<div class="notice notice-info" style="padding:10px;margin:10px 0;"><p>Your access request is pending review by a site admin.</p></div>';
+            echo '<div class="notice notice-info" style="padding:10px;margin:10px 0;"><p>Your access request is pending review.</p></div>';
         } else {
-            echo '<p>Request access and a site admin will review your request.</p>';
+            echo '<p>Request access and a reviewer will review your request.</p>';
             echo '<form method="post">';
             wp_nonce_field('qr_manage_request_' . $qr_code->id);
             echo '<p><button type="submit" name="qr_request_access_submit" class="button button-primary">Request Access</button></p>';
