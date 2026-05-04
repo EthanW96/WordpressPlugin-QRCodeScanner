@@ -30,6 +30,7 @@ class QRCodeTracker {
     private $main_table;
     private $log_table;
     private $current_tracker = null;
+    private $visit_debug = null;
     private $admin;
     private $db;
     private $export;
@@ -61,6 +62,7 @@ class QRCodeTracker {
 
         add_action('wp', [$this, 'track_visit'], 0);
         add_action('template_redirect', [$this, 'handle_legacy_short_code_redirect'], 0);
+        add_action('wp_footer', [$this, 'render_visit_debug_message'], 99);
         add_shortcode('qr_tracker_message_1', [$this, 'shortcode_message_1']);
         add_shortcode('qr_tracker_message_2', [$this, 'shortcode_message_2']);
         add_shortcode('qr_tracker_shop_link', [$this, 'shortcode_shop_link']);
@@ -125,15 +127,23 @@ class QRCodeTracker {
 
     public function track_visit() {
         global $wpdb;
+        $visit_start = microtime(true);
+        $scan_source = 'unknown';
 
         if (isset($_GET['_qr_redirect']) && $_GET['_qr_redirect'] === '1') {
+            $this->set_visit_debug(
+                true,
+                'Visit already recorded during legacy short-code redirect.',
+                $scan_source,
+                $visit_start
+            );
             return;
         }
 
         // Preferred matching by unique short code.
         $short_code = isset($_GET['qr']) ? sanitize_text_field($_GET['qr']) : '';
-        $scan_source = 'query_short_code';
         if (!empty($short_code)) {
+            $scan_source = 'query_short_code';
             $row = $wpdb->get_row($wpdb->prepare(
                 "SELECT * FROM {$this->main_table} WHERE short_code = %s",
                 $short_code
@@ -200,7 +210,7 @@ class QRCodeTracker {
             $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '';
             $visitor_hash = hash('sha256', $remote_addr . '|' . $user_agent);
 
-            $wpdb->update(
+            $update_result = $wpdb->update(
                 $this->main_table,
                 [
                     'scan_count' => $row->scan_count + 1,
@@ -209,7 +219,7 @@ class QRCodeTracker {
                 ['id' => $row->id]
             );
 
-            $wpdb->insert($this->log_table, [
+            $insert_result = $wpdb->insert($this->log_table, [
                 'tracker_id' => $row->id,
                 'postcode' => $row->postcode,
                 'city' => $row->city,
@@ -220,8 +230,18 @@ class QRCodeTracker {
                 'visitor_hash' => $visitor_hash
             ]);
 
+            $recorded = ($update_result !== false && $insert_result !== false);
+            if ($recorded) {
+                $this->set_visit_debug(true, 'Visit recorded successfully.', $scan_source, $visit_start);
+            } else {
+                $error_message = !empty($wpdb->last_error) ? $wpdb->last_error : 'Unknown database error.';
+                $this->set_visit_debug(false, 'Visit recording failed: ' . $error_message, $scan_source, $visit_start);
+            }
             $this->current_tracker = $row;
+            return;
         }
+
+        $this->set_visit_debug(false, 'No matching QR code was found for this request.', $scan_source, $visit_start);
     }
 
     public function handle_legacy_short_code_redirect() {
@@ -278,6 +298,37 @@ class QRCodeTracker {
         }
 
         return sanitize_text_field($trimmed_path);
+    }
+
+    private function set_visit_debug($success, $message, $scan_source, $visit_start) {
+        if ((int) get_option('qr_tracker_debug_mode', 0) !== 1) {
+            $this->visit_debug = null;
+            return;
+        }
+
+        $duration_ms = (microtime(true) - $visit_start) * 1000;
+        $this->visit_debug = [
+            'success' => (bool) $success,
+            'message' => (string) $message,
+            'duration_ms' => round($duration_ms, 2),
+            'scan_source' => (string) $scan_source,
+        ];
+    }
+
+    public function render_visit_debug_message() {
+        if ((int) get_option('qr_tracker_debug_mode', 0) !== 1 || empty($this->visit_debug) || is_admin()) {
+            return;
+        }
+
+        $status = $this->visit_debug['success'] ? 'SUCCESS' : 'FAILED';
+        $background = $this->visit_debug['success'] ? '#e7f7ed' : '#fdeaea';
+        $border = $this->visit_debug['success'] ? '#46b450' : '#d63638';
+
+        echo '<div style="position:fixed;bottom:12px;left:12px;z-index:99999;max-width:520px;padding:10px 12px;background:' . esc_attr($background) . ';border:1px solid ' . esc_attr($border) . ';border-radius:4px;font-size:12px;line-height:1.4;box-shadow:0 1px 4px rgba(0,0,0,0.12);">';
+        echo '<strong>QR Tracker Debug:</strong> ' . esc_html($status) . '<br>';
+        echo 'Source: ' . esc_html($this->visit_debug['scan_source']) . ' | DB time: ' . esc_html(number_format((float) $this->visit_debug['duration_ms'], 2)) . ' ms<br>';
+        echo esc_html($this->visit_debug['message']);
+        echo '</div>';
     }
 
     public function get_current_tracker() {
