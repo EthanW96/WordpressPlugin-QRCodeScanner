@@ -2267,7 +2267,7 @@ window.showRollupDayChart = function() {
                     echo '<td>' . esc_html($request->requested_at) . '</td>';
                     echo '<td><a href="' . esc_url($user_profile_url) . '">' . esc_html($request->display_name) . '</a> (' . esc_html($request->user_email) . ')</td>';
                     echo '<td>' . esc_html($request->team_name) . '</td>';
-                    echo '<td><a href="' . esc_url($qr_edit_url) . '">Postcode: ' . esc_html($request->postcode) . ' / City: ' . esc_html($request->city) . ' / Tree: ' . esc_html($request->tree) . '</a></td>';
+                    echo '<td>Postcode: ' . esc_html($request->postcode) . ' / City: ' . esc_html($request->city) . ' / Tree: ' . esc_html($request->tree) . ' (<a href="' . esc_url($qr_edit_url) . '">View QR Code</a>)</td>';
                     echo '<td>';
                     echo '<form method="post" style="display:inline-block;margin-right:8px;">';
                     wp_nonce_field('qr_access_request_review_' . (int) $request->id);
