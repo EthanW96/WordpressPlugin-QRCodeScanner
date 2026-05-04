@@ -805,6 +805,8 @@ class QRCodeTracker_Admin {
             check_admin_referer('qr_tracker_settings');
             $delete_on_uninstall = isset($_POST['qr_tracker_delete_on_uninstall']) ? 1 : 0;
             update_option('qr_tracker_delete_on_uninstall', $delete_on_uninstall);
+            $debug_mode = isset($_POST['qr_tracker_debug_mode']) ? 1 : 0;
+            update_option('qr_tracker_debug_mode', $debug_mode);
             
             $default_shop_link = esc_url_raw($_POST['qr_tracker_default_shop_link']);
             $default_shop_logo = esc_url_raw($_POST['qr_tracker_default_shop_logo']);
@@ -819,6 +821,7 @@ class QRCodeTracker_Admin {
             echo '<div class="updated"><p>Settings saved.</p></div>';
         }
         $delete_on_uninstall = get_option('qr_tracker_delete_on_uninstall', 0);
+        $debug_mode = get_option('qr_tracker_debug_mode', 0);
         $default_shop_link = get_option('qr_tracker_default_shop_link', '');
         $default_shop_logo = get_option('qr_tracker_default_shop_logo', '');
         $tree_product_ids = get_option('qr_tracker_tree_product_ids', []);
@@ -859,6 +862,10 @@ class QRCodeTracker_Admin {
         echo '<tr><th scope="row">Delete Data on Uninstall</th><td>';
         echo '<label><input type="checkbox" name="qr_tracker_delete_on_uninstall" value="1"' . checked(1, $delete_on_uninstall, false) . '> Delete all plugin data when the plugin is uninstalled</label>';
         echo '<p class="description">If checked, all QR code data and logs will be permanently deleted when you uninstall the plugin.</p>';
+        echo '</td></tr>';
+        echo '<tr><th scope="row">Visit Tracking Debug Mode</th><td>';
+        echo '<label><input type="checkbox" name="qr_tracker_debug_mode" value="1"' . checked(1, $debug_mode, false) . '> Show on-page QR tracking timing and status</label>';
+        echo '<p class="description">When enabled, frontend pages show a small debug panel with whether visit recording succeeded and how long it took.</p>';
         echo '</td></tr>';
         echo '<tr><th scope="row">Default Shop Link</th><td>';
         echo '<input type="url" name="qr_tracker_default_shop_link" value="' . esc_attr($default_shop_link) . '" placeholder="https://example.com/shop" style="width: 100%;">';
