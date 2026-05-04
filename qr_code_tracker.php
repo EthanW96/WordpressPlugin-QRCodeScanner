@@ -878,7 +878,7 @@ class QRCodeTracker {
         if ($existing_request && $existing_request->status === 'pending') {
             echo '<div class="notice notice-info" style="padding:10px;margin:10px 0;"><p>Your access request is pending review.</p></div>';
         } else {
-            echo '<p>Request access and a reviewer will review your request.</p>';
+            echo '<p>Request access and a reviewer will assess it.</p>';
             echo '<form method="post">';
             wp_nonce_field('qr_manage_request_' . $qr_code->id);
             echo '<p><button type="submit" name="qr_request_access_submit" class="button button-primary">Request Access</button></p>';
