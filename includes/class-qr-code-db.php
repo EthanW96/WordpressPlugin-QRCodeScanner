@@ -55,12 +55,17 @@ class QRCodeTracker_DB {
             city VARCHAR(64),
             tree VARCHAR(64),
             scanned_at DATETIME NOT NULL,
+            scan_source VARCHAR(32) DEFAULT 'unknown',
+            request_uri VARCHAR(255) DEFAULT NULL,
+            visitor_hash VARCHAR(64) DEFAULT NULL,
             PRIMARY KEY (id),
             KEY tracker_id (tracker_id),
             KEY scanned_at (scanned_at),
             KEY postcode (postcode),
             KEY tree (tree),
             KEY city (city),
+            KEY scan_source (scan_source),
+            KEY visitor_hash (visitor_hash),
             KEY postcode_tree (postcode, tree),
             KEY scanned_at_postcode (scanned_at, postcode),
             KEY scanned_at_tree (scanned_at, tree)
@@ -157,6 +162,18 @@ class QRCodeTracker_DB {
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->log_table} LIKE 'tree'");
         if (empty($columns)) {
             $wpdb->query("ALTER TABLE {$this->log_table} ADD COLUMN tree VARCHAR(64) AFTER postcode");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->log_table} LIKE 'scan_source'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->log_table} ADD COLUMN scan_source VARCHAR(32) DEFAULT 'unknown' AFTER scanned_at");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->log_table} LIKE 'request_uri'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->log_table} ADD COLUMN request_uri VARCHAR(255) DEFAULT NULL AFTER scan_source");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->log_table} LIKE 'visitor_hash'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->log_table} ADD COLUMN visitor_hash VARCHAR(64) DEFAULT NULL AFTER request_uri");
         }
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'city'");
         if (empty($columns)) {
@@ -266,6 +283,8 @@ class QRCodeTracker_DB {
             'postcode' => 'postcode', 
             'tree' => 'tree',
             'city' => 'city',
+            'scan_source' => 'scan_source',
+            'visitor_hash' => 'visitor_hash',
             'postcode_tree' => 'postcode, tree',
             'scanned_at_postcode' => 'scanned_at, postcode',
             'scanned_at_tree' => 'scanned_at, tree'
