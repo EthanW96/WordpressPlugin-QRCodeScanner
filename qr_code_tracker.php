@@ -284,7 +284,12 @@ class QRCodeTracker {
             return;
         }
 
-        $redirect_url = add_query_arg('_qr_redirect', '1', $row->url);
+        $validated_url = wp_validate_redirect($row->url, '');
+        if (empty($validated_url)) {
+            return;
+        }
+
+        $redirect_url = add_query_arg('_qr_redirect', '1', $validated_url);
         wp_safe_redirect($redirect_url, 302);
         exit;
     }
