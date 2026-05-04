@@ -7,6 +7,13 @@
  */
 
 class QRCodeTracker_Permissions {
+    const ACCESS_REQUEST_MANAGER_ROLE = 'qr_code_access_request_manager';
+    const ACCESS_REQUEST_MANAGER_CAPABILITIES = [
+        'qr_tracker_view_teams',
+        'qr_tracker_view_team_members',
+        'qr_tracker_assign_users_to_teams',
+        'qr_tracker_manage_all_teams',
+    ];
     
     /**
      * Custom capabilities for QR Code Tracker
@@ -126,6 +133,29 @@ class QRCodeTracker_Permissions {
             foreach (array_keys(self::CAPABILITIES) as $capability) {
                 $admin_role->add_cap($capability);
             }
+        }
+
+        $this->ensure_access_request_manager_role();
+    }
+
+    /**
+     * Ensure the access-request manager role exists with required capabilities.
+     */
+    private function ensure_access_request_manager_role() {
+        $role = get_role(self::ACCESS_REQUEST_MANAGER_ROLE);
+
+        if (!$role) {
+            add_role(self::ACCESS_REQUEST_MANAGER_ROLE, 'QR Code Access Request Manager', ['read' => true]);
+            $role = get_role(self::ACCESS_REQUEST_MANAGER_ROLE);
+        }
+
+        if (!$role) {
+            return;
+        }
+
+        $role->add_cap('read');
+        foreach (self::ACCESS_REQUEST_MANAGER_CAPABILITIES as $capability) {
+            $role->add_cap($capability);
         }
     }
     
