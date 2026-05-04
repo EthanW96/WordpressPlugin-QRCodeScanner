@@ -2192,12 +2192,7 @@ window.showRollupDayChart = function() {
             if (!$request) {
                 echo '<div class="error"><p>Access request not found or already processed.</p></div>';
             } else {
-                $can_review_request = QRCodeTracker_Permissions::can_review_access_requests() ||
-                    $this->teams->user_can_manage_team(get_current_user_id(), (int) $request->team_id);
-
-                if (!$can_review_request) {
-                    echo '<div class="error"><p>You do not have permission to review this request.</p></div>';
-                } elseif ($decision === 'approve') {
+                if ($decision === 'approve') {
                     $member_result = $this->teams->add_user_to_team((int) $request->user_id, (int) $request->team_id, 'member');
                     if ($member_result === false) {
                         echo '<div class="error"><p>Unable to approve request because team assignment failed.</p></div>';
@@ -2225,44 +2220,19 @@ window.showRollupDayChart = function() {
 
         $pending_requests = [];
         $can_review_access_requests = QRCodeTracker_Permissions::can_review_access_requests();
-        $can_assign_users_to_teams = QRCodeTracker_Permissions::can_assign_users_to_teams();
-        if ($can_review_access_requests || $can_assign_users_to_teams) {
-            if ($can_review_access_requests || QRCodeTracker_Permissions::can_manage_all_teams()) {
-                $pending_requests = $wpdb->get_results(
-                    "SELECT ar.*, q.postcode, q.city, q.tree, q.edit_token, t.name AS team_name, u.display_name, u.user_email
-                     FROM {$this->access_requests_table} ar
-                     JOIN {$this->main_table} q ON q.id = ar.qr_id
-                     JOIN {$wpdb->users} u ON u.ID = ar.user_id
-                     JOIN {$wpdb->prefix}qr_tracker_teams t ON t.id = ar.team_id
-                     WHERE ar.status = 'pending'
-                     ORDER BY ar.requested_at ASC"
-                );
-            } else {
-                $managed_teams = array_filter($this->teams->get_user_teams(get_current_user_id()), function($team) {
-                    return isset($team->id) && $this->teams->user_can_manage_team(get_current_user_id(), (int) $team->id);
-                });
-                $managed_team_ids = array_map(function($team) {
-                    return (int) $team->id;
-                }, $managed_teams);
-
-                if (!empty($managed_team_ids)) {
-                    $all_pending_requests = $wpdb->get_results(
-                        "SELECT ar.*, q.postcode, q.city, q.tree, q.edit_token, t.name AS team_name, u.display_name, u.user_email
-                         FROM {$this->access_requests_table} ar
-                         JOIN {$this->main_table} q ON q.id = ar.qr_id
-                         JOIN {$wpdb->users} u ON u.ID = ar.user_id
-                         JOIN {$wpdb->prefix}qr_tracker_teams t ON t.id = ar.team_id
-                         WHERE ar.status = 'pending'
-                         ORDER BY ar.requested_at ASC"
-                    );
-                    $pending_requests = array_values(array_filter($all_pending_requests, function($request) use ($managed_team_ids) {
-                        return in_array((int) $request->team_id, $managed_team_ids, true);
-                    }));
-                }
-            }
+        if ($can_review_access_requests) {
+            $pending_requests = $wpdb->get_results(
+                "SELECT ar.*, q.postcode, q.city, q.tree, q.edit_token, t.name AS team_name, u.display_name, u.user_email
+                 FROM {$this->access_requests_table} ar
+                 JOIN {$this->main_table} q ON q.id = ar.qr_id
+                 JOIN {$wpdb->users} u ON u.ID = ar.user_id
+                 JOIN {$wpdb->prefix}qr_tracker_teams t ON t.id = ar.team_id
+                 WHERE ar.status = 'pending'
+                 ORDER BY ar.requested_at ASC"
+            );
         }
 
-        if ($can_review_access_requests || $can_assign_users_to_teams) {
+        if ($can_review_access_requests) {
             echo '<h2>Pending QR Access Requests</h2>';
             if (!empty($pending_requests)) {
                 echo '<table class="widefat"><thead><tr><th>Requested</th><th>User</th><th>Team</th><th>QR Code</th><th>Actions</th></tr></thead><tbody>';
