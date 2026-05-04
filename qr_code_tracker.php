@@ -691,13 +691,10 @@ class QRCodeTracker {
             wp_die($message, 'QR Code Manager', ['response' => 403]);
         }
 
-        $team_id = isset($qr_code->team_id) ? (int) $qr_code->team_id : 0;
-        if ($team_id <= 0) {
-            wp_die('This QR code is not assigned to a team.', 'QR Code Manager', ['response' => 403]);
-        }
-
         $user_id = get_current_user_id();
-        if (!$this->teams->user_can_access_team($user_id, $team_id)) {
+        $team_id = isset($qr_code->team_id) ? (int) $qr_code->team_id : 0;
+        $can_access_qr = $team_id > 0 && $this->teams->user_can_access_team($user_id, $team_id);
+        if (!$can_access_qr) {
             wp_die('You do not have permission to manage this QR code.', 'QR Code Manager', ['response' => 403]);
         }
 
