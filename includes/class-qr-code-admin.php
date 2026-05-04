@@ -2224,8 +2224,10 @@ window.showRollupDayChart = function() {
         }
 
         $pending_requests = [];
-        if (QRCodeTracker_Permissions::can_review_access_requests() || QRCodeTracker_Permissions::can_assign_users_to_teams()) {
-            if (QRCodeTracker_Permissions::can_manage_all_teams() || QRCodeTracker_Permissions::can_review_access_requests()) {
+        $can_review_access_requests = QRCodeTracker_Permissions::can_review_access_requests();
+        $can_assign_users_to_teams = QRCodeTracker_Permissions::can_assign_users_to_teams();
+        if ($can_review_access_requests || $can_assign_users_to_teams) {
+            if ($can_review_access_requests || QRCodeTracker_Permissions::can_manage_all_teams()) {
                 $pending_requests = $wpdb->get_results(
                     "SELECT ar.*, q.postcode, q.city, q.tree, q.edit_token, t.name AS team_name, u.display_name, u.user_email
                      FROM {$this->access_requests_table} ar
@@ -2260,7 +2262,7 @@ window.showRollupDayChart = function() {
             }
         }
 
-        if (QRCodeTracker_Permissions::can_review_access_requests() || QRCodeTracker_Permissions::can_assign_users_to_teams()) {
+        if ($can_review_access_requests || $can_assign_users_to_teams) {
             echo '<h2>Pending QR Access Requests</h2>';
             if (!empty($pending_requests)) {
                 echo '<table class="widefat"><thead><tr><th>Requested</th><th>User</th><th>Team</th><th>QR Code</th><th>Actions</th></tr></thead><tbody>';
