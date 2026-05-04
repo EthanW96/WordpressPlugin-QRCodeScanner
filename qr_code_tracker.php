@@ -131,6 +131,7 @@ class QRCodeTracker {
         $scan_source = 'unknown';
 
         if (isset($_GET['_qr_redirect']) && $_GET['_qr_redirect'] === '1') {
+            $scan_source = 'legacy_redirect';
             $this->set_visit_debug(
                 true,
                 'Visit already recorded during legacy short-code redirect.',
