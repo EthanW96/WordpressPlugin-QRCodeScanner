@@ -2240,17 +2240,18 @@ window.showRollupDayChart = function() {
                 }, $managed_teams);
 
                 if (!empty($managed_team_ids)) {
-                    $placeholders = implode(',', array_fill(0, count($managed_team_ids), '%d'));
-                    $pending_requests = $wpdb->get_results($wpdb->prepare(
+                    $all_pending_requests = $wpdb->get_results(
                         "SELECT ar.*, q.postcode, q.city, q.tree, q.edit_token, t.name AS team_name, u.display_name, u.user_email
                          FROM {$this->access_requests_table} ar
                          JOIN {$this->main_table} q ON q.id = ar.qr_id
                          JOIN {$wpdb->users} u ON u.ID = ar.user_id
                          JOIN {$wpdb->prefix}qr_tracker_teams t ON t.id = ar.team_id
-                         WHERE ar.status = 'pending' AND ar.team_id IN ($placeholders)
-                         ORDER BY ar.requested_at ASC",
-                        ...$managed_team_ids
-                    ));
+                         WHERE ar.status = 'pending'
+                         ORDER BY ar.requested_at ASC"
+                    );
+                    $pending_requests = array_values(array_filter($all_pending_requests, function($request) use ($managed_team_ids) {
+                        return in_array((int) $request->team_id, $managed_team_ids, true);
+                    }));
                 }
             }
         }
