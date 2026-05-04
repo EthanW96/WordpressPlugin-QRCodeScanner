@@ -2269,7 +2269,7 @@ window.showRollupDayChart = function() {
                     echo '<td>' . esc_html($request->requested_at) . '</td>';
                     echo '<td><a href="' . esc_url($user_profile_url) . '">' . esc_html($user_text) . '</a></td>';
                     echo '<td>' . esc_html($request->team_name) . '</td>';
-                    echo '<td>' . esc_html($qr_text) . ' (<a href="' . esc_url($qr_edit_url) . '">View QR Code</a>)</td>';
+                    echo '<td>' . esc_html($qr_text) . ' (<a href="' . esc_url($qr_edit_url) . '">' . esc_html('View QR Code') . '</a>)</td>';
                     echo '<td>';
                     echo '<form method="post" style="display:inline-block;margin-right:8px;">';
                     wp_nonce_field('qr_access_request_review_' . (int) $request->id);
