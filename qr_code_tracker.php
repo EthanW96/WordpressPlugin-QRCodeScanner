@@ -215,7 +215,9 @@ class QRCodeTracker {
 
         if ($row) {
             $request_uri = isset($_SERVER['REQUEST_URI']) ? sanitize_text_field(wp_unslash($_SERVER['REQUEST_URI'])) : '';
-            $request_uri = substr($request_uri, 0, 255);
+            $request_uri = function_exists('mb_substr')
+                ? mb_substr($request_uri, 0, 255, 'UTF-8')
+                : substr($request_uri, 0, 255);
             $remote_addr = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '';
             $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '';
             $visitor_hash = hash('sha256', $remote_addr . '|' . $user_agent);
