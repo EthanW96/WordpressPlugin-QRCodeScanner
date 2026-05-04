@@ -2173,8 +2173,7 @@ window.showRollupDayChart = function() {
         }
 
         if (isset($_POST['review_access_request'])) {
-            // Check assign users permission
-            if (!QRCodeTracker_Permissions::can_assign_users_to_teams()) {
+            if (!QRCodeTracker_Permissions::can_review_access_requests()) {
                 echo '<div class="error"><p>You do not have permission to review access requests.</p></div>';
                 return;
             }
@@ -2192,7 +2191,7 @@ window.showRollupDayChart = function() {
 
             if (!$request) {
                 echo '<div class="error"><p>Access request not found or already processed.</p></div>';
-            } elseif (!$this->teams->user_can_manage_team(get_current_user_id(), (int) $request->team_id)) {
+            } elseif (!QRCodeTracker_Permissions::can_review_access_requests() && !$this->teams->user_can_manage_team(get_current_user_id(), (int) $request->team_id)) {
                 echo '<div class="error"><p>You do not have permission to review this request.</p></div>';
             } elseif ($decision === 'approve') {
                 $member_result = $this->teams->add_user_to_team((int) $request->user_id, (int) $request->team_id, 'member');
@@ -2220,8 +2219,8 @@ window.showRollupDayChart = function() {
         }
 
         $pending_requests = [];
-        if (QRCodeTracker_Permissions::can_assign_users_to_teams()) {
-            if (QRCodeTracker_Permissions::can_manage_all_teams()) {
+        if (QRCodeTracker_Permissions::can_review_access_requests() || QRCodeTracker_Permissions::can_assign_users_to_teams()) {
+            if (QRCodeTracker_Permissions::can_manage_all_teams() || QRCodeTracker_Permissions::can_review_access_requests()) {
                 $pending_requests = $wpdb->get_results(
                     "SELECT ar.*, q.postcode, q.city, q.tree, q.edit_token, t.name AS team_name, u.display_name, u.user_email
                      FROM {$this->access_requests_table} ar
@@ -2256,7 +2255,7 @@ window.showRollupDayChart = function() {
             }
         }
 
-        if (QRCodeTracker_Permissions::can_assign_users_to_teams()) {
+        if (QRCodeTracker_Permissions::can_review_access_requests() || QRCodeTracker_Permissions::can_assign_users_to_teams()) {
             echo '<h2>Pending QR Access Requests</h2>';
             if (!empty($pending_requests)) {
                 echo '<table class="widefat"><thead><tr><th>Requested</th><th>User</th><th>Team</th><th>QR Code</th><th>Actions</th></tr></thead><tbody>';
