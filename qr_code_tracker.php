@@ -816,7 +816,7 @@ class QRCodeTracker {
     private function notify_admins_of_access_request($qr_code, $user, $request_id) {
         $emails = [];
         $review_users = get_users([
-            'role__in' => ['administrator', QRCodeTracker_Permissions::ACCESS_REQUEST_MANAGER_ROLE],
+            'role' => QRCodeTracker_Permissions::ACCESS_REQUEST_MANAGER_ROLE,
             'fields' => ['user_email'],
         ]);
 
@@ -824,11 +824,6 @@ class QRCodeTracker {
             if (!empty($review_user->user_email)) {
                 $emails[] = sanitize_email($review_user->user_email);
             }
-        }
-
-        $site_admin_email = sanitize_email(get_option('admin_email'));
-        if (!empty($site_admin_email)) {
-            $emails[] = $site_admin_email;
         }
 
         $emails = array_values(array_unique(array_filter($emails)));
