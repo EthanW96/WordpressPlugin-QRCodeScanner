@@ -2249,7 +2249,7 @@ window.showRollupDayChart = function() {
                          JOIN {$wpdb->prefix}qr_tracker_teams t ON t.id = ar.team_id
                          WHERE ar.status = 'pending' AND ar.team_id IN ($placeholders)
                          ORDER BY ar.requested_at ASC",
-                        $managed_team_ids
+                        ...$managed_team_ids
                     ));
                 }
             }
