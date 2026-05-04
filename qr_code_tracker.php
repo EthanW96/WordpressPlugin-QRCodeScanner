@@ -786,8 +786,7 @@ class QRCodeTracker {
                 status = 'pending',
                 requested_at = %s,
                 reviewed_at = NULL,
-                reviewed_by = NULL,
-                id = LAST_INSERT_ID(id)",
+                reviewed_by = NULL",
             (int) $qr_code->id,
             (int) $qr_code->team_id,
             (int) $user_id,
@@ -800,7 +799,11 @@ class QRCodeTracker {
             return false;
         }
 
-        $request_id = (int) $wpdb->insert_id;
+        $request_id = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$this->access_requests_table} WHERE qr_id = %d AND user_id = %d LIMIT 1",
+            (int) $qr_code->id,
+            (int) $user_id
+        ));
         $user = get_userdata($user_id);
         if (!$user || $request_id <= 0) {
             return false;
