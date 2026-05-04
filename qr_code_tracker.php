@@ -782,15 +782,17 @@ class QRCodeTracker {
                 (qr_id, team_id, user_id, status, requested_at, reviewed_at, reviewed_by)
              VALUES (%d, %d, %d, 'pending', %s, NULL, NULL)
              ON DUPLICATE KEY UPDATE
-                team_id = VALUES(team_id),
+                team_id = %d,
                 status = 'pending',
-                requested_at = VALUES(requested_at),
+                requested_at = %s,
                 reviewed_at = NULL,
                 reviewed_by = NULL,
                 id = LAST_INSERT_ID(id)",
             (int) $qr_code->id,
             (int) $qr_code->team_id,
             (int) $user_id,
+            $requested_at,
+            (int) $qr_code->team_id,
             $requested_at
         ));
 
