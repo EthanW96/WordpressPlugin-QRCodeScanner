@@ -767,7 +767,7 @@ class QRCodeTracker_Admin {
                 echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a>";
                 echo "<a href=\"$merge_url\" class=\"button button-secondary\">Merge</a>";
             }
-            echo "<a href='$download_url' class='button' target='_blank'>Download QR</a>";
+            echo "<a href='$download_url' class='button' target='_blank'>Download QR Image</a>";
             if ($row->scan_count > 0) {
                 $report_url = esc_url(admin_url('admin.php?page=qr-single-report&qr_id=' . $row->id));
                 echo "<a href='$report_url' class='button button-primary'>Report</a>";
@@ -897,7 +897,7 @@ class QRCodeTracker_Admin {
         }
 
         echo '<div class="wrap"><h1>QR Code Tracker Settings</h1>';
-        echo '<div class="qr-settings-info" style="margin-bottom:20px;padding:10px 15px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;max-width:600px;">';
+        echo '<div class="qr-settings-info">';
         echo '<strong>Plugin Version:</strong> ' . esc_html($plugin_version) . '<br>';
         echo '<strong>Available Shortcodes:</strong>';
         echo '<ul style="margin-top:8px;">';

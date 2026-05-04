@@ -156,22 +156,22 @@ class QRCodeTracker_SingleReport {
         $stats = $wpdb->get_row($wpdb->prepare($sql, $where_params));
         
         if ($stats && $stats->total_scans > 0) {
-            echo '<div style="display: flex; gap: 20px; margin: 20px 0;">';
-            echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
-            echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($stats->total_scans) . '</div>';
-            echo '<div style="color: #666; margin-top: 5px;">Total Scans</div>';
+            echo '<div class="qr-summary-cards">';
+            echo '<div class="qr-summary-card">';
+            echo '<div class="qr-summary-card-number">' . number_format($stats->total_scans) . '</div>';
+            echo '<div class="qr-summary-card-label">Total Scans</div>';
             echo '</div>';
-            echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
-            echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($stats->unique_days) . '</div>';
-            echo '<div style="color: #666; margin-top: 5px;">Active Days</div>';
+            echo '<div class="qr-summary-card">';
+            echo '<div class="qr-summary-card-number">' . number_format($stats->unique_days) . '</div>';
+            echo '<div class="qr-summary-card-label">Active Days</div>';
             echo '</div>';
-            echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
-            echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($stats->active_hours) . '</div>';
-            echo '<div style="color: #666; margin-top: 5px;">Active Hours</div>';
+            echo '<div class="qr-summary-card">';
+            echo '<div class="qr-summary-card-number">' . number_format($stats->active_hours) . '</div>';
+            echo '<div class="qr-summary-card-label">Active Hours</div>';
             echo '</div>';
-            echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
-            echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . sprintf('%.1f', $stats->avg_hour) . '</div>';
-            echo '<div style="color: #666; margin-top: 5px;">Avg Hour</div>';
+            echo '<div class="qr-summary-card">';
+            echo '<div class="qr-summary-card-number">' . sprintf('%.1f', $stats->avg_hour) . '</div>';
+            echo '<div class="qr-summary-card-label">Avg Hour</div>';
             echo '</div>';
             echo '</div>';
             
@@ -205,27 +205,27 @@ class QRCodeTracker_SingleReport {
         echo '</div>';
         
         // Line chart container
-        echo '<div id="line-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
-        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
-        echo '<h3 style="margin: 0;">Daily Activity Chart</h3>';
+        echo '<div id="line-chart-container" class="qr-chart-container" style="display: none;">';
+        echo '<div class="qr-chart-header">';
+        echo '<h3>Daily Activity Chart</h3>';
         echo '<button onclick="exportChartAsImage(\'line-chart\', \'single-qr-daily-activity-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="line-chart" width="800" height="400"></canvas>';
         echo '</div>';
         
         // Radar chart container
-        echo '<div id="radar-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 700px;">';
-        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
-        echo '<h3 style="margin: 0;">Hour Distribution Chart</h3>';
+        echo '<div id="radar-chart-container" class="qr-chart-container" style="display: none; height: 700px;">';
+        echo '<div class="qr-chart-header">';
+        echo '<h3>Hour Distribution Chart</h3>';
         echo '<button onclick="exportChartAsImage(\'radar-chart\', \'single-qr-hour-distribution-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="radar-chart" width="600" height="600"></canvas>';
         echo '</div>';
         
         // Bar chart container
-        echo '<div id="bar-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
-        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
-        echo '<h3 style="margin: 0;">Day of Week Chart</h3>';
+        echo '<div id="bar-chart-container" class="qr-chart-container" style="display: none;">';
+        echo '<div class="qr-chart-header">';
+        echo '<h3>Day of Week Chart</h3>';
         echo '<button onclick="exportChartAsImage(\'bar-chart\', \'single-qr-day-of-week-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="bar-chart" width="800" height="400"></canvas>';
@@ -458,7 +458,7 @@ class QRCodeTracker_SingleReport {
             // Top pagination
             $this->display_pagination($page, $total_pages, $total_records, $limit, $offset, 'top');
             
-            echo '<table class="widefat">';
+            echo '<div class="qr-table-responsive"><table class="widefat">';
             echo '<thead><tr><th>ID</th><th>Scanned At</th><th>Hour</th><th>Day of Week</th></tr></thead>';
             echo '<tbody>';
             
@@ -475,7 +475,7 @@ class QRCodeTracker_SingleReport {
                 echo '</tr>';
             }
             
-            echo '</tbody></table>';
+            echo '</tbody></table></div>';
             
             // Bottom pagination
             $this->display_pagination($page, $total_pages, $total_records, $limit, $offset, 'bottom');

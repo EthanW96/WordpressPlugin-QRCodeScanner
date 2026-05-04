@@ -250,24 +250,11 @@ class QRCodeTracker_ReportsDisplay {
     }
 
     /**
-     * Display CSS styles
+     * Display CSS styles — only include styles not already in assets/css/qr-tracker-admin.css
      */
     private function display_styles() {
         echo '<style>
-        .qr-filter-form { background: #f9f9f9; padding: 15px; margin: 20px 0; border: 1px solid #ddd; border-radius: 4px; }
-        .qr-filter-form select, .qr-filter-form input[type="date"] { padding: 5px 28px 5px 8px !important; min-width: 90px; background: #fff; appearance: auto; -webkit-appearance: auto; -moz-appearance: auto; }
-        .qr-filter-form label { display: inline-block; margin-right: 5px; font-weight: bold; }
-        .qr-filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
-        .qr-filter-field { display: flex; align-items: center; gap: 6px; }
-        .qr-filter-field label { white-space: nowrap; }
-        .qr-stats-summary { display: flex; flex-wrap: wrap; gap: 20px; margin: 20px 0; }
-        .qr-stat-box { background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1 1 120px; text-align: center; min-width: 110px; }
-        .qr-stat-number { font-size: 24px; font-weight: bold; color: #0073aa; }
-        .qr-stat-label { color: #666; margin-top: 5px; }
-        .qr-search-box { background: #fff; border: 2px solid #0073aa; border-radius: 4px; padding: 15px; margin-bottom: 20px; }
-        .qr-search-input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; min-width: 0; }
-        .qr-search-input:focus { outline: none; border-color: #0073aa; box-shadow: 0 0 0 1px #0073aa; }
-        .qr-welcome-message { background: #fff; border: 1px solid #ddd; padding: 30px; margin: 20px 0; border-radius: 4px; text-align: center; }
+        /* Suggestion dropdown and misc styles specific to the reports search UI */
         .qr-search-suggestions { position: absolute; background: white; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); z-index: 1000; max-width: 300px; }
         .qr-search-suggestion-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; display: flex; align-items: center; }
         .qr-search-suggestion-item:hover { background-color: #f0f0f0; }
@@ -280,18 +267,6 @@ class QRCodeTracker_ReportsDisplay {
         .search-term-tag { display: inline-block; background: #0073aa; color: white; padding: 4px 8px; margin: 2px; border-radius: 12px; font-size: 12px; }
         .remove-term { cursor: pointer; margin-left: 5px; font-weight: bold; }
         .remove-term:hover { color: #ff6b6b; }
-        @media screen and (max-width: 782px) {
-            .qr-filter-row { flex-direction: column; align-items: flex-start; }
-            .qr-filter-field { width: 100%; flex-wrap: wrap; }
-            .qr-filter-field select, .qr-filter-field input[type="date"] { width: 100%; box-sizing: border-box; }
-            .qr-filter-form select, .qr-filter-form input[type="date"] { width: 100%; box-sizing: border-box; }
-            .qr-stat-box { flex: 1 1 calc(50% - 10px); }
-            .qr-stat-number { font-size: 20px; }
-            .qr-search-input { width: 100%; box-sizing: border-box; }
-        }
-        @media screen and (max-width: 480px) {
-            .qr-stat-box { flex: 1 1 100%; }
-        }
         </style>';
     }
 

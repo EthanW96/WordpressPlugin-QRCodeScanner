@@ -71,6 +71,21 @@
     border-radius: 4px;
 }
 
+.qr-filter-form select,
+.qr-filter-form input[type="date"] {
+    padding: 5px 28px 5px 8px;
+    min-width: 90px;
+    background: #fff;
+    appearance: auto;
+    -webkit-appearance: auto;
+    -moz-appearance: auto;
+}
+
+.qr-filter-form label {
+    display: inline-block;
+    font-weight: bold;
+}
+
 .qr-filter-row {
     display: flex;
     flex-wrap: wrap;
@@ -173,8 +188,7 @@
     border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 14px;
-    width: 100%;
-    box-sizing: border-box;
+    min-width: 0;
 }
 
 .qr-search-input:focus {
@@ -240,6 +254,16 @@
     gap: 15px;
     flex-wrap: wrap;
     margin-top: 10px;
+}
+
+/* Settings info box */
+.qr-settings-info {
+    margin-bottom: 20px;
+    padding: 10px 15px;
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    max-width: 600px;
 }
 
 /* Notification badge */
@@ -349,6 +373,12 @@
 
     .qr-filter-field input[type="date"],
     .qr-filter-field select {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* --- Search input: full width on mobile --- */
+    .qr-search-input {
         width: 100%;
         box-sizing: border-box;
     }
