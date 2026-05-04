@@ -2261,13 +2261,15 @@ window.showRollupDayChart = function() {
             if (!empty($pending_requests)) {
                 echo '<table class="widefat"><thead><tr><th>Requested</th><th>User</th><th>Team</th><th>QR Code</th><th>Actions</th></tr></thead><tbody>';
                 foreach ($pending_requests as $request) {
-                    $user_profile_url = admin_url('user-edit.php?user_id=' . (int) $request->user_id);
-                    $qr_edit_url = admin_url('admin.php?page=qr-tracker&edit_id=' . (int) $request->qr_id);
+                    $user_profile_url = add_query_arg(['user_id' => (int) $request->user_id], admin_url('user-edit.php'));
+                    $qr_edit_url = add_query_arg(['page' => 'qr-tracker', 'edit_id' => (int) $request->qr_id], admin_url('admin.php'));
+                    $user_text = sprintf('%s (%s)', $request->display_name, $request->user_email);
+                    $qr_text = sprintf('Postcode: %s / City: %s / Tree: %s', $request->postcode, $request->city, $request->tree);
                     echo '<tr>';
                     echo '<td>' . esc_html($request->requested_at) . '</td>';
-                    echo '<td><a href="' . esc_url($user_profile_url) . '">' . esc_html($request->display_name) . '</a> (' . esc_html($request->user_email) . ')</td>';
+                    echo '<td><a href="' . esc_url($user_profile_url) . '">' . esc_html($user_text) . '</a></td>';
                     echo '<td>' . esc_html($request->team_name) . '</td>';
-                    echo '<td>Postcode: ' . esc_html($request->postcode) . ' / City: ' . esc_html($request->city) . ' / Tree: ' . esc_html($request->tree) . ' (<a href="' . esc_url($qr_edit_url) . '">View QR Code</a>)</td>';
+                    echo '<td>' . esc_html($qr_text) . ' (<a href="' . esc_url($qr_edit_url) . '">View QR Code</a>)</td>';
                     echo '<td>';
                     echo '<form method="post" style="display:inline-block;margin-right:8px;">';
                     wp_nonce_field('qr_access_request_review_' . (int) $request->id);
