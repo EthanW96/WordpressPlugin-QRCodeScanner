@@ -2191,30 +2191,35 @@ window.showRollupDayChart = function() {
 
             if (!$request) {
                 echo '<div class="error"><p>Access request not found or already processed.</p></div>';
-            } elseif (!QRCodeTracker_Permissions::can_review_access_requests() && !$this->teams->user_can_manage_team(get_current_user_id(), (int) $request->team_id)) {
-                echo '<div class="error"><p>You do not have permission to review this request.</p></div>';
-            } elseif ($decision === 'approve') {
-                $member_result = $this->teams->add_user_to_team((int) $request->user_id, (int) $request->team_id, 'member');
-                if ($member_result === false) {
-                    echo '<div class="error"><p>Unable to approve request because team assignment failed.</p></div>';
-                } else {
+            } else {
+                $can_review_request = QRCodeTracker_Permissions::can_review_access_requests() ||
+                    $this->teams->user_can_manage_team(get_current_user_id(), (int) $request->team_id);
+
+                if (!$can_review_request) {
+                    echo '<div class="error"><p>You do not have permission to review this request.</p></div>';
+                } elseif ($decision === 'approve') {
+                    $member_result = $this->teams->add_user_to_team((int) $request->user_id, (int) $request->team_id, 'member');
+                    if ($member_result === false) {
+                        echo '<div class="error"><p>Unable to approve request because team assignment failed.</p></div>';
+                    } else {
+                        $wpdb->update($this->access_requests_table, [
+                            'status' => 'approved',
+                            'reviewed_at' => current_time('mysql'),
+                            'reviewed_by' => get_current_user_id(),
+                        ], ['id' => $request_id]);
+                        $this->send_access_request_approved_email($request);
+                        echo '<div class="updated"><p>Access request approved and user added to team.</p></div>';
+                    }
+                } elseif ($decision === 'deny') {
                     $wpdb->update($this->access_requests_table, [
-                        'status' => 'approved',
+                        'status' => 'denied',
                         'reviewed_at' => current_time('mysql'),
                         'reviewed_by' => get_current_user_id(),
                     ], ['id' => $request_id]);
-                    $this->send_access_request_approved_email($request);
-                    echo '<div class="updated"><p>Access request approved and user added to team.</p></div>';
+                    echo '<div class="updated"><p>Access request denied.</p></div>';
+                } else {
+                    echo '<div class="error"><p>Invalid review decision.</p></div>';
                 }
-            } elseif ($decision === 'deny') {
-                $wpdb->update($this->access_requests_table, [
-                    'status' => 'denied',
-                    'reviewed_at' => current_time('mysql'),
-                    'reviewed_by' => get_current_user_id(),
-                ], ['id' => $request_id]);
-                echo '<div class="updated"><p>Access request denied.</p></div>';
-            } else {
-                echo '<div class="error"><p>Invalid review decision.</p></div>';
             }
         }
 
