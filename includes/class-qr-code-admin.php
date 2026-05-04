@@ -3,6 +3,7 @@
 class QRCodeTracker_Admin {
     private $main_table;
     private $log_table;
+    private $access_requests_table;
     private $tracker;
     private $teams;
 
@@ -10,6 +11,7 @@ class QRCodeTracker_Admin {
         global $wpdb;
         $this->main_table = $wpdb->prefix . 'qr_tracker';
         $this->log_table = $wpdb->prefix . 'qr_tracker_logs';
+        $this->access_requests_table = $wpdb->prefix . 'qr_tracker_access_requests';
         $this->tracker = $tracker;
         $this->teams = $teams;
         
@@ -120,6 +122,7 @@ class QRCodeTracker_Admin {
                 echo '</ul></div>';
             } else {
                 $short_code = $this->tracker->generate_unique_short_code();
+                $edit_token = $this->tracker->generate_unique_edit_token();
                 $url = $this->tracker->generate_tracker_url($postcode, $city, $tree, $short_code);
                 
                 // Check for duplicate URL/short code
@@ -127,7 +130,7 @@ class QRCodeTracker_Admin {
                 if ($existing) {
                     echo '<div class="error"><p>Error: A QR code with this URL or short code already exists (ID: ' . $existing->id . ', Postcode: ' . $existing->postcode . ', Tree: ' . $existing->tree . '). Please try again.</p></div>';
                 } else {
-                    $wpdb->insert($this->main_table, compact('url', 'short_code', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id'));
+                    $wpdb->insert($this->main_table, compact('url', 'short_code', 'edit_token', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id'));
                     echo '<div class="updated"><p>QR Code entry saved.</p></div>';
                 }
             }
@@ -141,7 +144,7 @@ class QRCodeTracker_Admin {
             }
             $postcode = strtoupper(sanitize_text_field($_POST['qr_postcode']));
             $edit_id = intval($_POST['qr_edit_id']);
-            $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count, url, short_code FROM {$this->main_table} WHERE id = %d", $edit_id));
+            $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count, url, short_code, edit_token FROM {$this->main_table} WHERE id = %d", $edit_id));
             
             if ($row) {
                 $city = sanitize_text_field($_POST['qr_city']);
@@ -187,6 +190,10 @@ class QRCodeTracker_Admin {
                     }
                     echo '</ul></div>';
                 } else {
+                    if (empty($row->edit_token)) {
+                        $row->edit_token = $this->tracker->generate_unique_edit_token();
+                        $wpdb->update($this->main_table, ['edit_token' => $row->edit_token], ['id' => $edit_id]);
+                    }
                     $short_code = !empty($row->short_code) ? $row->short_code : $this->tracker->generate_unique_short_code();
                     $url = $this->tracker->generate_tracker_url($postcode, $city, $tree, $short_code);
                     
@@ -378,6 +385,20 @@ class QRCodeTracker_Admin {
                 echo '<div class="notice notice-warning"><p><strong>Note:</strong> This QR code has ' . number_format($edit_data->scan_count) . ' scan(s). The URL is auto-generated and locked to preserve tracking data. <br>Because the URL is based on postcode, city, and tree, <strong>these fields cannot be edited</strong> once scans exist. You can still edit other fields or use the merge function to redistribute scans.</p></div>';
             } else {
                 echo '<div class="notice notice-info"><p><strong>Important:</strong> Postcode, City, and Tree fields cannot contain spaces or special characters. Only letters, numbers, and hyphens are allowed.</p></div>';
+            }
+            if (!empty($edit_data->short_code)) {
+                $anonymous_url = $this->tracker->generate_anonymous_tracker_url($edit_data->short_code);
+                if (!empty($anonymous_url)) {
+                    echo '<div class="notice notice-info"><p><strong>Anonymous Link:</strong> <a href="' . esc_url($anonymous_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($anonymous_url) . '</a><br><span class="description">Share this short link externally. Existing legacy links continue to work.</span></p></div>';
+                }
+            }
+            if (empty($edit_data->edit_token)) {
+                $edit_data->edit_token = $this->tracker->generate_unique_edit_token();
+                $wpdb->update($this->main_table, ['edit_token' => $edit_data->edit_token], ['id' => $edit_data->id]);
+            }
+            $management_url = !empty($edit_data->edit_token) ? $this->tracker->generate_qr_management_url($edit_data->edit_token) : '';
+            if (!empty($management_url)) {
+                echo '<div class="notice notice-info"><p><strong>Management Link:</strong> <a href="' . esc_url($management_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($management_url) . '</a><br><span class="description">Share this link with someone who can log in or create a WordPress account, then edit this QR code\'s message/details.</span></p></div>';
             }
             echo '<form method="post" id="qr-edit-form">
                 <input type="hidden" name="qr_edit_id" value="' . $edit_data->id . '">
@@ -703,8 +724,23 @@ class QRCodeTracker_Admin {
                     $team_name = esc_html($team->name);
                 }
             }
+
+            if (empty($row->edit_token)) {
+                $row->edit_token = $this->tracker->generate_unique_edit_token();
+                $wpdb->update($this->main_table, ['edit_token' => $row->edit_token], ['id' => $row->id]);
+            }
+
+            $url_display = '<code>' . esc_html($row->url) . '</code>';
+            $anonymous_url = !empty($row->short_code) ? $this->tracker->generate_anonymous_tracker_url($row->short_code) : '';
+            if (!empty($anonymous_url) && untrailingslashit($anonymous_url) !== untrailingslashit($row->url)) {
+                $url_display .= '<br><code>' . esc_html($anonymous_url) . '</code><br><span class="description">Anonymous link</span>';
+            }
+            $management_url = !empty($row->edit_token) ? $this->tracker->generate_qr_management_url($row->edit_token) : '';
+            if (!empty($management_url)) {
+                $url_display .= '<br><code>' . esc_html($management_url) . '</code><br><span class="description">Management link</span>';
+            }
             
-            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td><code>{$row->url}</code></td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>{$row->last_scanned}</td>";
+            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td>{$url_display}</td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>{$row->last_scanned}</td>";
             echo "<td>";
             if ($row->scan_count == 0) {
                 echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a> ";
@@ -1970,6 +2006,26 @@ window.showRollupDayChart = function() {
         $reporting_id_report->display_reporting_id_report_page();
     }
 
+    private function send_access_request_approved_email($request) {
+        $user = get_userdata((int) $request->user_id);
+        if (!$user || empty($user->user_email)) {
+            return;
+        }
+
+        $subject = sprintf('[%s] Your QR access request was approved', wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES));
+        $management_url = !empty($request->edit_token) ? $this->tracker->generate_qr_management_url($request->edit_token) : '';
+        $message = "Your request to manage a QR code has been approved.\n\n";
+        $message .= 'Postcode: ' . $request->postcode . "\n";
+        $message .= 'City: ' . $request->city . "\n";
+        $message .= 'Tree: ' . $request->tree . "\n";
+        if (!empty($management_url)) {
+            $message .= 'Management Link: ' . $management_url . "\n";
+        }
+        $message .= "\nLog in to your account to manage this QR code.\n";
+
+        wp_mail(sanitize_email($user->user_email), $subject, $message);
+    }
+
     /**
      * Display teams management page
      */
@@ -2113,6 +2169,102 @@ window.showRollupDayChart = function() {
                 echo '<div class="updated"><p>' . esc_html($result['message']) . '</p></div>';
             } else {
                 echo '<div class="error"><p>' . esc_html($result['message']) . '</p></div>';
+            }
+        }
+
+        if (isset($_POST['review_access_request'])) {
+            if (!QRCodeTracker_Permissions::can_review_access_requests()) {
+                echo '<div class="error"><p>You do not have permission to review access requests.</p></div>';
+                return;
+            }
+
+            $request_id = intval($_POST['request_id']);
+            check_admin_referer('qr_access_request_review_' . $request_id);
+            $decision = isset($_POST['request_decision']) ? sanitize_text_field($_POST['request_decision']) : '';
+            $request = $wpdb->get_row($wpdb->prepare(
+                "SELECT ar.*, q.postcode, q.city, q.tree, q.edit_token
+                 FROM {$this->access_requests_table} ar
+                 JOIN {$this->main_table} q ON q.id = ar.qr_id
+                 WHERE ar.id = %d AND ar.status = 'pending' LIMIT 1",
+                $request_id
+            ));
+
+            if (!$request) {
+                echo '<div class="error"><p>Access request not found or already processed.</p></div>';
+            } else {
+                if ($decision === 'approve') {
+                    $member_result = $this->teams->add_user_to_team((int) $request->user_id, (int) $request->team_id, 'member');
+                    if ($member_result === false) {
+                        echo '<div class="error"><p>Unable to approve request because team assignment failed.</p></div>';
+                    } else {
+                        $wpdb->update($this->access_requests_table, [
+                            'status' => 'approved',
+                            'reviewed_at' => current_time('mysql'),
+                            'reviewed_by' => get_current_user_id(),
+                        ], ['id' => $request_id]);
+                        $this->send_access_request_approved_email($request);
+                        echo '<div class="updated"><p>Access request approved and user added to team.</p></div>';
+                    }
+                } elseif ($decision === 'deny') {
+                    $wpdb->update($this->access_requests_table, [
+                        'status' => 'denied',
+                        'reviewed_at' => current_time('mysql'),
+                        'reviewed_by' => get_current_user_id(),
+                    ], ['id' => $request_id]);
+                    echo '<div class="updated"><p>Access request denied.</p></div>';
+                } else {
+                    echo '<div class="error"><p>Invalid review decision.</p></div>';
+                }
+            }
+        }
+
+        $pending_requests = [];
+        $can_review_access_requests = QRCodeTracker_Permissions::can_review_access_requests();
+        if ($can_review_access_requests) {
+            $pending_requests = $wpdb->get_results(
+                "SELECT ar.*, q.postcode, q.city, q.tree, q.edit_token, t.name AS team_name, u.display_name, u.user_email
+                 FROM {$this->access_requests_table} ar
+                 JOIN {$this->main_table} q ON q.id = ar.qr_id
+                 JOIN {$wpdb->users} u ON u.ID = ar.user_id
+                 JOIN {$wpdb->prefix}qr_tracker_teams t ON t.id = ar.team_id
+                 WHERE ar.status = 'pending'
+                 ORDER BY ar.requested_at ASC"
+            );
+        }
+
+        if ($can_review_access_requests) {
+            echo '<h2>Pending QR Access Requests</h2>';
+            if (!empty($pending_requests)) {
+                echo '<table class="widefat"><thead><tr><th>Requested</th><th>User</th><th>Team</th><th>QR Code</th><th>Actions</th></tr></thead><tbody>';
+                foreach ($pending_requests as $request) {
+                    $user_profile_url = add_query_arg(['user_id' => (int) $request->user_id], admin_url('user-edit.php'));
+                    $qr_edit_url = add_query_arg(['page' => 'qr-tracker', 'edit_id' => (int) $request->qr_id], admin_url('admin.php'));
+                    $user_text = sprintf('%s (%s)', $request->display_name, $request->user_email);
+                    $qr_text = sprintf('Postcode: %s / City: %s / Tree: %s', $request->postcode, $request->city, $request->tree);
+                    echo '<tr>';
+                    echo '<td>' . esc_html($request->requested_at) . '</td>';
+                    echo '<td><a href="' . esc_url($user_profile_url) . '">' . esc_html($user_text) . '</a></td>';
+                    echo '<td>' . esc_html($request->team_name) . '</td>';
+                    echo '<td>' . esc_html($qr_text) . ' (<a href="' . esc_url($qr_edit_url) . '">' . esc_html('View QR Code') . '</a>)</td>';
+                    echo '<td>';
+                    echo '<form method="post" style="display:inline-block;margin-right:8px;">';
+                    wp_nonce_field('qr_access_request_review_' . (int) $request->id);
+                    echo '<input type="hidden" name="request_id" value="' . (int) $request->id . '">';
+                    echo '<input type="hidden" name="request_decision" value="approve">';
+                    echo '<button type="submit" name="review_access_request" class="button button-primary">Approve</button>';
+                    echo '</form>';
+                    echo '<form method="post" style="display:inline-block;">';
+                    wp_nonce_field('qr_access_request_review_' . (int) $request->id);
+                    echo '<input type="hidden" name="request_id" value="' . (int) $request->id . '">';
+                    echo '<input type="hidden" name="request_decision" value="deny">';
+                    echo '<button type="submit" name="review_access_request" class="button">Deny</button>';
+                    echo '</form>';
+                    echo '</td>';
+                    echo '</tr>';
+                }
+                echo '</tbody></table>';
+            } else {
+                echo '<p>No pending access requests.</p>';
             }
         }
         

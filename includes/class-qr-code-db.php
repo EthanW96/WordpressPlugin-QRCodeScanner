@@ -5,6 +5,7 @@ class QRCodeTracker_DB {
     private $log_table;
     private $teams_table;
     private $user_teams_table;
+    private $access_requests_table;
 
     public function __construct() {
         global $wpdb;
@@ -12,6 +13,7 @@ class QRCodeTracker_DB {
         $this->log_table = $wpdb->prefix . 'qr_tracker_logs';
         $this->teams_table = $wpdb->prefix . 'qr_tracker_teams';
         $this->user_teams_table = $wpdb->prefix . 'qr_tracker_user_teams';
+        $this->access_requests_table = $wpdb->prefix . 'qr_tracker_access_requests';
     }
 
     public function install() {
@@ -23,6 +25,7 @@ class QRCodeTracker_DB {
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             url TEXT NOT NULL,
             short_code VARCHAR(16) DEFAULT NULL,
+            edit_token VARCHAR(64) DEFAULT NULL,
             postcode VARCHAR(32),
             city VARCHAR(64),
             tree VARCHAR(64),
@@ -40,6 +43,7 @@ class QRCodeTracker_DB {
             PRIMARY KEY (id),
             KEY team_id (team_id),
             KEY short_code (short_code),
+            KEY edit_token (edit_token),
             KEY postcode (postcode),
             KEY city (city),
             KEY tree (tree)
@@ -95,12 +99,28 @@ class QRCodeTracker_DB {
             KEY user_id (user_id),
             KEY team_id (team_id)
         ) $charset_collate;";
+
+        $sql_access_requests = "CREATE TABLE {$this->access_requests_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            qr_id BIGINT UNSIGNED NOT NULL,
+            team_id BIGINT UNSIGNED NOT NULL,
+            user_id BIGINT UNSIGNED NOT NULL,
+            status ENUM('pending', 'approved', 'denied') DEFAULT 'pending',
+            requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at DATETIME DEFAULT NULL,
+            reviewed_by BIGINT UNSIGNED DEFAULT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY qr_user (qr_id, user_id),
+            KEY team_id (team_id),
+            KEY status (status)
+        ) $charset_collate;";
         
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql_main);
         dbDelta($sql_log);
         dbDelta($sql_teams);
         dbDelta($sql_user_teams);
+        dbDelta($sql_access_requests);
         
         // Insert default team if none exists
         $this->insert_default_team();
@@ -114,6 +134,11 @@ class QRCodeTracker_DB {
         if (!$teams_table_exists) {
             $this->create_teams_tables();
         }
+
+        $access_requests_exists = $wpdb->get_var("SHOW TABLES LIKE '{$this->access_requests_table}'");
+        if (!$access_requests_exists) {
+            $this->create_access_requests_table();
+        }
         
         // Check if team_id column exists in main table
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'team_id'");
@@ -125,6 +150,11 @@ class QRCodeTracker_DB {
         if (empty($columns)) {
             $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN short_code VARCHAR(16) DEFAULT NULL AFTER url");
             $wpdb->query("ALTER TABLE {$this->main_table} ADD INDEX short_code (short_code)");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'edit_token'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN edit_token VARCHAR(64) DEFAULT NULL AFTER short_code");
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD INDEX edit_token (edit_token)");
         }
         
         // Existing upgrade logic
@@ -190,6 +220,7 @@ class QRCodeTracker_DB {
         // Add performance indexes for existing installations
         $this->add_performance_indexes();
         $this->populate_missing_short_codes();
+        $this->populate_missing_edit_tokens();
     }
     
     private function create_teams_tables() {
@@ -229,6 +260,28 @@ class QRCodeTracker_DB {
         
         // Insert default team if none exists
         $this->insert_default_team();
+    }
+
+    private function create_access_requests_table() {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+        $sql_access_requests = "CREATE TABLE {$this->access_requests_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            qr_id BIGINT UNSIGNED NOT NULL,
+            team_id BIGINT UNSIGNED NOT NULL,
+            user_id BIGINT UNSIGNED NOT NULL,
+            status ENUM('pending', 'approved', 'denied') DEFAULT 'pending',
+            requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at DATETIME DEFAULT NULL,
+            reviewed_by BIGINT UNSIGNED DEFAULT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY qr_user (qr_id, user_id),
+            KEY team_id (team_id),
+            KEY status (status)
+        ) $charset_collate;";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql_access_requests);
     }
     
     private function insert_default_team() {
@@ -336,6 +389,36 @@ class QRCodeTracker_DB {
         }
     }
 
+    private function generate_unique_edit_token($length = 32) {
+        global $wpdb;
+
+        do {
+            $token = strtolower(wp_generate_password($length, false, false));
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$this->main_table} WHERE edit_token = %s LIMIT 1",
+                $token
+            ));
+        } while ($exists);
+
+        return $token;
+    }
+
+    private function populate_missing_edit_tokens() {
+        global $wpdb;
+        $rows = $wpdb->get_results("SELECT id FROM {$this->main_table} WHERE edit_token IS NULL OR edit_token = ''");
+        if (empty($rows)) {
+            return;
+        }
+
+        foreach ($rows as $row) {
+            $wpdb->update(
+                $this->main_table,
+                ['edit_token' => $this->generate_unique_edit_token()],
+                ['id' => $row->id]
+            );
+        }
+    }
+
     public static function uninstall() {
         $delete_on_uninstall = get_option('qr_tracker_delete_on_uninstall', 0);
 
@@ -345,11 +428,13 @@ class QRCodeTracker_DB {
             $log_table = $wpdb->prefix . 'qr_tracker_logs';
             $teams_table = $wpdb->prefix . 'qr_tracker_teams';
             $user_teams_table = $wpdb->prefix . 'qr_tracker_user_teams';
+            $access_requests_table = $wpdb->prefix . 'qr_tracker_access_requests';
 
             $wpdb->query("DROP TABLE IF EXISTS {$main_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$log_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$teams_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$user_teams_table}");
+            $wpdb->query("DROP TABLE IF EXISTS {$access_requests_table}");
 
             delete_option('qr_tracker_delete_on_uninstall');
             delete_option('qr_tracker_tree_product_ids');

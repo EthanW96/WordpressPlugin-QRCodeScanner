@@ -27,9 +27,17 @@ use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 
 class QRCodeTracker {
+    private const SHORT_CODE_MIN_LENGTH = 6;
+    private const SHORT_CODE_MAX_LENGTH = 16;
+    private const EDIT_TOKEN_LENGTH = 32;
+    private const EDIT_TOKEN_MIN_LENGTH = 16;
+    private const EDIT_TOKEN_MAX_LENGTH = 64;
+
     private $main_table;
     private $log_table;
+    private $access_requests_table;
     private $current_tracker = null;
+    private $current_request_url = '';
     private $visit_debug = null;
     private $admin;
     private $db;
@@ -41,6 +49,7 @@ class QRCodeTracker {
         global $wpdb;
         $this->main_table = $wpdb->prefix . 'qr_tracker';
         $this->log_table = $wpdb->prefix . 'qr_tracker_logs';
+        $this->access_requests_table = $wpdb->prefix . 'qr_tracker_access_requests';
 
         $this->db = new QRCodeTracker_DB();
         register_activation_hook(__FILE__, [$this->db, 'install']);
@@ -62,6 +71,8 @@ class QRCodeTracker {
 
         add_action('wp', [$this, 'track_visit'], 0);
         add_action('template_redirect', [$this, 'handle_legacy_short_code_redirect'], 0);
+        add_action('template_redirect', [$this, 'handle_qr_management_request']);
+        add_action('template_redirect', [$this, 'handle_anonymous_short_code_redirect']);
         add_action('wp_footer', [$this, 'render_visit_debug_message'], 99);
         add_shortcode('qr_tracker_message_1', [$this, 'shortcode_message_1']);
         add_shortcode('qr_tracker_message_2', [$this, 'shortcode_message_2']);
@@ -206,7 +217,9 @@ class QRCodeTracker {
 
         if ($row) {
             $request_uri = isset($_SERVER['REQUEST_URI']) ? sanitize_text_field(wp_unslash($_SERVER['REQUEST_URI'])) : '';
-            $request_uri = substr($request_uri, 0, 255);
+            $request_uri = function_exists('mb_substr')
+                ? mb_substr($request_uri, 0, 255, 'UTF-8')
+                : substr($request_uri, 0, 255);
             $remote_addr = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '';
             $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '';
             $visitor_hash = hash('sha256', $remote_addr . '|' . $user_agent);
@@ -273,7 +286,12 @@ class QRCodeTracker {
             return;
         }
 
-        $redirect_url = add_query_arg('_qr_redirect', '1', $row->url);
+        $validated_url = wp_validate_redirect($row->url, '');
+        if (empty($validated_url)) {
+            return;
+        }
+
+        $redirect_url = add_query_arg('_qr_redirect', '1', $validated_url);
         wp_safe_redirect($redirect_url, 302);
         exit;
     }
@@ -523,7 +541,351 @@ class QRCodeTracker {
         return add_query_arg($params, $base);
     }
 
-    public function generate_unique_short_code($length = 6) {
+    public function generate_anonymous_tracker_url($short_code) {
+        $short_code = strtolower(sanitize_text_field((string) $short_code));
+        if (empty($short_code)) {
+            return '';
+        }
+        return home_url('/' . rawurlencode($short_code));
+    }
+
+    public function generate_qr_management_url($edit_token) {
+        $edit_token = strtolower(sanitize_text_field((string) $edit_token));
+        if (empty($edit_token)) {
+            return '';
+        }
+        return add_query_arg(['qr_manage' => $edit_token], home_url('/'));
+    }
+
+    public function generate_unique_edit_token($length = self::EDIT_TOKEN_LENGTH) {
+        global $wpdb;
+
+        do {
+            $token = strtolower(wp_generate_password($length, false, false));
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$this->main_table} WHERE edit_token = %s LIMIT 1",
+                $token
+            ));
+        } while ($exists);
+
+        return $token;
+    }
+
+    private function get_short_code_from_request_path() {
+        $this->current_request_url = '';
+
+        if (empty($_SERVER['REQUEST_URI'])) {
+            return '';
+        }
+
+        $request_uri = wp_unslash($_SERVER['REQUEST_URI']);
+        $request_path = wp_parse_url($request_uri, PHP_URL_PATH);
+        if (!is_string($request_path)) {
+            return '';
+        }
+        $request_query = wp_parse_url($request_uri, PHP_URL_QUERY);
+        $this->current_request_url = home_url($request_path . ($request_query ? '?' . $request_query : ''));
+
+        $request_path = trim($request_path, '/');
+        if ($request_path === '') {
+            return '';
+        }
+
+        $home_path = wp_parse_url(home_url('/'), PHP_URL_PATH);
+        if (is_string($home_path)) {
+            $home_path = trim($home_path, '/');
+            if ($home_path !== '') {
+                if (strpos($request_path, $home_path . '/') === 0) {
+                    $request_path = substr($request_path, strlen($home_path) + 1);
+                } elseif ($request_path === $home_path) {
+                    $request_path = '';
+                }
+            }
+        }
+
+        if ($request_path === '' || strpos($request_path, '/') !== false) {
+            return '';
+        }
+
+        $short_code_pattern = '/^[a-z0-9]{' . self::SHORT_CODE_MIN_LENGTH . ',' . self::SHORT_CODE_MAX_LENGTH . '}$/';
+        if (!preg_match($short_code_pattern, $request_path)) {
+            return '';
+        }
+
+        return strtolower($request_path);
+    }
+
+    public function handle_anonymous_short_code_redirect() {
+        if (is_admin() || wp_doing_ajax()) {
+            return;
+        }
+
+        if (isset($_GET['qr']) || isset($_GET['postcode']) || isset($_GET['city']) || isset($_GET['tree']) || isset($_GET['qr_manage'])) {
+            return;
+        }
+
+        $short_code = $this->get_short_code_from_request_path();
+        if (empty($short_code)) {
+            return;
+        }
+
+        global $wpdb;
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT url FROM {$this->main_table} WHERE short_code = %s LIMIT 1",
+            $short_code
+        ));
+
+        if (!$row || empty($row->url)) {
+            return;
+        }
+
+        $current_url = $this->current_request_url;
+        if (empty($current_url)) {
+            return;
+        }
+        $stored_url = esc_url_raw($row->url);
+
+        if (empty($stored_url)) {
+            return;
+        }
+
+        // Prevent redirect loops when the anonymous URL already resolves to the stored URL.
+        if (untrailingslashit($current_url) === untrailingslashit($stored_url)) {
+            return;
+        }
+
+        wp_safe_redirect($stored_url, 302);
+        exit;
+    }
+
+    public function handle_qr_management_request() {
+        if (is_admin() || wp_doing_ajax()) {
+            return;
+        }
+
+        $edit_token = isset($_GET['qr_manage']) ? strtolower(sanitize_text_field(wp_unslash($_GET['qr_manage']))) : '';
+        if (empty($edit_token)) {
+            return;
+        }
+        if (!preg_match('/^[a-z0-9]{' . self::EDIT_TOKEN_MIN_LENGTH . ',' . self::EDIT_TOKEN_MAX_LENGTH . '}$/', $edit_token)) {
+            wp_die('Invalid QR code management link.', 'QR Code Manager', ['response' => 404]);
+        }
+
+        global $wpdb;
+        $qr_code = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$this->main_table} WHERE edit_token = %s LIMIT 1",
+            $edit_token
+        ));
+
+        if (!$qr_code) {
+            wp_die('Invalid QR code management link.', 'QR Code Manager', ['response' => 404]);
+        }
+
+        if (!is_user_logged_in()) {
+            $request_url = esc_url_raw(add_query_arg([]));
+            $login_url = wp_login_url($request_url);
+            $register_url = add_query_arg(['redirect_to' => $request_url], wp_registration_url());
+            $message = '<p>You must log in to manage this QR code.</p>';
+            $message .= '<p><a class="button button-primary" href="' . esc_url($login_url) . '">Log in</a></p>';
+            if (get_option('users_can_register')) {
+                $message .= '<p><a href="' . esc_url($register_url) . '">Create an account</a></p>';
+                $message .= '<p>After creating an account, return to this link to request access.</p>';
+            }
+            wp_die($message, 'QR Code Manager', ['response' => 403]);
+        }
+
+        $user_id = get_current_user_id();
+        $team_id = isset($qr_code->team_id) ? (int) $qr_code->team_id : 0;
+        $can_access_qr = $team_id > 0 && $this->teams->user_can_access_team($user_id, $team_id);
+        if (!$can_access_qr) {
+            $request_notice = '';
+            if (isset($_POST['qr_request_access_submit'])) {
+                check_admin_referer('qr_manage_request_' . $qr_code->id);
+                if ($team_id > 0) {
+                    if ($this->submit_qr_access_request($qr_code, $user_id)) {
+                        $request_notice = '<div class="notice notice-success" style="padding:10px;margin:10px 0;"><p>Your access request was submitted and reviewers were notified.</p></div>';
+                    } else {
+                        $request_notice = '<div class="notice notice-error" style="padding:10px;margin:10px 0;"><p>Unable to submit your request. Please try again.</p></div>';
+                    }
+                } else {
+                    $request_notice = '<div class="notice notice-error" style="padding:10px;margin:10px 0;"><p>Access cannot be requested for this QR code right now.</p></div>';
+                }
+            }
+            $this->render_qr_management_access_request_page($qr_code, $request_notice);
+        }
+
+        $notice = '';
+        if (isset($_POST['qr_manage_submit'])) {
+            check_admin_referer('qr_manage_' . $qr_code->id);
+
+            $update_data = [
+                'label' => isset($_POST['qr_label']) ? sanitize_text_field(wp_unslash($_POST['qr_label'])) : '',
+                'reporting_id' => isset($_POST['qr_reporting_id']) ? sanitize_text_field(wp_unslash($_POST['qr_reporting_id'])) : '',
+                'message_1' => isset($_POST['qr_message_1']) ? wp_kses_post(wp_unslash($_POST['qr_message_1'])) : '',
+                'message_2' => isset($_POST['qr_message_2']) ? wp_kses_post(wp_unslash($_POST['qr_message_2'])) : '',
+                'show_popup' => isset($_POST['qr_show_popup']) ? 1 : 0,
+                'shop_link' => isset($_POST['qr_shop_link']) ? esc_url_raw(wp_unslash($_POST['qr_shop_link'])) : '',
+                'shop_logo' => isset($_POST['qr_shop_logo']) ? esc_url_raw(wp_unslash($_POST['qr_shop_logo'])) : '',
+                'show_shop_link' => isset($_POST['qr_show_shop_link']) ? 1 : 0,
+            ];
+
+            $update_result = $wpdb->update($this->main_table, $update_data, ['id' => $qr_code->id]);
+            if ($update_result === false) {
+                $notice = '<div class="notice notice-error" style="padding:10px;margin:10px 0;"><p>Unable to update QR code details. Please try again.</p></div>';
+            } else {
+                $qr_code = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->main_table} WHERE id = %d", $qr_code->id));
+                $notice = '<div class="notice notice-success" style="padding:10px;margin:10px 0;"><p>QR code details updated.</p></div>';
+            }
+        }
+
+        status_header(200);
+        nocache_headers();
+        get_header();
+        echo '<div class="wrap" style="max-width:900px;margin:40px auto;padding:20px;">';
+        echo '<h1>Manage QR Code</h1>';
+        echo '<p><strong>Postcode:</strong> ' . esc_html($qr_code->postcode) . ' &nbsp; <strong>City:</strong> ' . esc_html($qr_code->city) . ' &nbsp; <strong>Tree:</strong> ' . esc_html($qr_code->tree) . '</p>';
+        echo wp_kses_post($notice);
+        echo '<form method="post">';
+        wp_nonce_field('qr_manage_' . $qr_code->id);
+        echo '<table class="form-table">';
+        echo '<tr><th><label for="qr_label">Label</label></th><td><input type="text" id="qr_label" name="qr_label" value="' . esc_attr($qr_code->label) . '" class="regular-text"></td></tr>';
+        echo '<tr><th><label for="qr_reporting_id">Reporting ID</label></th><td><input type="text" id="qr_reporting_id" name="qr_reporting_id" value="' . esc_attr($qr_code->reporting_id) . '" class="regular-text"></td></tr>';
+        echo '<tr><th><label for="qr_message_1">Message 1</label></th><td><textarea id="qr_message_1" name="qr_message_1" rows="6" class="large-text">' . esc_textarea($qr_code->message_1) . '</textarea></td></tr>';
+        echo '<tr><th><label for="qr_message_2">Message 2</label></th><td><textarea id="qr_message_2" name="qr_message_2" rows="6" class="large-text">' . esc_textarea($qr_code->message_2) . '</textarea></td></tr>';
+        echo '<tr><th><label for="qr_show_popup">Show Popup</label></th><td><input type="checkbox" id="qr_show_popup" name="qr_show_popup" value="1"' . checked((int) $qr_code->show_popup, 1, false) . '></td></tr>';
+        echo '<tr><th><label for="qr_shop_link">Shop Link</label></th><td><input type="url" id="qr_shop_link" name="qr_shop_link" value="' . esc_attr($qr_code->shop_link) . '" class="regular-text"></td></tr>';
+        echo '<tr><th><label for="qr_shop_logo">Shop Logo URL</label></th><td><input type="url" id="qr_shop_logo" name="qr_shop_logo" value="' . esc_attr($qr_code->shop_logo) . '" class="regular-text"></td></tr>';
+        echo '<tr><th><label for="qr_show_shop_link">Show Shop Link</label></th><td><input type="checkbox" id="qr_show_shop_link" name="qr_show_shop_link" value="1"' . checked((int) $qr_code->show_shop_link, 1, false) . '></td></tr>';
+        echo '</table>';
+        echo '<p><button type="submit" name="qr_manage_submit" class="button button-primary">Update QR Code</button></p>';
+        echo '</form></div>';
+        get_footer();
+        exit;
+    }
+
+    private function get_qr_access_request($qr_id, $user_id) {
+        global $wpdb;
+
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$this->access_requests_table} WHERE qr_id = %d AND user_id = %d LIMIT 1",
+            $qr_id,
+            $user_id
+        ));
+    }
+
+    private function submit_qr_access_request($qr_code, $user_id) {
+        global $wpdb;
+
+        $requested_at = current_time('mysql');
+        $result = $wpdb->query($wpdb->prepare(
+            "INSERT INTO {$this->access_requests_table}
+                (qr_id, team_id, user_id, status, requested_at, reviewed_at, reviewed_by)
+             VALUES (%d, %d, %d, 'pending', %s, NULL, NULL)
+             ON DUPLICATE KEY UPDATE
+                team_id = %d,
+                status = 'pending',
+                requested_at = %s,
+                reviewed_at = NULL,
+                reviewed_by = NULL",
+            (int) $qr_code->id,
+            (int) $qr_code->team_id,
+            (int) $user_id,
+            $requested_at,
+            (int) $qr_code->team_id,
+            $requested_at
+        ));
+
+        if ($result === false) {
+            return false;
+        }
+
+        $request_id = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$this->access_requests_table} WHERE qr_id = %d AND user_id = %d LIMIT 1",
+            (int) $qr_code->id,
+            (int) $user_id
+        ));
+        $user = get_userdata($user_id);
+        if (!$user || $request_id <= 0) {
+            return false;
+        }
+
+        $this->notify_access_request_managers($qr_code, $user, $request_id);
+        return true;
+    }
+
+    private function notify_access_request_managers($qr_code, $user, $request_id) {
+        $emails = [];
+        $review_users = get_users([
+            'role' => QRCodeTracker_Permissions::ACCESS_REQUEST_MANAGER_ROLE,
+            'fields' => ['user_email'],
+        ]);
+
+        foreach ($review_users as $review_user) {
+            if (!empty($review_user->user_email)) {
+                $emails[] = sanitize_email($review_user->user_email);
+            }
+        }
+
+        $emails = array_values(array_unique(array_filter($emails)));
+        if (empty($emails)) {
+            return;
+        }
+
+        $subject = sprintf('[%s] QR access request pending review', wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES));
+        $management_url = !empty($qr_code->edit_token) ? $this->generate_qr_management_url($qr_code->edit_token) : '';
+        $review_url = admin_url('admin.php?page=qr-teams');
+        $message = "A user requested access to manage a QR code.\n\n";
+        $message .= 'Request ID: ' . $request_id . "\n";
+        $message .= 'User: ' . $user->display_name . ' (' . $user->user_email . ")\n";
+        $message .= 'QR ID: ' . (int) $qr_code->id . "\n";
+        $message .= 'Postcode: ' . $qr_code->postcode . "\n";
+        $message .= 'City: ' . $qr_code->city . "\n";
+        $message .= 'Tree: ' . $qr_code->tree . "\n";
+        if (!empty($management_url)) {
+            $message .= 'Management Link: ' . $management_url . "\n";
+        }
+        $message .= "\nReview requests in WordPress admin:\n" . $review_url . "\n";
+
+        wp_mail($emails, $subject, $message);
+    }
+
+    private function render_qr_management_access_request_page($qr_code, $notice = '') {
+        $user_id = get_current_user_id();
+        $team_id = isset($qr_code->team_id) ? (int) $qr_code->team_id : 0;
+        $existing_request = $this->get_qr_access_request((int) $qr_code->id, (int) $user_id);
+
+        status_header(403);
+        nocache_headers();
+        get_header();
+        echo '<div class="wrap" style="max-width:900px;margin:40px auto;padding:20px;">';
+        echo '<h1>Access Required</h1>';
+        echo '<p>You do not currently have permission to manage this QR code.</p>';
+        echo '<p><strong>Postcode:</strong> ' . esc_html($qr_code->postcode) . ' &nbsp; <strong>City:</strong> ' . esc_html($qr_code->city) . ' &nbsp; <strong>Tree:</strong> ' . esc_html($qr_code->tree) . '</p>';
+        echo wp_kses_post($notice);
+
+        if ($team_id <= 0) {
+            echo '<p>Access requests are unavailable for this QR code.</p>';
+            echo '</div>';
+            get_footer();
+            exit;
+        }
+
+        if ($existing_request && $existing_request->status === 'pending') {
+            echo '<div class="notice notice-info" style="padding:10px;margin:10px 0;"><p>Your access request is pending review.</p></div>';
+        } else {
+            echo '<p>Request access and a reviewer will assess it.</p>';
+            echo '<form method="post">';
+            wp_nonce_field('qr_manage_request_' . $qr_code->id);
+            echo '<p><button type="submit" name="qr_request_access_submit" class="button button-primary">Request Access</button></p>';
+            echo '</form>';
+        }
+
+        echo '</div>';
+        get_footer();
+        exit;
+    }
+
+    public function generate_unique_short_code($length = self::SHORT_CODE_MIN_LENGTH) {
         global $wpdb;
         $characters = 'abcdefghijklmnopqrstuvwxyz0123456789';
         $max_index = strlen($characters) - 1;
@@ -936,6 +1298,7 @@ class QRCodeTracker {
         $wpdb->insert($this->main_table, [
             'url' => $url,
             'short_code' => $short_code,
+            'edit_token' => $this->generate_unique_edit_token(),
             'postcode' => $tree_data['postcode'],
             'city' => $tree_data['city'],
             'tree' => $tree_data['tree'],
