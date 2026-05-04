@@ -75,24 +75,25 @@ class QRCodeTracker_ScanLogs {
         }
     
         // Display filters
-        echo '<div style="background: #f9f9f9; padding: 15px; margin: 20px 0; border: 1px solid #ddd; border-radius: 4px;">';
+        echo '<div class="qr-filter-form">';
         echo '<form method="get">';
         echo '<input type="hidden" name="page" value="qr-scan-logs">';
-        echo '<div style="margin-bottom: 10px;">';
-        echo '<label>From:</label><input type="date" name="date_from" value="' . esc_attr($date_from) . '" style="margin-right: 10px;">';
-        echo '<label>To:</label><input type="date" name="date_to" value="' . esc_attr($date_to) . '" style="margin-right: 10px;">';
-        echo '<label>Limit:</label><select name="limit" style="margin-right: 10px;"><option value="100"' . ($limit == 100 ? ' selected' : '') . '>100</option><option value="500"' . ($limit == 500 ? ' selected' : '') . '>500</option><option value="1000"' . ($limit == 1000 ? ' selected' : '') . '>1000</option><option value="5000"' . ($limit == 5000 ? ' selected' : '') . '>5000</option></select>';
+        echo '<div class="qr-filter-row">';
+        echo '<div class="qr-filter-field"><label>From:</label><input type="date" name="date_from" value="' . esc_attr($date_from) . '"></div>';
+        echo '<div class="qr-filter-field"><label>To:</label><input type="date" name="date_to" value="' . esc_attr($date_to) . '"></div>';
+        echo '<div class="qr-filter-field"><label>Limit:</label><select name="limit"><option value="100"' . ($limit == 100 ? ' selected' : '') . '>100</option><option value="500"' . ($limit == 500 ? ' selected' : '') . '>500</option><option value="1000"' . ($limit == 1000 ? ' selected' : '') . '>1000</option><option value="5000"' . ($limit == 5000 ? ' selected' : '') . '>5000</option></select></div>';
         echo '</div>';
-        echo '<div style="margin-bottom: 10px;">';
-        echo '<label>Postcode:</label><select name="postcode" style="margin-right: 10px;"><option value="">All</option>';
+        echo '<div class="qr-filter-row">';
+        echo '<div class="qr-filter-field"><label>Postcode:</label><select name="postcode"><option value="">All</option>';
         foreach ($postcodes as $postcode) {
             echo '<option value="' . esc_attr($postcode) . '"' . ($postcode_filter == $postcode ? ' selected' : '') . '>' . esc_html($postcode) . '</option>';
         }
-        echo '</select>';
-        echo '<label>Tree:</label><select name="tree" style="margin-right: 10px;"><option value="">All</option>';
+        echo '</select></div>';
+        echo '<div class="qr-filter-field"><label>Tree:</label><select name="tree"><option value="">All</option>';
         foreach ($trees as $tree) {
             echo '<option value="' . esc_attr($tree) . '"' . ($tree_filter == $tree ? ' selected' : '') . '>' . esc_html($tree) . '</option>';
         }
+        echo '</select></div>';
         echo '<input type="submit" class="button button-primary" value="Apply Filters">';
         echo '</div>';
         echo '</form>';
@@ -173,11 +174,11 @@ class QRCodeTracker_ScanLogs {
         // Display top pagination
         echo $generate_pagination($page, $total_pages, $start_record, $end_record, $total_records);
 
-        echo '<table class="widefat"><thead><tr><th>ID</th><th>Tracker ID</th><th>Postcode</th><th>City</th><th>Tree</th><th>Scanned At</th></tr></thead><tbody>';
+        echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>ID</th><th>Tracker ID</th><th>Postcode</th><th>City</th><th>Tree</th><th>Scanned At</th></tr></thead><tbody>';
         foreach ($logs as $log) {
             echo "<tr><td>{$log->id}</td><td>{$log->tracker_id}</td><td>{$log->postcode}</td><td>{$log->city}</td><td>{$log->tree}</td><td>{$log->scanned_at}</td></tr>";
         }
-        echo '</tbody></table>';
+        echo '</tbody></table></div>';
         
         // Display bottom pagination
         echo $generate_pagination($page, $total_pages, $start_record, $end_record, $total_records);

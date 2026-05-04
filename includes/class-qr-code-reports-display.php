@@ -255,14 +255,17 @@ class QRCodeTracker_ReportsDisplay {
     private function display_styles() {
         echo '<style>
         .qr-filter-form { background: #f9f9f9; padding: 15px; margin: 20px 0; border: 1px solid #ddd; border-radius: 4px; }
-        .qr-filter-form select, .qr-filter-form input[type="date"] { margin-right: 10px; padding: 5px 28px 5px 8px !important; min-width: 90px; background: #fff; appearance: auto; -webkit-appearance: auto; -moz-appearance: auto; }
+        .qr-filter-form select, .qr-filter-form input[type="date"] { padding: 5px 28px 5px 8px !important; min-width: 90px; background: #fff; appearance: auto; -webkit-appearance: auto; -moz-appearance: auto; }
         .qr-filter-form label { display: inline-block; margin-right: 5px; font-weight: bold; }
-        .qr-stats-summary { display: flex; gap: 20px; margin: 20px 0; }
-        .qr-stat-box { background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center; }
+        .qr-filter-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+        .qr-filter-field { display: flex; align-items: center; gap: 6px; }
+        .qr-filter-field label { white-space: nowrap; }
+        .qr-stats-summary { display: flex; flex-wrap: wrap; gap: 20px; margin: 20px 0; }
+        .qr-stat-box { background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1 1 120px; text-align: center; min-width: 110px; }
         .qr-stat-number { font-size: 24px; font-weight: bold; color: #0073aa; }
         .qr-stat-label { color: #666; margin-top: 5px; }
         .qr-search-box { background: #fff; border: 2px solid #0073aa; border-radius: 4px; padding: 15px; margin-bottom: 20px; }
-        .qr-search-input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        .qr-search-input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; min-width: 0; }
         .qr-search-input:focus { outline: none; border-color: #0073aa; box-shadow: 0 0 0 1px #0073aa; }
         .qr-welcome-message { background: #fff; border: 1px solid #ddd; padding: 30px; margin: 20px 0; border-radius: 4px; text-align: center; }
         .qr-search-suggestions { position: absolute; background: white; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); z-index: 1000; max-width: 300px; }
@@ -277,6 +280,18 @@ class QRCodeTracker_ReportsDisplay {
         .search-term-tag { display: inline-block; background: #0073aa; color: white; padding: 4px 8px; margin: 2px; border-radius: 12px; font-size: 12px; }
         .remove-term { cursor: pointer; margin-left: 5px; font-weight: bold; }
         .remove-term:hover { color: #ff6b6b; }
+        @media screen and (max-width: 782px) {
+            .qr-filter-row { flex-direction: column; align-items: flex-start; }
+            .qr-filter-field { width: 100%; flex-wrap: wrap; }
+            .qr-filter-field select, .qr-filter-field input[type="date"] { width: 100%; box-sizing: border-box; }
+            .qr-filter-form select, .qr-filter-form input[type="date"] { width: 100%; box-sizing: border-box; }
+            .qr-stat-box { flex: 1 1 calc(50% - 10px); }
+            .qr-stat-number { font-size: 20px; }
+            .qr-search-input { width: 100%; box-sizing: border-box; }
+        }
+        @media screen and (max-width: 480px) {
+            .qr-stat-box { flex: 1 1 100%; }
+        }
         </style>';
     }
 
@@ -488,7 +503,7 @@ class QRCodeTracker_ReportsDisplay {
         echo '<h3 style="margin: 0 0 10px 0; color: #0073aa;">Search & Filter</h3>';
         echo '<div style="margin-bottom: 10px;">';
         echo '<label style="font-weight: bold; display: block; margin-bottom: 5px;">Search Terms:</label>';
-        echo '<div style="display: flex; align-items: center; gap: 10px;">';
+        echo '<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">';
         echo '<input type="text" name="search_input" placeholder="Enter postcode, city, tree value, or reporting ID..." class="qr-search-input">';
         echo '<input type="button" class="button button-secondary" value="Add Term" onclick="addSearchTerm()">';
         echo '<input type="submit" class="button button-primary" value="Search">';
@@ -496,7 +511,7 @@ class QRCodeTracker_ReportsDisplay {
         echo '<input type="hidden" name="search_terms" value="' . esc_attr(implode(',', $search_terms)) . '">';
         echo '<div id="search-terms-container" style="margin-top: 10px; min-height: 30px;"></div>';
         echo '</div>';
-        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">';
+        echo '<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px;">';
         echo '<div style="font-size: 12px; color: #666;">';
         echo 'Enter multiple search terms separated by pressing Enter. Supports postcodes, cities, tree values, and reporting IDs.';
         echo '</div>';
@@ -514,32 +529,32 @@ class QRCodeTracker_ReportsDisplay {
         $has_active_filters = !empty($postcode_filter) || !empty($tree_filter) || !empty($city_filter) || !empty($date_from) || !empty($date_to) || !empty($search_terms);
         
         if ($has_active_filters) {
-            echo '<div style="margin-bottom: 10px;">';
-            echo '<label>View:</label><select name="view"><option value="breakdown"' . ($view_type == 'breakdown' ? ' selected' : '') . '>Breakdown View</option><option value="rollup"' . ($view_type == 'rollup' ? ' selected' : '') . '>Rollup View</option></select>';
+            echo '<div class="qr-filter-row">';
+            echo '<div class="qr-filter-field"><label>View:</label><select name="view"><option value="breakdown"' . ($view_type == 'breakdown' ? ' selected' : '') . '>Breakdown View</option><option value="rollup"' . ($view_type == 'rollup' ? ' selected' : '') . '>Rollup View</option></select></div>';
             echo '</div>';
-            echo '<div style="margin-bottom: 10px;">';
-            echo '<label>From:</label><input type="date" name="date_from" value="' . esc_attr($date_from) . '">';
-            echo '<label>To:</label><input type="date" name="date_to" value="' . esc_attr($date_to) . '">';
+            echo '<div class="qr-filter-row">';
+            echo '<div class="qr-filter-field"><label>From:</label><input type="date" name="date_from" value="' . esc_attr($date_from) . '"></div>';
+            echo '<div class="qr-filter-field"><label>To:</label><input type="date" name="date_to" value="' . esc_attr($date_to) . '"></div>';
             echo '<a href="' . esc_url(add_query_arg(array_merge($_GET, ['date_from' => date('Y-m-d', strtotime('-30 days')), 'date_to' => date('Y-m-d')]))) . '" class="button">Last 30 Days</a>';
             echo '<a href="' . esc_url(add_query_arg(array_merge($_GET, ['date_from' => date('Y-m-d', strtotime('-7 days')), 'date_to' => date('Y-m-d')]))) . '" class="button">Last 7 Days</a>';
             echo '<a href="' . esc_url(add_query_arg(array_merge($_GET, ['date_from' => '', 'date_to' => '']))) . '" class="button">All Time</a>';
             echo '</div>';
-            echo '<div style="margin-bottom: 10px;">';
-            echo '<label>Postcode:</label><select name="postcode" style="margin-right: 10px;"><option value="">All</option>';
+            echo '<div class="qr-filter-row">';
+            echo '<div class="qr-filter-field"><label>Postcode:</label><select name="postcode"><option value="">All</option>';
             foreach ($postcodes as $postcode) {
                 echo '<option value="' . esc_attr($postcode) . '"' . ($postcode_filter == $postcode ? ' selected' : '') . '>' . esc_html($postcode) . '</option>';
             }
-            echo '</select>';
-            echo '<label>Tree:</label><select name="tree" style="margin-right: 10px;"><option value="">All</option>';
+            echo '</select></div>';
+            echo '<div class="qr-filter-field"><label>Tree:</label><select name="tree"><option value="">All</option>';
             foreach ($trees as $tree) {
                 echo '<option value="' . esc_attr($tree) . '"' . ($tree_filter == $tree ? ' selected' : '') . '>' . esc_html($tree) . '</option>';
             }
-            echo '</select>';
-            echo '<label>City:</label><select name="city" style="margin-right: 10px;"><option value="">All</option>';
+            echo '</select></div>';
+            echo '<div class="qr-filter-field"><label>City:</label><select name="city"><option value="">All</option>';
             foreach ($cities as $city) {
                 echo '<option value="' . esc_attr($city) . '"' . ($city_filter == $city ? ' selected' : '') . '>' . esc_html($city) . '</option>';
             }
-            echo '</select>';
+            echo '</select></div>';
             echo '<input type="submit" class="button button-primary" value="Apply Filters">';
             echo ' <a href="' . esc_url(admin_url('admin.php?page=qr-reports')) . '" class="button">Reset Filters</a>';
             echo '</div>';
@@ -720,7 +735,7 @@ class QRCodeTracker_ReportsDisplay {
         
         if (!empty($results)) {
             echo '<h2>Breakdown Report</h2>';
-            echo '<table class="wp-list-table widefat fixed striped">';
+            echo '<div class="qr-table-responsive"><table class="wp-list-table widefat fixed striped">';
             echo '<thead><tr>';
             echo '<th>QR Code ID</th>';
             echo '<th>Reporting ID</th>';
@@ -768,7 +783,7 @@ class QRCodeTracker_ReportsDisplay {
                 echo '</tr>';
             }
             
-            echo '</tbody></table>';
+            echo '</tbody></table></div>';
             
             // Add charts section
             $this->display_charts($where_clause, $where_params);
@@ -804,7 +819,7 @@ class QRCodeTracker_ReportsDisplay {
         
         if (!empty($results)) {
             echo '<h2>Rollup Report</h2>';
-            echo '<table class="wp-list-table widefat fixed striped">';
+            echo '<div class="qr-table-responsive"><table class="wp-list-table widefat fixed striped">';
             echo '<thead><tr>';
             echo '<th>Date</th>';
             echo '<th>Total Scans</th>';
@@ -820,7 +835,7 @@ class QRCodeTracker_ReportsDisplay {
                 echo '</tr>';
             }
             
-            echo '</tbody></table>';
+            echo '</tbody></table></div>';
         } else {
             echo '<p>No data found for the selected filters.</p>';
         }
@@ -848,27 +863,27 @@ class QRCodeTracker_ReportsDisplay {
         echo '</div>';
         
         // Line chart container
-        echo '<div id="line-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
-        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
-        echo '<h3 style="margin: 0;">Daily Activity Chart</h3>';
+        echo '<div id="line-chart-container" class="qr-chart-container" style="display: none;">';
+        echo '<div class="qr-chart-header">';
+        echo '<h3>Daily Activity Chart</h3>';
         echo '<button onclick="exportChartAsImage(\'line-chart\', \'daily-activity-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="line-chart" width="800" height="400"></canvas>';
         echo '</div>';
         
         // Radar chart container
-        echo '<div id="radar-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 700px;">';
-        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
-        echo '<h3 style="margin: 0;">Hour Distribution Chart</h3>';
+        echo '<div id="radar-chart-container" class="qr-chart-container" style="display: none; height: 700px;">';
+        echo '<div class="qr-chart-header">';
+        echo '<h3>Hour Distribution Chart</h3>';
         echo '<button onclick="exportChartAsImage(\'radar-chart\', \'hour-distribution-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="radar-chart" width="600" height="600"></canvas>';
         echo '</div>';
         
         // Bar chart container
-        echo '<div id="bar-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
-        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
-        echo '<h3 style="margin: 0;">Day of Week Chart</h3>';
+        echo '<div id="bar-chart-container" class="qr-chart-container" style="display: none;">';
+        echo '<div class="qr-chart-header">';
+        echo '<h3>Day of Week Chart</h3>';
         echo '<button onclick="exportChartAsImage(\'bar-chart\', \'day-of-week-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="bar-chart" width="800" height="400"></canvas>';
