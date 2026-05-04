@@ -66,8 +66,8 @@ class QRCodeTracker_Admin {
      * Enqueue admin CSS for QR Tracker pages
      */
     public function enqueue_admin_styles($hook) {
-        // Only load on QR Tracker admin pages
-        if (strpos($hook, 'qr-tracker') === false && strpos($hook, 'qr-scan-logs') === false && strpos($hook, 'qr-reports') === false && strpos($hook, 'qr-teams') === false && strpos($hook, 'qr-settings') === false && strpos($hook, 'qr-single-report') === false && strpos($hook, 'qr-city-report') === false && strpos($hook, 'qr-reporting-id-report') === false) {
+        // Only load on QR Tracker admin pages — all use 'qr-tracker' in their hook suffix
+        if (strpos($hook, 'qr-tracker') === false) {
             return;
         }
         wp_enqueue_style(
