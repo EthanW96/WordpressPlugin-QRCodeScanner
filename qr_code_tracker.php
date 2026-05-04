@@ -809,11 +809,11 @@ class QRCodeTracker {
             return false;
         }
 
-        $this->notify_admins_of_access_request($qr_code, $user, $request_id);
+        $this->notify_access_request_managers($qr_code, $user, $request_id);
         return true;
     }
 
-    private function notify_admins_of_access_request($qr_code, $user, $request_id) {
+    private function notify_access_request_managers($qr_code, $user, $request_id) {
         $emails = [];
         $review_users = get_users([
             'role' => QRCodeTracker_Permissions::ACCESS_REQUEST_MANAGER_ROLE,
