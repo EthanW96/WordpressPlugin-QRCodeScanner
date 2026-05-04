@@ -7,6 +7,11 @@
  */
 
 class QRCodeTracker_Permissions {
+    const ACCESS_REQUEST_MANAGER_ROLE = 'qr_code_access_request_manager';
+    const ACCESS_REQUEST_MANAGER_CAPABILITIES = [
+        'qr_tracker_view_teams',
+        'qr_tracker_review_access_requests',
+    ];
     
     /**
      * Custom capabilities for QR Code Tracker
@@ -30,6 +35,7 @@ class QRCodeTracker_Permissions {
         'qr_tracker_assign_users_to_teams' => 'Assign Users to Teams',
         'qr_tracker_remove_users_from_teams' => 'Remove Users from Teams',
         'qr_tracker_assign_qr_codes_to_teams' => 'Assign QR Codes to Teams',
+        'qr_tracker_review_access_requests' => 'Review QR Access Requests',
         
         // Reporting and Analytics
         'qr_tracker_view_reports' => 'View Reports',
@@ -67,6 +73,7 @@ class QRCodeTracker_Permissions {
             'qr_tracker_assign_users_to_teams',
             'qr_tracker_remove_users_from_teams',
             'qr_tracker_assign_qr_codes_to_teams',
+            'qr_tracker_review_access_requests',
             'qr_tracker_view_reports',
             'qr_tracker_export_data',
             'qr_tracker_view_analytics',
@@ -126,6 +133,28 @@ class QRCodeTracker_Permissions {
             foreach (array_keys(self::CAPABILITIES) as $capability) {
                 $admin_role->add_cap($capability);
             }
+        }
+
+        $this->ensure_access_request_manager_role();
+    }
+
+    /**
+     * Ensure the access-request manager role exists with required capabilities.
+     */
+    private function ensure_access_request_manager_role() {
+        $role = get_role(self::ACCESS_REQUEST_MANAGER_ROLE);
+
+        if (!$role) {
+            add_role(self::ACCESS_REQUEST_MANAGER_ROLE, 'QR Code Access Request Manager', ['read' => true]);
+            $role = get_role(self::ACCESS_REQUEST_MANAGER_ROLE);
+        }
+
+        if (!$role) {
+            return;
+        }
+
+        foreach (self::ACCESS_REQUEST_MANAGER_CAPABILITIES as $capability) {
+            $role->add_cap($capability);
         }
     }
     
@@ -294,6 +323,14 @@ class QRCodeTracker_Permissions {
      */
     public static function can_assign_users_to_teams() {
         return self::current_user_can('qr_tracker_assign_users_to_teams') || 
+               self::current_user_can('manage_options');
+    }
+
+    /**
+     * Check if current user can review QR access requests
+     */
+    public static function can_review_access_requests() {
+        return self::current_user_can('qr_tracker_review_access_requests') || 
                self::current_user_can('manage_options');
     }
     
