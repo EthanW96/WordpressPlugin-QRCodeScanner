@@ -3,6 +3,7 @@
 class QRCodeTracker_Admin {
     private $main_table;
     private $log_table;
+    private $access_requests_table;
     private $tracker;
     private $teams;
 
@@ -10,6 +11,7 @@ class QRCodeTracker_Admin {
         global $wpdb;
         $this->main_table = $wpdb->prefix . 'qr_tracker';
         $this->log_table = $wpdb->prefix . 'qr_tracker_logs';
+        $this->access_requests_table = $wpdb->prefix . 'qr_tracker_access_requests';
         $this->tracker = $tracker;
         $this->teams = $teams;
         
@@ -2004,6 +2006,26 @@ window.showRollupDayChart = function() {
         $reporting_id_report->display_reporting_id_report_page();
     }
 
+    private function send_access_request_approved_email($request) {
+        $user = get_userdata((int) $request->user_id);
+        if (!$user || empty($user->user_email)) {
+            return;
+        }
+
+        $subject = sprintf('[%s] Your QR access request was approved', wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES));
+        $management_url = !empty($request->edit_token) ? $this->tracker->generate_qr_management_url($request->edit_token) : '';
+        $message = "Your request to manage a QR code has been approved.\n\n";
+        $message .= 'Postcode: ' . $request->postcode . "\n";
+        $message .= 'City: ' . $request->city . "\n";
+        $message .= 'Tree: ' . $request->tree . "\n";
+        if (!empty($management_url)) {
+            $message .= 'Management Link: ' . $management_url . "\n";
+        }
+        $message .= "\nLog in to your account to manage this QR code.\n";
+
+        wp_mail(sanitize_email($user->user_email), $subject, $message);
+    }
+
     /**
      * Display teams management page
      */
@@ -2147,6 +2169,121 @@ window.showRollupDayChart = function() {
                 echo '<div class="updated"><p>' . esc_html($result['message']) . '</p></div>';
             } else {
                 echo '<div class="error"><p>' . esc_html($result['message']) . '</p></div>';
+            }
+        }
+
+        if (isset($_POST['review_access_request'])) {
+            // Check assign users permission
+            if (!QRCodeTracker_Permissions::can_assign_users_to_teams()) {
+                echo '<div class="error"><p>You do not have permission to review access requests.</p></div>';
+                return;
+            }
+
+            $request_id = intval($_POST['request_id']);
+            check_admin_referer('qr_access_request_review_' . $request_id);
+            $decision = isset($_POST['request_decision']) ? sanitize_text_field($_POST['request_decision']) : '';
+            $request = $wpdb->get_row($wpdb->prepare(
+                "SELECT ar.*, q.postcode, q.city, q.tree, q.edit_token
+                 FROM {$this->access_requests_table} ar
+                 JOIN {$this->main_table} q ON q.id = ar.qr_id
+                 WHERE ar.id = %d AND ar.status = 'pending' LIMIT 1",
+                $request_id
+            ));
+
+            if (!$request) {
+                echo '<div class="error"><p>Access request not found or already processed.</p></div>';
+            } elseif (!$this->teams->user_can_manage_team(get_current_user_id(), (int) $request->team_id)) {
+                echo '<div class="error"><p>You do not have permission to review this request.</p></div>';
+            } elseif ($decision === 'approve') {
+                $member_result = $this->teams->add_user_to_team((int) $request->user_id, (int) $request->team_id, 'member');
+                if ($member_result === false) {
+                    echo '<div class="error"><p>Unable to approve request because team assignment failed.</p></div>';
+                } else {
+                    $wpdb->update($this->access_requests_table, [
+                        'status' => 'approved',
+                        'reviewed_at' => current_time('mysql'),
+                        'reviewed_by' => get_current_user_id(),
+                    ], ['id' => $request_id]);
+                    $this->send_access_request_approved_email($request);
+                    echo '<div class="updated"><p>Access request approved and user added to team.</p></div>';
+                }
+            } elseif ($decision === 'deny') {
+                $wpdb->update($this->access_requests_table, [
+                    'status' => 'denied',
+                    'reviewed_at' => current_time('mysql'),
+                    'reviewed_by' => get_current_user_id(),
+                ], ['id' => $request_id]);
+                echo '<div class="updated"><p>Access request denied.</p></div>';
+            } else {
+                echo '<div class="error"><p>Invalid review decision.</p></div>';
+            }
+        }
+
+        $pending_requests = [];
+        if (QRCodeTracker_Permissions::can_assign_users_to_teams()) {
+            if (QRCodeTracker_Permissions::can_manage_all_teams()) {
+                $pending_requests = $wpdb->get_results(
+                    "SELECT ar.*, q.postcode, q.city, q.tree, q.edit_token, t.name AS team_name, u.display_name, u.user_email
+                     FROM {$this->access_requests_table} ar
+                     JOIN {$this->main_table} q ON q.id = ar.qr_id
+                     JOIN {$wpdb->users} u ON u.ID = ar.user_id
+                     JOIN {$wpdb->prefix}qr_tracker_teams t ON t.id = ar.team_id
+                     WHERE ar.status = 'pending'
+                     ORDER BY ar.requested_at ASC"
+                );
+            } else {
+                $managed_teams = array_filter($this->teams->get_user_teams(get_current_user_id()), function($team) {
+                    return isset($team->id) && $this->teams->user_can_manage_team(get_current_user_id(), (int) $team->id);
+                });
+                $managed_team_ids = array_map(function($team) {
+                    return (int) $team->id;
+                }, $managed_teams);
+
+                if (!empty($managed_team_ids)) {
+                    $placeholders = implode(',', array_fill(0, count($managed_team_ids), '%d'));
+                    $pending_requests = $wpdb->get_results($wpdb->prepare(
+                        "SELECT ar.*, q.postcode, q.city, q.tree, q.edit_token, t.name AS team_name, u.display_name, u.user_email
+                         FROM {$this->access_requests_table} ar
+                         JOIN {$this->main_table} q ON q.id = ar.qr_id
+                         JOIN {$wpdb->users} u ON u.ID = ar.user_id
+                         JOIN {$wpdb->prefix}qr_tracker_teams t ON t.id = ar.team_id
+                         WHERE ar.status = 'pending' AND ar.team_id IN ($placeholders)
+                         ORDER BY ar.requested_at ASC",
+                        $managed_team_ids
+                    ));
+                }
+            }
+        }
+
+        if (QRCodeTracker_Permissions::can_assign_users_to_teams()) {
+            echo '<h2>Pending QR Access Requests</h2>';
+            if (!empty($pending_requests)) {
+                echo '<table class="widefat"><thead><tr><th>Requested</th><th>User</th><th>Team</th><th>QR Code</th><th>Actions</th></tr></thead><tbody>';
+                foreach ($pending_requests as $request) {
+                    echo '<tr>';
+                    echo '<td>' . esc_html($request->requested_at) . '</td>';
+                    echo '<td>' . esc_html($request->display_name) . ' (' . esc_html($request->user_email) . ')</td>';
+                    echo '<td>' . esc_html($request->team_name) . '</td>';
+                    echo '<td>Postcode: ' . esc_html($request->postcode) . ' / City: ' . esc_html($request->city) . ' / Tree: ' . esc_html($request->tree) . '</td>';
+                    echo '<td>';
+                    echo '<form method="post" style="display:inline-block;margin-right:8px;">';
+                    wp_nonce_field('qr_access_request_review_' . (int) $request->id);
+                    echo '<input type="hidden" name="request_id" value="' . (int) $request->id . '">';
+                    echo '<input type="hidden" name="request_decision" value="approve">';
+                    echo '<button type="submit" name="review_access_request" class="button button-primary">Approve</button>';
+                    echo '</form>';
+                    echo '<form method="post" style="display:inline-block;">';
+                    wp_nonce_field('qr_access_request_review_' . (int) $request->id);
+                    echo '<input type="hidden" name="request_id" value="' . (int) $request->id . '">';
+                    echo '<input type="hidden" name="request_decision" value="deny">';
+                    echo '<button type="submit" name="review_access_request" class="button">Deny</button>';
+                    echo '</form>';
+                    echo '</td>';
+                    echo '</tr>';
+                }
+                echo '</tbody></table>';
+            } else {
+                echo '<p>No pending access requests.</p>';
             }
         }
         
