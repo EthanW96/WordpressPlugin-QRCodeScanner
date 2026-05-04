@@ -65,6 +65,7 @@ class QRCodeTracker_ReportsDisplay {
         $postcode_filter = isset($_GET['postcode']) ? sanitize_text_field($_GET['postcode']) : '';
         $tree_filter = isset($_GET['tree']) ? sanitize_text_field($_GET['tree']) : '';
         $city_filter = isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '';
+        $reporting_id_filter = isset($_GET['reporting_id']) ? sanitize_text_field($_GET['reporting_id']) : '';
         $search_terms = isset($_GET['search_terms']) ? array_filter(array_map('trim', explode(',', sanitize_text_field($_GET['search_terms'])))) : [];
     
         // Process search terms to populate filters
@@ -283,6 +284,8 @@ class QRCodeTracker_ReportsDisplay {
      * Display search interface
      */
     private function display_search_interface($search_terms, $view_type, $date_from, $date_to, $postcode_filter, $tree_filter, $city_filter, $reporting_id_filter, $postcodes, $trees, $cities) {
+        $show_all = isset($_GET['show_all']) && $_GET['show_all'] === '1';
+
         // Include Chart.js
         echo '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>';
         
@@ -508,7 +511,7 @@ class QRCodeTracker_ReportsDisplay {
         echo '</div>';
         
         // Only show detailed filters if there are active filters or search term
-        $has_active_filters = !empty($postcode_filter) || !empty($tree_filter) || !empty($city_filter) || !empty($date_from) || !empty($date_to) || !empty($search_term);
+        $has_active_filters = !empty($postcode_filter) || !empty($tree_filter) || !empty($city_filter) || !empty($date_from) || !empty($date_to) || !empty($search_terms);
         
         if ($has_active_filters) {
             echo '<div style="margin-bottom: 10px;">';
