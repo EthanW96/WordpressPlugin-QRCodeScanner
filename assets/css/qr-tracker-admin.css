@@ -15,8 +15,16 @@
     margin-bottom: 1em;
 }
 
+/*
+ * WordPress's .widefat forces width:100%, which prevents overflow-x scrolling
+ * because the table never actually exceeds its container.
+ * Override with width:auto (use natural content width) + min-width:100%
+ * so the table still fills the container on wide screens but can scroll on narrow ones.
+ */
+.qr-table-responsive table,
 .qr-table-responsive table.widefat {
-    min-width: 600px;
+    width: auto !important;
+    min-width: 100%;
 }
 
 /* Summary stat cards */
@@ -302,11 +310,6 @@
         padding: 0 10px;
     }
 
-    /* Allow WordPress widefat tables inside our wrapper to scroll */
-    .qr-table-responsive .widefat {
-        min-width: 500px;
-    }
-
     /* --- Summary cards: 2-up grid --- */
     .qr-summary-cards {
         gap: 10px;
@@ -450,11 +453,6 @@
     .qr-reassign-bar select {
         width: 100%;
         box-sizing: border-box;
-    }
-
-    /* --- Orphaned QR table in scroll container --- */
-    .orphaned-qr-section .widefat {
-        min-width: 480px;
     }
 
     /* --- Settings page info box --- */

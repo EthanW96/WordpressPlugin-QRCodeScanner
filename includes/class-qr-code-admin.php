@@ -1560,7 +1560,7 @@ window.showDayChart = function() {
         }
         </script>';
         
-        echo '<table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Reporting ID</th><th>' . esc_html($group_label) . '</th><th>Total Scans</th><th>Unique Days</th><th>First Scan</th><th>Last Scan</th></tr></thead><tbody>';
+        echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Reporting ID</th><th>' . esc_html($group_label) . '</th><th>Total Scans</th><th>Unique Days</th><th>First Scan</th><th>Last Scan</th></tr></thead><tbody>';
         
         $total_scans = 0;
         $total_unique_days = 0;
@@ -1588,7 +1588,7 @@ window.showDayChart = function() {
         echo "<td><strong>" . number_format($total_unique_days) . "</strong></td>";
         echo "<td colspan='2'></td>";
         echo "</tr>";
-        echo '</tbody></table>';
+        echo '</tbody></table></div>';
     }
 
     public function display_rollup_report($where_clause, $where_params) {
@@ -1880,7 +1880,7 @@ window.showRollupDayChart = function() {
 ';
         echo '</script>';
         
-        echo '<table class="widefat"><thead><tr><th>' . esc_html($group_label) . '</th><th>' . esc_html($other_label) . '</th><th>City</th><th>Reporting ID</th><th>Total Scans</th><th>Unique Days</th><th>First Scan</th><th>Last Scan</th></tr></thead><tbody>';
+        echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>' . esc_html($group_label) . '</th><th>' . esc_html($other_label) . '</th><th>City</th><th>Reporting ID</th><th>Total Scans</th><th>Unique Days</th><th>First Scan</th><th>Last Scan</th></tr></thead><tbody>';
         
         $current_group = '';
         $group_total = 0;
@@ -1935,7 +1935,7 @@ window.showRollupDayChart = function() {
         echo "<td><strong>" . number_format($total_unique_days) . "</strong></td>";
         echo "<td colspan='2'></td>";
         echo "</tr>";
-        echo '</tbody></table>';
+        echo '</tbody></table></div>';
     }
 
     /**
@@ -2217,7 +2217,7 @@ window.showRollupDayChart = function() {
         if ($can_review_access_requests) {
             echo '<h2>Pending QR Access Requests</h2>';
             if (!empty($pending_requests)) {
-                echo '<table class="widefat"><thead><tr><th>Requested</th><th>User</th><th>Team</th><th>QR Code</th><th>Actions</th></tr></thead><tbody>';
+                echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Requested</th><th>User</th><th>Team</th><th>QR Code</th><th>Actions</th></tr></thead><tbody>';
                 foreach ($pending_requests as $request) {
                     $user_profile_url = add_query_arg(['user_id' => (int) $request->user_id], admin_url('user-edit.php'));
                     $qr_edit_url = add_query_arg(['page' => 'qr-tracker', 'edit_id' => (int) $request->qr_id], admin_url('admin.php'));
@@ -2244,7 +2244,7 @@ window.showRollupDayChart = function() {
                     echo '</td>';
                     echo '</tr>';
                 }
-                echo '</tbody></table>';
+                echo '</tbody></table></div>';
             } else {
                 echo '<p>No pending access requests.</p>';
             }
