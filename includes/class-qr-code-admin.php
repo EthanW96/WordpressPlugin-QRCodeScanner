@@ -22,6 +22,7 @@ class QRCodeTracker_Admin {
 
     public function admin_menu() {
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_styles']);
+        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
 
         // Main menu - requires view QR codes permission
         if (QRCodeTracker_Permissions::can_view_qr_codes()) {
@@ -70,11 +71,55 @@ class QRCodeTracker_Admin {
         if (strpos($hook, 'qr-tracker') === false) {
             return;
         }
+        // DataTables core + Responsive extension (CSS)
+        wp_enqueue_style(
+            'datatables',
+            'https://cdn.datatables.net/2.2.2/css/dataTables.dataTables.min.css',
+            [],
+            null
+        );
+        wp_enqueue_style(
+            'datatables-responsive',
+            'https://cdn.datatables.net/responsive/3.0.4/css/responsive.dataTables.min.css',
+            ['datatables'],
+            null
+        );
         wp_enqueue_style(
             'qr-tracker-admin',
             plugin_dir_url(dirname(__FILE__)) . 'assets/css/qr-tracker-admin.css',
-            [],
+            ['datatables', 'datatables-responsive'],
             filemtime(plugin_dir_path(dirname(__FILE__)) . 'assets/css/qr-tracker-admin.css') ?: '1.0.0'
+        );
+    }
+
+    public function enqueue_admin_scripts($hook) {
+        // Only load on QR Tracker admin pages
+        if (strpos($hook, 'qr-tracker') === false) {
+            return;
+        }
+        // DataTables core JS (standalone build; works with or without jQuery)
+        wp_enqueue_script(
+            'datatables',
+            'https://cdn.datatables.net/2.2.2/js/dataTables.min.js',
+            ['jquery'],
+            null,
+            true
+        );
+        // DataTables Responsive extension JS
+        wp_enqueue_script(
+            'datatables-responsive',
+            'https://cdn.datatables.net/responsive/3.0.4/js/dataTables.responsive.min.js',
+            ['datatables'],
+            null,
+            true
+        );
+        // Plugin init script — activates DataTables on all .qr-table-responsive tables
+        wp_enqueue_script(
+            'qr-tracker-admin',
+            plugin_dir_url(dirname(__FILE__)) . 'assets/js/qr-tracker-admin.js',
+            ['datatables', 'datatables-responsive'],
+            filemtime(plugin_dir_path(dirname(__FILE__)) . 'assets/js/qr-tracker-admin.js') ?: '1.0.0',
+            true
         );
     }
 

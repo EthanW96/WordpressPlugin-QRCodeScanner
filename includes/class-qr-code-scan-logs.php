@@ -174,7 +174,7 @@ class QRCodeTracker_ScanLogs {
         // Display top pagination
         echo $generate_pagination($page, $total_pages, $start_record, $end_record, $total_records);
 
-        echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>ID</th><th>Tracker ID</th><th>Postcode</th><th>City</th><th>Tree</th><th>Scanned At</th></tr></thead><tbody>';
+        echo '<div class="qr-table-responsive"><table class="widefat qr-dt-no-controls"><thead><tr><th>ID</th><th>Tracker ID</th><th>Postcode</th><th>City</th><th>Tree</th><th>Scanned At</th></tr></thead><tbody>';
         foreach ($logs as $log) {
             echo "<tr><td>{$log->id}</td><td>{$log->tracker_id}</td><td>{$log->postcode}</td><td>{$log->city}</td><td>{$log->tree}</td><td>{$log->scanned_at}</td></tr>";
         }

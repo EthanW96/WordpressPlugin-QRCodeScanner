@@ -22,18 +22,22 @@
  * Override with width:auto (use natural content width) + min-width:100%
  * so the table still fills the container on wide screens but can scroll on narrow ones.
  *
+ * Limit to :not(.dataTable) — once DataTables initialises it adds the class
+ * "dataTable" and manages table width itself; keeping the !important override
+ * on those tables would fight with DataTables' own layout calculations.
+ *
  * Prevent column-header text from wrapping (white-space: nowrap on th) so the browser
  * cannot collapse the table to a width that fits within the mobile viewport — this
- * guarantees the table is genuinely wider than the container and the scrollbar appears.
+ * guarantees the table is genuinely wider than the container and the scrollbar appears
+ * on tables that are NOT managed by DataTables.
  */
-.qr-table-responsive table,
-.qr-table-responsive table.widefat {
+.qr-table-responsive table:not(.dataTable),
+.qr-table-responsive table.widefat:not(.dataTable) {
     width: auto !important;
     min-width: 100%;
 }
 
-.qr-table-responsive table th,
-.qr-table-responsive table.widefat th {
+.qr-table-responsive table:not(.dataTable) th {
     white-space: nowrap;
 }
 
