@@ -74,7 +74,7 @@ class QRCodeTracker_Admin {
             'qr-tracker-admin',
             plugin_dir_url(dirname(__FILE__)) . 'assets/css/qr-tracker-admin.css',
             [],
-            filemtime(plugin_dir_path(dirname(__FILE__)) . 'assets/css/qr-tracker-admin.css')
+            filemtime(plugin_dir_path(dirname(__FILE__)) . 'assets/css/qr-tracker-admin.css') ?: '1.0.0'
         );
     }
 
