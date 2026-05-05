@@ -21,6 +21,9 @@ class QRCodeTracker_Admin {
     }
 
     public function admin_menu() {
+        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_styles']);
+        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
+
         // Main menu - requires view QR codes permission
         if (QRCodeTracker_Permissions::can_view_qr_codes()) {
             add_menu_page('QR Tracker', 'QR Tracker', 'qr_tracker_view_qr_codes', 'qr-tracker', [$this, 'admin_page'], 'data:image/svg+xml;base64,' . base64_encode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h6v6H3V3zm2 2v2h2V5H5zm8-2h6v6h-6V3zm2 2v2h2V5h-2zM3 11h6v6H3v-6zm2 2v2h2v-2H5zm8 0h6v6h-6v-6zm2 2v2h2v-2h-2z"/></svg>'));
@@ -58,6 +61,66 @@ class QRCodeTracker_Admin {
         // Hide the hidden pages from the menu
         add_action('admin_head', [$this, 'hide_hidden_menu_items']);
         add_action('admin_head', [$this, 'add_admin_styles']);
+    }
+
+    /**
+     * Enqueue admin CSS for QR Tracker pages
+     */
+    public function enqueue_admin_styles($hook) {
+        // Only load on QR Tracker admin pages — all use 'qr-tracker' in their hook suffix
+        if (strpos($hook, 'qr-tracker') === false) {
+            return;
+        }
+        // DataTables core + Responsive extension (CSS)
+        wp_enqueue_style(
+            'datatables',
+            'https://cdn.datatables.net/2.2.2/css/dataTables.dataTables.min.css',
+            [],
+            null
+        );
+        wp_enqueue_style(
+            'datatables-responsive',
+            'https://cdn.datatables.net/responsive/3.0.4/css/responsive.dataTables.min.css',
+            ['datatables'],
+            null
+        );
+        wp_enqueue_style(
+            'qr-tracker-admin',
+            plugin_dir_url(dirname(__FILE__)) . 'assets/css/qr-tracker-admin.css',
+            ['datatables', 'datatables-responsive'],
+            filemtime(plugin_dir_path(dirname(__FILE__)) . 'assets/css/qr-tracker-admin.css') ?: '1.0.0'
+        );
+    }
+
+    public function enqueue_admin_scripts($hook) {
+        // Only load on QR Tracker admin pages
+        if (strpos($hook, 'qr-tracker') === false) {
+            return;
+        }
+        // DataTables core JS (standalone build; works with or without jQuery)
+        wp_enqueue_script(
+            'datatables',
+            'https://cdn.datatables.net/2.2.2/js/dataTables.min.js',
+            ['jquery'],
+            null,
+            true
+        );
+        // DataTables Responsive extension JS
+        wp_enqueue_script(
+            'datatables-responsive',
+            'https://cdn.datatables.net/responsive/3.0.4/js/dataTables.responsive.min.js',
+            ['datatables'],
+            null,
+            true
+        );
+        // Plugin init script — activates DataTables on all .qr-table-responsive tables
+        wp_enqueue_script(
+            'qr-tracker-admin',
+            plugin_dir_url(dirname(__FILE__)) . 'assets/js/qr-tracker-admin.js',
+            ['datatables', 'datatables-responsive'],
+            filemtime(plugin_dir_path(dirname(__FILE__)) . 'assets/js/qr-tracker-admin.js') ?: '1.0.0',
+            true
+        );
     }
 
     public function admin_page() {
@@ -345,11 +408,11 @@ class QRCodeTracker_Admin {
                 <input type="hidden" name="qr_merge_source_id" value="' . $merge_data->id . '">
                 <table class="form-table">
                     <tr><th><label>Distribute scans to:</label></th>
-                        <td><div style="max-height: 300px; overflow-y: auto; border: 1px solid #ccc; padding: 10px;">';
+                        <td><div class="qr-merge-allocation-list">';
             foreach ($target_options as $option) {
-                echo '<div style="margin-bottom: 10px;">
-                    <label style="display: inline-block; width: 200px;">Postcode: ' . esc_html($option->postcode) . ' - Tree: ' . esc_html($option->tree) . '</label>
-                    <input type="number" name="qr_merge_allocations[' . $option->id . ']" min="0" max="' . $merge_data->scan_count . '" placeholder="0" style="width: 80px;">
+                echo '<div class="qr-merge-allocation-item">
+                    <label>' . esc_html('Postcode: ' . $option->postcode . ' - Tree: ' . $option->tree) . '</label>
+                    <input type="number" name="qr_merge_allocations[' . $option->id . ']" min="0" max="' . $merge_data->scan_count . '" placeholder="0">
                     <span style="color: #666; font-size: 12px;">(' . esc_html($option->label) . ')</span>
                 </div>';
             }
@@ -707,7 +770,7 @@ class QRCodeTracker_Admin {
 
         // Now display the Tracked QR Codes table
         $entries = $this->teams->get_accessible_qr_codes();
-        echo '<h2>Tracked QR Codes</h2><table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>Popup</th><th>Shop Link</th><th>Team</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Last Scanned</th><th>Actions</th></tr></thead><tbody>';
+        echo '<h2>Tracked QR Codes</h2><div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>Popup</th><th>Shop Link</th><th>Team</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Last Scanned</th><th>Actions</th></tr></thead><tbody>';
         foreach ($entries as $row) {
             $delete_url = esc_url(add_query_arg(['delete_id' => $row->id]));
             $edit_url = esc_url(add_query_arg(['edit_id' => $row->id]));
@@ -743,20 +806,20 @@ class QRCodeTracker_Admin {
             echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td>{$url_display}</td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>{$row->last_scanned}</td>";
             echo "<td>";
             if ($row->scan_count == 0) {
-                echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a> ";
-                echo "<a href=\"$delete_url\" onclick=\"return confirm('Are you sure you want to delete this QR code?')\" class=\"button button-secondary\">Delete</a> ";
+                echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a>";
+                echo "<a href=\"$delete_url\" onclick=\"return confirm('Are you sure you want to delete this QR code?')\" class=\"button button-secondary\">Delete</a>";
             } else {
-                echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a> ";
-                echo "<a href=\"$merge_url\" class=\"button button-secondary\">Merge</a> ";
+                echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a>";
+                echo "<a href=\"$merge_url\" class=\"button button-secondary\">Merge</a>";
             }
-            echo "<a href='$download_url' class='button' target='_blank'>Download QR Image</a> ";
+            echo "<a href='$download_url' class='button' target='_blank'>Download QR Image</a>";
             if ($row->scan_count > 0) {
                 $report_url = esc_url(admin_url('admin.php?page=qr-single-report&qr_id=' . $row->id));
-                echo "<a href='$report_url' class='button button-primary'>Report</a> ";
+                echo "<a href='$report_url' class='button button-primary'>Report</a>";
             }
-            echo "</td></tr>";
+            echo "</div></td></tr>";
         }
-        echo '</tbody></table>';
+        echo '</tbody></table></div>';
 
         // Display quick summary
         $accessible_teams = $this->teams->get_accessible_teams();
@@ -766,22 +829,22 @@ class QRCodeTracker_Admin {
         $recent_scans = $wpdb->get_var("SELECT COUNT(*) FROM {$this->log_table} WHERE scanned_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
         
         echo '<h2>Quick Summary</h2>';
-        echo '<div style="display: flex; gap: 20px; margin: 20px 0;">';
-        echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
-        echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($total_qr_codes ?? 0) . '</div>';
-        echo '<div style="color: #666; margin-top: 5px;">Total QR Codes</div>';
+        echo '<div class="qr-summary-cards">';
+        echo '<div class="qr-summary-card">';
+        echo '<div class="qr-summary-card-number">' . number_format($total_qr_codes ?? 0) . '</div>';
+        echo '<div class="qr-summary-card-label">Total QR Codes</div>';
         echo '</div>';
-        echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
-        echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($total_scans ?? 0) . '</div>';
-        echo '<div style="color: #666; margin-top: 5px;">Total Scans</div>';
+        echo '<div class="qr-summary-card">';
+        echo '<div class="qr-summary-card-number">' . number_format($total_scans ?? 0) . '</div>';
+        echo '<div class="qr-summary-card-label">Total Scans</div>';
         echo '</div>';
-        echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
-        echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($active_qr_codes ?? 0) . '</div>';
-        echo '<div style="color: #666; margin-top: 5px;">Active QR Codes</div>';
+        echo '<div class="qr-summary-card">';
+        echo '<div class="qr-summary-card-number">' . number_format($active_qr_codes ?? 0) . '</div>';
+        echo '<div class="qr-summary-card-label">Active QR Codes</div>';
         echo '</div>';
-        echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px; flex: 1; text-align: center;">';
-        echo '<div style="font-size: 24px; font-weight: bold; color: #0073aa;">' . number_format($recent_scans ?? 0) . '</div>';
-        echo '<div style="color: #666; margin-top: 5px;">Scans (7 days)</div>';
+        echo '<div class="qr-summary-card">';
+        echo '<div class="qr-summary-card-number">' . number_format($recent_scans ?? 0) . '</div>';
+        echo '<div class="qr-summary-card-label">Scans (7 days)</div>';
         echo '</div>';
         echo '</div>';
         echo '<p><a href="' . admin_url('admin.php?page=qr-reports') . '" class="button button-primary">View Detailed Reports</a></p>';
@@ -879,7 +942,7 @@ class QRCodeTracker_Admin {
         }
 
         echo '<div class="wrap"><h1>QR Code Tracker Settings</h1>';
-        echo '<div style="margin-bottom:20px;padding:10px 15px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;max-width:600px;">';
+        echo '<div class="qr-settings-info">';
         echo '<strong>Plugin Version:</strong> ' . esc_html($plugin_version) . '<br>';
         echo '<strong>Available Shortcodes:</strong>';
         echo '<ul style="margin-top:8px;">';
@@ -958,46 +1021,10 @@ class QRCodeTracker_Admin {
      * Add admin styles for notification badges and orphaned QR codes section
      */
     public function add_admin_styles() {
+        // Styles are now in assets/css/qr-tracker-admin.css (enqueued via enqueue_admin_styles)
+        // This hook is kept for backward compatibility and any remaining inline overrides
         echo '<style>
-        .update-plugins {
-            display: inline-block;
-            vertical-align: top;
-            box-sizing: border-box;
-            height: 17px;
-            min-width: 18px;
-            padding: 0 5px;
-            font-size: 9px;
-            line-height: 17px;
-            font-weight: 600;
-            border-radius: 10px;
-            background: #d63638;
-            color: #fff;
-            text-align: center;
-            z-index: 26;
-            margin-left: 5px;
-        }
-        
-        .plugin-count {
-            color: #fff;
-        }
-        
-        .orphaned-qr-section {
-            margin-top: 30px;
-            padding: 20px;
-            background: #fff;
-            border: 1px solid #ccd0d4;
-            border-radius: 4px;
-        }
-        
-        .orphaned-qr-section h2 {
-            margin-top: 0;
-            color: #d63638;
-        }
-        
-        .orphaned-qr-section .description {
-            color: #666;
-            font-style: italic;
-        }
+        /* Hide hidden QR tracker pages from menu */
         </style>';
     }
 
@@ -1025,7 +1052,7 @@ class QRCodeTracker_Admin {
         
         echo '<form method="post">';
         wp_nonce_field('qr_tracker_orphaned_qr_codes');
-        echo '<table class="widefat" style="margin-bottom: 15px;">';
+        echo '<div class="qr-table-responsive"><table class="widefat" style="margin-bottom: 15px;">';
         echo '<thead><tr>';
         echo '<th style="width: 30px;"><input type="checkbox" id="select-all-orphaned" onclick="toggleAllOrphaned(this)"></th>';
         echo '<th>Postcode</th>';
@@ -1050,9 +1077,9 @@ class QRCodeTracker_Admin {
             echo '</tr>';
         }
         
-        echo '</tbody></table>';
+        echo '</tbody></table></div>';
         
-        echo '<div style="display: flex; align-items: center; gap: 15px;">';
+        echo '<div class="qr-reassign-bar">';
         echo '<label for="team_id"><strong>Assign to Team:</strong></label>';
         echo '<select name="team_id" id="team_id" required style="min-width: 200px;">';
         echo '<option value="">Select a team...</option>';
@@ -1163,23 +1190,23 @@ class QRCodeTracker_Admin {
             echo '<div class="notice notice-info"><p><strong>Performance Note:</strong> Large dataset detected (' . $time_series_data['total_days'] . ' days). Chart data has been sampled to ' . count($time_series_data['dates']) . ' points for optimal performance. Export CSV for full data.</p></div>';
         }
         // Add chart containers
-        echo '<div id="chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
-        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
-        echo '<h3 style="margin: 0;">Daily Activity Chart</h3>';
+        echo '<div id="chart-container" class="qr-chart-container" style="display: none;">';
+        echo '<div class="qr-chart-header">';
+        echo '<h3>Daily Activity Chart</h3>';
         echo '<button onclick="exportChartAsImage(\'breakdown-chart\', \'daily-activity-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="breakdown-chart" width="800" height="400"></canvas>';
         echo '</div>';
-        echo '<div id="hour-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 700px;">';
-        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
-        echo '<h3 style="margin: 0;">Hour Distribution Chart</h3>';
+        echo '<div id="hour-chart-container" class="qr-chart-container" style="display: none; height: 700px;">';
+        echo '<div class="qr-chart-header">';
+        echo '<h3>Hour Distribution Chart</h3>';
         echo '<button onclick="exportChartAsImage(\'hour-chart\', \'hour-distribution-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="hour-chart" width="600" height="600"></canvas>';
         echo '</div>';
-        echo '<div id="day-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
-        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
-        echo '<h3 style="margin: 0;">Day of Week Chart</h3>';
+        echo '<div id="day-chart-container" class="qr-chart-container" style="display: none;">';
+        echo '<div class="qr-chart-header">';
+        echo '<h3>Day of Week Chart</h3>';
         echo '<button onclick="exportChartAsImage(\'day-chart\', \'day-of-week-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="day-chart" width="800" height="400"></canvas>';
@@ -1578,7 +1605,7 @@ window.showDayChart = function() {
         }
         </script>';
         
-        echo '<table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Reporting ID</th><th>' . esc_html($group_label) . '</th><th>Total Scans</th><th>Unique Days</th><th>First Scan</th><th>Last Scan</th></tr></thead><tbody>';
+        echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Reporting ID</th><th>' . esc_html($group_label) . '</th><th>Total Scans</th><th>Unique Days</th><th>First Scan</th><th>Last Scan</th></tr></thead><tbody>';
         
         $total_scans = 0;
         $total_unique_days = 0;
@@ -1606,7 +1633,7 @@ window.showDayChart = function() {
         echo "<td><strong>" . number_format($total_unique_days) . "</strong></td>";
         echo "<td colspan='2'></td>";
         echo "</tr>";
-        echo '</tbody></table>';
+        echo '</tbody></table></div>';
     }
 
     public function display_rollup_report($where_clause, $where_params) {
@@ -1645,23 +1672,23 @@ window.showDayChart = function() {
         echo '<button onclick="showRollupDayChart()" class="button">Show Day of Week Chart</button></p>';
         
         // Add chart containers
-        echo '<div id="rollup-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
-        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
-        echo '<h3 style="margin: 0;">Daily Activity Chart</h3>';
+        echo '<div id="rollup-chart-container" class="qr-chart-container" style="display: none;">';
+        echo '<div class="qr-chart-header">';
+        echo '<h3>Daily Activity Chart</h3>';
         echo '<button onclick="exportChartAsImage(\'rollup-chart\', \'rollup-daily-activity-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="rollup-chart" width="800" height="400"></canvas>';
         echo '</div>';
-        echo '<div id="rollup-hour-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 700px;">';
-        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
-        echo '<h3 style="margin: 0;">Hour Distribution Chart</h3>';
+        echo '<div id="rollup-hour-chart-container" class="qr-chart-container" style="display: none; height: 700px;">';
+        echo '<div class="qr-chart-header">';
+        echo '<h3>Hour Distribution Chart</h3>';
         echo '<button onclick="exportChartAsImage(\'rollup-hour-chart\', \'rollup-hour-distribution-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="rollup-hour-chart" width="600" height="600"></canvas>';
         echo '</div>';
-        echo '<div id="rollup-day-chart-container" style="display: none; margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 4px; height: 500px;">';
-        echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
-        echo '<h3 style="margin: 0;">Day of Week Chart</h3>';
+        echo '<div id="rollup-day-chart-container" class="qr-chart-container" style="display: none;">';
+        echo '<div class="qr-chart-header">';
+        echo '<h3>Day of Week Chart</h3>';
         echo '<button onclick="exportChartAsImage(\'rollup-day-chart\', \'rollup-day-of-week-chart\')" class="button button-secondary">Export as Image</button>';
         echo '</div>';
         echo '<canvas id="rollup-day-chart" width="800" height="400"></canvas>';
@@ -1898,7 +1925,7 @@ window.showRollupDayChart = function() {
 ';
         echo '</script>';
         
-        echo '<table class="widefat"><thead><tr><th>' . esc_html($group_label) . '</th><th>' . esc_html($other_label) . '</th><th>City</th><th>Reporting ID</th><th>Total Scans</th><th>Unique Days</th><th>First Scan</th><th>Last Scan</th></tr></thead><tbody>';
+        echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>' . esc_html($group_label) . '</th><th>' . esc_html($other_label) . '</th><th>City</th><th>Reporting ID</th><th>Total Scans</th><th>Unique Days</th><th>First Scan</th><th>Last Scan</th></tr></thead><tbody>';
         
         $current_group = '';
         $group_total = 0;
@@ -1953,7 +1980,7 @@ window.showRollupDayChart = function() {
         echo "<td><strong>" . number_format($total_unique_days) . "</strong></td>";
         echo "<td colspan='2'></td>";
         echo "</tr>";
-        echo '</tbody></table>';
+        echo '</tbody></table></div>';
     }
 
     /**
@@ -2235,7 +2262,7 @@ window.showRollupDayChart = function() {
         if ($can_review_access_requests) {
             echo '<h2>Pending QR Access Requests</h2>';
             if (!empty($pending_requests)) {
-                echo '<table class="widefat"><thead><tr><th>Requested</th><th>User</th><th>Team</th><th>QR Code</th><th>Actions</th></tr></thead><tbody>';
+                echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Requested</th><th>User</th><th>Team</th><th>QR Code</th><th>Actions</th></tr></thead><tbody>';
                 foreach ($pending_requests as $request) {
                     $user_profile_url = add_query_arg(['user_id' => (int) $request->user_id], admin_url('user-edit.php'));
                     $qr_edit_url = add_query_arg(['page' => 'qr-tracker', 'edit_id' => (int) $request->qr_id], admin_url('admin.php'));
@@ -2262,7 +2289,7 @@ window.showRollupDayChart = function() {
                     echo '</td>';
                     echo '</tr>';
                 }
-                echo '</tbody></table>';
+                echo '</tbody></table></div>';
             } else {
                 echo '<p>No pending access requests.</p>';
             }
@@ -2282,7 +2309,7 @@ window.showRollupDayChart = function() {
         // Display teams list
         $teams = $this->teams->get_all_teams_stats();
         echo '<h2>Teams Overview</h2>';
-        echo '<table class="widefat"><thead><tr><th>Team Name</th><th>City/Town</th><th>QR Codes</th><th>Total Scans</th><th>Active QR Codes</th><th>Members</th><th>Actions</th></tr></thead><tbody>';
+        echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Team Name</th><th>City/Town</th><th>QR Codes</th><th>Total Scans</th><th>Active QR Codes</th><th>Members</th><th>Actions</th></tr></thead><tbody>';
         
         foreach ($teams as $team) {
             $edit_url = esc_url(add_query_arg(['edit_team' => $team->id]));
@@ -2295,12 +2322,12 @@ window.showRollupDayChart = function() {
             echo "<td>" . number_format($team->total_scans) . "</td>";
             echo "<td>" . number_format($team->active_qr_codes) . "</td>";
             echo "<td>" . number_format($team->member_count) . "</td>";
-            echo "<td>";
+            echo "<td><div class='qr-action-buttons'>";
             
             if ($this->teams->user_can_manage_team(get_current_user_id(), $team->id)) {
-                echo "<a href='$edit_url' class='button button-secondary'>Edit</a> ";
+                echo "<a href='$edit_url' class='button button-secondary'>Edit</a>";
                 if (QRCodeTracker_Permissions::can_view_team_members()) {
-                    echo "<a href='$manage_url' class='button button-secondary'>Manage Members</a> ";
+                    echo "<a href='$manage_url' class='button button-secondary'>Manage Members</a>";
                 }
                 
                 if ($team->name !== 'Default Team') {
@@ -2311,7 +2338,7 @@ window.showRollupDayChart = function() {
                 }
             } elseif ($this->teams->user_can_access_team(get_current_user_id(), $team->id)) {
                 if (QRCodeTracker_Permissions::can_view_team_members()) {
-                    echo "<a href='$manage_url' class='button button-secondary'>View Members</a> ";
+                    echo "<a href='$manage_url' class='button button-secondary'>View Members</a>";
                 }
                 
                 // Add leave team button for team members
@@ -2325,10 +2352,10 @@ window.showRollupDayChart = function() {
                 }
             }
             
-            echo "</td></tr>";
+            echo "</div></td></tr>";
         }
         
-        echo '</tbody></table>';
+        echo '</tbody></table></div>';
         
         // Handle team editing
         if (isset($_GET['edit_team'])) {
@@ -2366,7 +2393,7 @@ window.showRollupDayChart = function() {
                 // Display current members
                 $members = $this->teams->get_team_members($team_id);
                 echo '<h3>Current Members</h3>';
-                echo '<table class="widefat"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Joined</th><th>Actions</th></tr></thead><tbody>';
+                echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Joined</th><th>Actions</th></tr></thead><tbody>';
                 
                 foreach ($members as $member) {
                     echo "<tr>";
@@ -2374,7 +2401,7 @@ window.showRollupDayChart = function() {
                     echo "<td>" . esc_html($member->user_email) . "</td>";
                     echo "<td>" . esc_html(ucfirst($member->role)) . "</td>";
                     echo "<td>" . esc_html($member->created_at) . "</td>";
-                    echo "<td>";
+                    echo "<td><div class='qr-action-buttons'>";
                     
                     // Show different actions based on user role and permissions
                     if ($member->ID == get_current_user_id()) {
@@ -2392,10 +2419,10 @@ window.showRollupDayChart = function() {
                         echo "</form>";
                     }
                     
-                    echo "</td></tr>";
+                    echo "</div></td></tr>";
                 }
                 
-                echo '</tbody></table>';
+                echo '</tbody></table></div>';
                 
                 // Transfer admin role form (for current admin)
                 if ($this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {

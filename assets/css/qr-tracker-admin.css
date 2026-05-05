@@ -1,0 +1,503 @@
+/**
+ * QR Tracker Admin Styles - Mobile First
+ * Responsive styles for all QR Tracker admin pages
+ */
+
+/* =========================================================
+   Base / Shared Components
+   ========================================================= */
+
+/* Responsive table wrapper */
+.qr-table-responsive {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 1em;
+}
+
+/*
+ * WordPress's .widefat forces width:100%, which prevents overflow-x scrolling
+ * because the table never actually exceeds its container.
+ * Override with width:auto (use natural content width) + min-width:100%
+ * so the table still fills the container on wide screens but can scroll on narrow ones.
+ *
+ * Limit to :not(.dataTable) — once DataTables initialises it adds the class
+ * "dataTable" and manages table width itself; keeping the !important override
+ * on those tables would fight with DataTables' own layout calculations.
+ *
+ * Prevent column-header text from wrapping (white-space: nowrap on th) so the browser
+ * cannot collapse the table to a width that fits within the mobile viewport — this
+ * guarantees the table is genuinely wider than the container and the scrollbar appears
+ * on tables that are NOT managed by DataTables.
+ */
+.qr-table-responsive table:not(.dataTable),
+.qr-table-responsive table.widefat:not(.dataTable) {
+    width: auto !important;
+    min-width: 100%;
+}
+
+.qr-table-responsive table:not(.dataTable) th {
+    white-space: nowrap;
+}
+
+/* Summary stat cards */
+.qr-summary-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 20px 0;
+}
+
+.qr-summary-card {
+    background: #fff;
+    border: 1px solid #ddd;
+    padding: 15px;
+    border-radius: 4px;
+    flex: 1 1 130px;
+    text-align: center;
+    min-width: 120px;
+}
+
+.qr-summary-card-number {
+    font-size: 24px;
+    font-weight: bold;
+    color: #0073aa;
+}
+
+.qr-summary-card-label {
+    color: #666;
+    margin-top: 5px;
+    font-size: 13px;
+}
+
+/* Action button groups inside table cells */
+.qr-action-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+
+.qr-action-buttons .button {
+    margin: 0 !important;
+    white-space: nowrap;
+}
+
+/* Filter form (shared) */
+.qr-filter-form {
+    background: #f9f9f9;
+    padding: 15px;
+    margin: 20px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.qr-filter-form select,
+.qr-filter-form input[type="date"] {
+    padding: 5px 28px 5px 8px;
+    min-width: 90px;
+    background: #fff;
+    appearance: auto;
+    -webkit-appearance: auto;
+    -moz-appearance: auto;
+}
+
+.qr-filter-form label {
+    display: inline-block;
+    font-weight: bold;
+}
+
+.qr-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.qr-filter-row:last-child {
+    margin-bottom: 0;
+}
+
+.qr-filter-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.qr-filter-field label {
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.qr-filter-field input[type="date"],
+.qr-filter-field select {
+    padding: 5px 8px;
+    min-width: 90px;
+    background: #fff;
+}
+
+/* Merge form allocation list */
+.qr-merge-allocation-list {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #ccc;
+    padding: 10px;
+}
+
+.qr-merge-allocation-item {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.qr-merge-allocation-item label {
+    flex: 1 1 180px;
+    min-width: 0;
+}
+
+.qr-merge-allocation-item input[type="number"] {
+    width: 80px;
+}
+
+/* =========================================================
+   Reports display
+   ========================================================= */
+.qr-stats-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.qr-stat-box {
+    background: #fff;
+    border: 1px solid #ddd;
+    padding: 15px;
+    border-radius: 4px;
+    flex: 1 1 120px;
+    text-align: center;
+    min-width: 110px;
+}
+
+.qr-stat-number {
+    font-size: 24px;
+    font-weight: bold;
+    color: #0073aa;
+}
+
+.qr-stat-label {
+    color: #666;
+    margin-top: 5px;
+}
+
+/* Search interface */
+.qr-search-box {
+    background: #fff;
+    border: 2px solid #0073aa;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.qr-search-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    min-width: 0;
+}
+
+.qr-search-input:focus {
+    outline: none;
+    border-color: #0073aa;
+    box-shadow: 0 0 0 1px #0073aa;
+}
+
+/* Welcome / no-results message */
+.qr-welcome-message {
+    background: #fff;
+    border: 1px solid #ddd;
+    padding: 30px;
+    margin: 20px 0;
+    border-radius: 4px;
+    text-align: center;
+}
+
+/* Chart containers */
+.qr-chart-container {
+    margin: 20px 0;
+    padding: 20px;
+    background: #f9f9f9;
+    border-radius: 4px;
+    height: 500px;
+}
+
+.qr-chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.qr-chart-header h3 {
+    margin: 0;
+}
+
+/* Orphaned QR section */
+.orphaned-qr-section {
+    margin-top: 30px;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+}
+
+.orphaned-qr-section h2 {
+    margin-top: 0;
+    color: #d63638;
+}
+
+.orphaned-qr-section .description {
+    color: #666;
+    font-style: italic;
+}
+
+.qr-reassign-bar {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+/* Settings info box */
+.qr-settings-info {
+    margin-bottom: 20px;
+    padding: 10px 15px;
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    max-width: 600px;
+}
+
+/* Notification badge */
+.update-plugins {
+    display: inline-block;
+    vertical-align: top;
+    box-sizing: border-box;
+    height: 17px;
+    min-width: 18px;
+    padding: 0 5px;
+    font-size: 9px;
+    line-height: 17px;
+    font-weight: 600;
+    border-radius: 10px;
+    background: #d63638;
+    color: #fff;
+    text-align: center;
+    z-index: 26;
+    margin-left: 5px;
+}
+
+.plugin-count {
+    color: #fff;
+}
+
+/* =========================================================
+   Mobile — small screens (max-width: 782px)
+   WordPress uses 782px as its "mobile" breakpoint in the admin
+   ========================================================= */
+@media screen and (max-width: 782px) {
+
+    /* --- Tables: horizontal scroll --- */
+    .qr-table-responsive {
+        margin-left: -10px;
+        margin-right: -10px;
+        padding: 0 10px;
+    }
+
+    /* --- Summary cards: 2-up grid --- */
+    .qr-summary-cards {
+        gap: 10px;
+    }
+
+    .qr-summary-card {
+        flex: 1 1 calc(50% - 10px);
+        min-width: 0;
+        padding: 12px 8px;
+    }
+
+    .qr-summary-card-number {
+        font-size: 20px;
+    }
+
+    /* --- Stats boxes in reports --- */
+    .qr-stats-summary {
+        gap: 10px;
+    }
+
+    .qr-stat-box {
+        flex: 1 1 calc(50% - 10px);
+        min-width: 0;
+        padding: 12px 8px;
+    }
+
+    .qr-stat-number {
+        font-size: 20px;
+    }
+
+    /* --- Form tables: stack label + field --- */
+    .form-table th,
+    .form-table td {
+        display: block;
+        width: 100%;
+        padding: 6px 0;
+    }
+
+    .form-table th {
+        padding-bottom: 2px;
+    }
+
+    .form-table td input[type="text"],
+    .form-table td input[type="url"],
+    .form-table td input[type="email"],
+    .form-table td input[type="number"],
+    .form-table td select,
+    .form-table td textarea {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* --- Filter rows: stack vertically --- */
+    .qr-filter-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .qr-filter-field {
+        width: 100%;
+    }
+
+    .qr-filter-field input[type="date"],
+    .qr-filter-field select {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* --- Search input: full width on mobile --- */
+    .qr-search-input {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* Scan logs filter - inline elements need to be stacked */
+    .qr-filter-form .qr-filter-inline {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .qr-filter-form .qr-filter-inline label {
+        display: block;
+        font-weight: bold;
+        margin-bottom: 2px;
+    }
+
+    .qr-filter-form .qr-filter-inline select,
+    .qr-filter-form .qr-filter-inline input[type="date"],
+    .qr-filter-form .qr-filter-inline input[type="text"] {
+        width: 100%;
+        box-sizing: border-box;
+        margin: 0;
+    }
+
+    /* --- Action buttons: stack vertically in table cells --- */
+    .qr-action-buttons {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+    }
+
+    .qr-action-buttons .button {
+        text-align: center;
+        padding: 6px 10px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* --- Merge allocation items: stack --- */
+    .qr-merge-allocation-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .qr-merge-allocation-item input[type="number"] {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* --- Chart containers: reduce height --- */
+    .qr-chart-container {
+        height: 350px;
+        padding: 10px;
+    }
+
+    .qr-chart-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    /* --- Reassign bar: stack --- */
+    .qr-reassign-bar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .qr-reassign-bar select {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* --- Settings page info box --- */
+    .qr-settings-info {
+        max-width: 100% !important;
+    }
+
+    /* --- General wrap padding for small screens --- */
+    .wrap {
+        margin-right: 10px;
+    }
+}
+
+/* =========================================================
+   Extra small screens (max-width: 480px)
+   ========================================================= */
+@media screen and (max-width: 480px) {
+
+    /* Summary cards: 1-up */
+    .qr-summary-card {
+        flex: 1 1 100%;
+    }
+
+    /* Stats boxes: 1-up */
+    .qr-stat-box {
+        flex: 1 1 100%;
+    }
+
+    /* QR image in table */
+    .qr-code-img {
+        width: 60px !important;
+        height: 60px !important;
+    }
+}
