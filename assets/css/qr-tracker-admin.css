@@ -9,6 +9,7 @@
 
 /* Responsive table wrapper */
 .qr-table-responsive {
+    display: block;
     width: 100%;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -20,11 +21,20 @@
  * because the table never actually exceeds its container.
  * Override with width:auto (use natural content width) + min-width:100%
  * so the table still fills the container on wide screens but can scroll on narrow ones.
+ *
+ * Prevent column-header text from wrapping (white-space: nowrap on th) so the browser
+ * cannot collapse the table to a width that fits within the mobile viewport — this
+ * guarantees the table is genuinely wider than the container and the scrollbar appears.
  */
 .qr-table-responsive table,
 .qr-table-responsive table.widefat {
     width: auto !important;
     min-width: 100%;
+}
+
+.qr-table-responsive table th,
+.qr-table-responsive table.widefat th {
+    white-space: nowrap;
 }
 
 /* Summary stat cards */
