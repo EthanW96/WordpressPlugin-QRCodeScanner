@@ -86,6 +86,7 @@ class QRCodeTracker_ReportsDisplay {
         // Build WHERE clause for date filtering
         $where_clause = "WHERE 1=1";
         $where_params = [];
+        $search_forced_empty = false;
         
         // Add team access restrictions
         list($team_restriction, $team_params) = $this->build_team_access_restrictions();
@@ -140,7 +141,7 @@ class QRCodeTracker_ReportsDisplay {
                 $where_clause .= " AND (" . implode(' OR ', $search_conditions) . ")";
                 $where_params = array_merge($where_params, $search_params);
             } else {
-                $where_clause .= " AND 1=0";
+                $search_forced_empty = true;
             }
         } else {
             // Handle single filter values (for backward compatibility)
@@ -200,7 +201,7 @@ class QRCodeTracker_ReportsDisplay {
         
         if ($has_active_filters) {
             // Check if there are any results
-            $result_count = $this->get_result_count($where_clause, $where_params);
+            $result_count = $search_forced_empty ? 0 : $this->get_result_count($where_clause, $where_params);
             
             if ($result_count > 0) {
                 // Show search context if search terms were used or show all is requested

@@ -1120,6 +1120,12 @@ class QRCodeTracker {
         return array_values(array_filter(array_map('trim', explode(',', $sanitized))));
     }
 
+    private function get_notification_recipients($report_emails_raw, $contact_emails_raw) {
+        $report_emails = $this->parse_email_list($report_emails_raw);
+        $contact_emails = $this->parse_email_list($contact_emails_raw);
+        return !empty($report_emails) ? $report_emails : $contact_emails;
+    }
+
     private function maybe_send_scan_milestone_email($qr_row, $new_scan_count) {
         $thresholds = apply_filters('qr_tracker_scan_milestone_thresholds', self::SCAN_MILESTONE_THRESHOLDS, $qr_row);
         $thresholds = array_values(array_unique(array_map('intval', (array) $thresholds)));
@@ -1127,20 +1133,19 @@ class QRCodeTracker {
             return;
         }
 
-        $report_emails = isset($qr_row->report_emails) ? $this->parse_email_list($qr_row->report_emails) : [];
-        $contact_emails = isset($qr_row->contact_emails) ? $this->parse_email_list($qr_row->contact_emails) : [];
-        $recipients = !empty($report_emails) ? $report_emails : $contact_emails;
+        $recipients = $this->get_notification_recipients(
+            isset($qr_row->report_emails) ? $qr_row->report_emails : '',
+            isset($qr_row->contact_emails) ? $qr_row->contact_emails : ''
+        );
         if (empty($recipients)) {
             return;
         }
 
         $milestone_key = 'qr_tracker_milestone_' . (int) $qr_row->id . '_' . (int) $new_scan_count;
-        if (get_option($milestone_key, false) !== false) {
+        if (get_transient($milestone_key) !== false) {
             return;
         }
-        if (!add_option($milestone_key, current_time('mysql'), '', false)) {
-            return;
-        }
+        set_transient($milestone_key, current_time('mysql'), 5 * YEAR_IN_SECONDS);
 
         $report_url = admin_url('admin.php?page=qr-single-report&qr_id=' . (int) $qr_row->id);
         $manage_url = !empty($qr_row->edit_token) ? $this->generate_qr_management_url($qr_row->edit_token) : '';
@@ -1159,7 +1164,6 @@ class QRCodeTracker {
 
         $sent = wp_mail($recipients, $subject, $message);
         if (!$sent) {
-            delete_option($milestone_key);
             if ((int) get_option('qr_tracker_debug_mode', 0) === 1 || (defined('WP_DEBUG') && WP_DEBUG)) {
                 error_log('QR Tracker: milestone email failed for QR ID ' . (int) $qr_row->id . ' at scan count ' . (int) $new_scan_count);
             }
@@ -1375,9 +1379,10 @@ class QRCodeTracker {
     }
 
     private function send_tree_qr_report_email($record_id, $tree_data) {
-        $report_recipients = $this->parse_email_list(isset($tree_data['report_emails']) ? $tree_data['report_emails'] : '');
-        $contact_recipients = $this->parse_email_list(isset($tree_data['contact_emails']) ? $tree_data['contact_emails'] : '');
-        $recipients = !empty($report_recipients) ? $report_recipients : $contact_recipients;
+        $recipients = $this->get_notification_recipients(
+            isset($tree_data['report_emails']) ? $tree_data['report_emails'] : '',
+            isset($tree_data['contact_emails']) ? $tree_data['contact_emails'] : ''
+        );
         if (empty($recipients)) {
             return;
         }
