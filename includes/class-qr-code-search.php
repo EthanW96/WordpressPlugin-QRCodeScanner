@@ -33,12 +33,11 @@ class QRCodeTracker_Search {
         
         // Try to match postcode pattern (UK postcodes are typically 5-7 characters with space)
         if (preg_match('/^[A-Z]{1,2}[0-9][A-Z0-9]?\s*[0-9][A-Z]{2}$/i', $search_term)) {
-            // Check if this postcode exists in our database with scan data
+            // Check if this postcode exists in our database
             $postcode = strtoupper($search_term);
             $exists = $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$this->log_table} l 
-                 JOIN {$this->main_table} t ON l.tracker_id = t.id 
-                 WHERE l.postcode = %s",
+                "SELECT COUNT(*) FROM {$this->main_table} t 
+                 WHERE t.postcode = %s",
                 $postcode
             ));
             if ($exists > 0) {
@@ -47,11 +46,10 @@ class QRCodeTracker_Search {
             }
         }
         
-        // Try to match as city name (case-insensitive) - only with scan data
+        // Try to match as city name (case-insensitive)
         $city = $wpdb->get_var($wpdb->prepare(
-            "SELECT DISTINCT l.city FROM {$this->log_table} l 
-             JOIN {$this->main_table} t ON l.tracker_id = t.id 
-             WHERE LOWER(l.city) = LOWER(%s) AND l.city IS NOT NULL AND l.city != '' 
+            "SELECT DISTINCT t.city FROM {$this->main_table} t 
+             WHERE LOWER(t.city) = LOWER(%s) AND t.city IS NOT NULL AND t.city != '' 
              LIMIT 1",
             $search_term
         ));
@@ -60,11 +58,10 @@ class QRCodeTracker_Search {
             return;
         }
         
-        // Try to match as tree value (case-insensitive) - only with scan data
+        // Try to match as tree value (case-insensitive)
         $tree = $wpdb->get_var($wpdb->prepare(
-            "SELECT DISTINCT l.tree FROM {$this->log_table} l 
-             JOIN {$this->main_table} t ON l.tracker_id = t.id 
-             WHERE LOWER(l.tree) = LOWER(%s) AND l.tree IS NOT NULL AND l.tree != '' 
+            "SELECT DISTINCT t.tree FROM {$this->main_table} t 
+             WHERE LOWER(t.tree) = LOWER(%s) AND t.tree IS NOT NULL AND t.tree != '' 
              LIMIT 1",
             $search_term
         ));
@@ -73,11 +70,10 @@ class QRCodeTracker_Search {
             return;
         }
         
-        // If no exact match, try partial matches - only with scan data
+        // If no exact match, try partial matches
         $partial_city = $wpdb->get_var($wpdb->prepare(
-            "SELECT DISTINCT l.city FROM {$this->log_table} l 
-             JOIN {$this->main_table} t ON l.tracker_id = t.id 
-             WHERE LOWER(l.city) LIKE LOWER(%s) AND l.city IS NOT NULL AND l.city != '' 
+            "SELECT DISTINCT t.city FROM {$this->main_table} t 
+             WHERE LOWER(t.city) LIKE LOWER(%s) AND t.city IS NOT NULL AND t.city != '' 
              LIMIT 1",
             '%' . $search_term . '%'
         ));
@@ -87,9 +83,8 @@ class QRCodeTracker_Search {
         }
         
         $partial_tree = $wpdb->get_var($wpdb->prepare(
-            "SELECT DISTINCT l.tree FROM {$this->log_table} l 
-             JOIN {$this->main_table} t ON l.tracker_id = t.id 
-             WHERE LOWER(l.tree) LIKE LOWER(%s) AND l.tree IS NOT NULL AND l.tree != '' 
+            "SELECT DISTINCT t.tree FROM {$this->main_table} t 
+             WHERE LOWER(t.tree) LIKE LOWER(%s) AND t.tree IS NOT NULL AND t.tree != '' 
              LIMIT 1",
             '%' . $search_term . '%'
         ));
@@ -99,9 +94,8 @@ class QRCodeTracker_Search {
         }
         
         $partial_postcode = $wpdb->get_var($wpdb->prepare(
-            "SELECT DISTINCT l.postcode FROM {$this->log_table} l 
-             JOIN {$this->main_table} t ON l.tracker_id = t.id 
-             WHERE LOWER(l.postcode) LIKE LOWER(%s) AND l.postcode IS NOT NULL AND l.postcode != '' 
+            "SELECT DISTINCT t.postcode FROM {$this->main_table} t 
+             WHERE LOWER(t.postcode) LIKE LOWER(%s) AND t.postcode IS NOT NULL AND t.postcode != '' 
              LIMIT 1",
             '%' . $search_term . '%'
         ));
@@ -130,12 +124,11 @@ class QRCodeTracker_Search {
             
             // Try to match postcode pattern (UK postcodes are typically 5-7 characters with space)
             if (preg_match('/^[A-Z]{1,2}[0-9][A-Z0-9]?\s*[0-9][A-Z]{2}$/i', $search_term)) {
-                // Check if this postcode exists in our database with scan data
+                // Check if this postcode exists in our database
                 $postcode = strtoupper($search_term);
                 $exists = $wpdb->get_var($wpdb->prepare(
-                    "SELECT COUNT(*) FROM {$this->log_table} l 
-                     JOIN {$this->main_table} t ON l.tracker_id = t.id 
-                     WHERE l.postcode = %s",
+                    "SELECT COUNT(*) FROM {$this->main_table} t 
+                     WHERE t.postcode = %s",
                     $postcode
                 ));
                 if ($exists > 0) {
@@ -144,10 +137,9 @@ class QRCodeTracker_Search {
                 }
             }
             
-            // Try to match as reporting ID (case-insensitive) - only with scan data
+            // Try to match as reporting ID (case-insensitive)
             $reporting_id = $wpdb->get_var($wpdb->prepare(
-                "SELECT DISTINCT t.reporting_id FROM {$this->log_table} l 
-                 JOIN {$this->main_table} t ON l.tracker_id = t.id 
+                "SELECT DISTINCT t.reporting_id FROM {$this->main_table} t 
                  WHERE LOWER(t.reporting_id) = LOWER(%s) AND t.reporting_id IS NOT NULL AND t.reporting_id != '' 
                  LIMIT 1",
                 $search_term
@@ -157,11 +149,10 @@ class QRCodeTracker_Search {
                 continue;
             }
             
-            // Try to match as city name (case-insensitive) - only with scan data
+            // Try to match as city name (case-insensitive)
             $city = $wpdb->get_var($wpdb->prepare(
-                "SELECT DISTINCT l.city FROM {$this->log_table} l 
-                 JOIN {$this->main_table} t ON l.tracker_id = t.id 
-                 WHERE LOWER(l.city) = LOWER(%s) AND l.city IS NOT NULL AND l.city != '' 
+                "SELECT DISTINCT t.city FROM {$this->main_table} t 
+                 WHERE LOWER(t.city) = LOWER(%s) AND t.city IS NOT NULL AND t.city != '' 
                  LIMIT 1",
                 $search_term
             ));
@@ -170,11 +161,10 @@ class QRCodeTracker_Search {
                 continue;
             }
             
-            // Try to match as tree value (case-insensitive) - only with scan data
+            // Try to match as tree value (case-insensitive)
             $tree = $wpdb->get_var($wpdb->prepare(
-                "SELECT DISTINCT l.tree FROM {$this->log_table} l 
-                 JOIN {$this->main_table} t ON l.tracker_id = t.id 
-                 WHERE LOWER(l.tree) = LOWER(%s) AND l.tree IS NOT NULL AND l.tree != '' 
+                "SELECT DISTINCT t.tree FROM {$this->main_table} t 
+                 WHERE LOWER(t.tree) = LOWER(%s) AND t.tree IS NOT NULL AND t.tree != '' 
                  LIMIT 1",
                 $search_term
             ));
@@ -183,10 +173,9 @@ class QRCodeTracker_Search {
                 continue;
             }
             
-            // If no exact match, try partial matches - only with scan data
+            // If no exact match, try partial matches
             $partial_reporting_id = $wpdb->get_var($wpdb->prepare(
-                "SELECT DISTINCT t.reporting_id FROM {$this->log_table} l 
-                 JOIN {$this->main_table} t ON l.tracker_id = t.id 
+                "SELECT DISTINCT t.reporting_id FROM {$this->main_table} t 
                  WHERE LOWER(t.reporting_id) LIKE LOWER(%s) AND t.reporting_id IS NOT NULL AND t.reporting_id != '' 
                  LIMIT 1",
                 '%' . $search_term . '%'
@@ -197,9 +186,8 @@ class QRCodeTracker_Search {
             }
             
             $partial_city = $wpdb->get_var($wpdb->prepare(
-                "SELECT DISTINCT l.city FROM {$this->log_table} l 
-                 JOIN {$this->main_table} t ON l.tracker_id = t.id 
-                 WHERE LOWER(l.city) LIKE LOWER(%s) AND l.city IS NOT NULL AND l.city != '' 
+                "SELECT DISTINCT t.city FROM {$this->main_table} t 
+                 WHERE LOWER(t.city) LIKE LOWER(%s) AND t.city IS NOT NULL AND t.city != '' 
                  LIMIT 1",
                 '%' . $search_term . '%'
             ));
@@ -209,9 +197,8 @@ class QRCodeTracker_Search {
             }
             
             $partial_tree = $wpdb->get_var($wpdb->prepare(
-                "SELECT DISTINCT l.tree FROM {$this->log_table} l 
-                 JOIN {$this->main_table} t ON l.tracker_id = t.id 
-                 WHERE LOWER(l.tree) LIKE LOWER(%s) AND l.tree IS NOT NULL AND l.tree != '' 
+                "SELECT DISTINCT t.tree FROM {$this->main_table} t 
+                 WHERE LOWER(t.tree) LIKE LOWER(%s) AND t.tree IS NOT NULL AND t.tree != '' 
                  LIMIT 1",
                 '%' . $search_term . '%'
             ));
@@ -221,9 +208,8 @@ class QRCodeTracker_Search {
             }
             
             $partial_postcode = $wpdb->get_var($wpdb->prepare(
-                "SELECT DISTINCT l.postcode FROM {$this->log_table} l 
-                 JOIN {$this->main_table} t ON l.tracker_id = t.id 
-                 WHERE LOWER(l.postcode) LIKE LOWER(%s) AND l.postcode IS NOT NULL AND l.postcode != '' 
+                "SELECT DISTINCT t.postcode FROM {$this->main_table} t 
+                 WHERE LOWER(t.postcode) LIKE LOWER(%s) AND t.postcode IS NOT NULL AND t.postcode != '' 
                  LIMIT 1",
                 '%' . $search_term . '%'
             ));
@@ -332,35 +318,32 @@ class QRCodeTracker_Search {
         global $wpdb;
         $suggestions = [];
         
-        // Search in postcodes
+         // Search in postcodes
         $postcodes = $wpdb->get_col($wpdb->prepare(
-            "SELECT DISTINCT l.postcode 
-             FROM {$this->log_table} l 
-             JOIN {$this->main_table} t ON l.tracker_id = t.id 
-             WHERE l.postcode LIKE %s AND l.postcode IS NOT NULL AND l.postcode != '' 
-             ORDER BY l.postcode 
+            "SELECT DISTINCT t.postcode 
+             FROM {$this->main_table} t
+             WHERE t.postcode LIKE %s AND t.postcode IS NOT NULL AND t.postcode != '' 
+             ORDER BY t.postcode 
              LIMIT 3",
             '%' . $wpdb->esc_like($query) . '%'
         ));
         
         // Search in cities
         $cities = $wpdb->get_col($wpdb->prepare(
-            "SELECT DISTINCT l.city 
-             FROM {$this->log_table} l 
-             JOIN {$this->main_table} t ON l.tracker_id = t.id 
-             WHERE l.city LIKE %s AND l.city IS NOT NULL AND l.city != '' 
-             ORDER BY l.city 
+            "SELECT DISTINCT t.city 
+             FROM {$this->main_table} t
+             WHERE t.city LIKE %s AND t.city IS NOT NULL AND t.city != '' 
+             ORDER BY t.city 
              LIMIT 3",
             '%' . $wpdb->esc_like($query) . '%'
         ));
         
         // Search in trees
         $trees = $wpdb->get_col($wpdb->prepare(
-            "SELECT DISTINCT l.tree 
-             FROM {$this->log_table} l 
-             JOIN {$this->main_table} t ON l.tracker_id = t.id 
-             WHERE l.tree LIKE %s AND l.tree IS NOT NULL AND l.tree != '' 
-             ORDER BY l.tree 
+            "SELECT DISTINCT t.tree 
+             FROM {$this->main_table} t
+             WHERE t.tree LIKE %s AND t.tree IS NOT NULL AND t.tree != '' 
+             ORDER BY t.tree 
              LIMIT 3",
             '%' . $wpdb->esc_like($query) . '%'
         ));
@@ -368,8 +351,7 @@ class QRCodeTracker_Search {
         // Search in reporting IDs
         $reporting_ids = $wpdb->get_col($wpdb->prepare(
             "SELECT DISTINCT t.reporting_id 
-             FROM {$this->log_table} l 
-             JOIN {$this->main_table} t ON l.tracker_id = t.id 
+             FROM {$this->main_table} t
              WHERE t.reporting_id LIKE %s AND t.reporting_id IS NOT NULL AND t.reporting_id != '' 
              ORDER BY t.reporting_id 
              LIMIT 3",
