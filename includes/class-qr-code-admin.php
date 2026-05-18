@@ -455,20 +455,14 @@ class QRCodeTracker_Admin {
                     echo '<div class="notice notice-info"><p><strong>Anonymous Link:</strong> <a href="' . esc_url($anonymous_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($anonymous_url) . '</a><br><span class="description">Share this short link externally. Existing legacy links continue to work.</span></p></div>';
                 }
             }
-            if (empty($edit_data->edit_token)) {
-                $edit_data->edit_token = $this->tracker->generate_unique_edit_token();
-                $wpdb->update($this->main_table, ['edit_token' => $edit_data->edit_token], ['id' => $edit_data->id]);
-            }
             $management_url = $edit_data->team_id
                 ? $this->tracker->generate_team_management_url((int) $edit_data->team_id)
-                : (!empty($edit_data->edit_token) ? $this->tracker->generate_qr_management_url($edit_data->edit_token) : '');
+                : '';
             if (!empty($management_url)) {
-                if ($edit_data->team_id) {
-                    $team_management_description = 'Share this link with someone who can log in (or create a WordPress account), request team access, and then manage QR codes for this team.';
-                    echo '<div class="notice notice-info"><p><strong>Team Management Link:</strong> <a href="' . esc_url($management_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($management_url) . '</a><br><span class="description">' . esc_html($team_management_description) . '</span></p></div>';
-                } else {
-                    echo '<div class="notice notice-info"><p><strong>Management Link:</strong> <a href="' . esc_url($management_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($management_url) . '</a><br><span class="description">Share this link with someone who can log in or create a WordPress account, then edit this QR code\'s message/details.</span></p></div>';
-                }
+                $team_management_description = 'Share this link with someone who can log in (or create a WordPress account), request team access, and then manage QR codes for this team.';
+                echo '<div class="notice notice-info"><p><strong>Team Management Link:</strong> <a href="' . esc_url($management_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($management_url) . '</a><br><span class="description">' . esc_html($team_management_description) . '</span></p></div>';
+            } else {
+                echo '<div class="notice notice-warning"><p><strong>Team Management Link:</strong> unavailable until this QR code is assigned to a team.</p></div>';
             }
             echo '<form method="post" id="qr-edit-form">
                 <input type="hidden" name="qr_edit_id" value="' . $edit_data->id . '">
@@ -795,11 +789,6 @@ class QRCodeTracker_Admin {
                 }
             }
 
-            if (empty($row->edit_token)) {
-                $row->edit_token = $this->tracker->generate_unique_edit_token();
-                $wpdb->update($this->main_table, ['edit_token' => $row->edit_token], ['id' => $row->id]);
-            }
-
             $url_display = '<code>' . esc_html($row->url) . '</code>';
             $anonymous_url = !empty($row->short_code) ? $this->tracker->generate_anonymous_tracker_url($row->short_code) : '';
             if (!empty($anonymous_url) && untrailingslashit($anonymous_url) !== untrailingslashit($row->url)) {
@@ -807,9 +796,9 @@ class QRCodeTracker_Admin {
             }
             $management_url = $row->team_id
                 ? $this->tracker->generate_team_management_url((int) $row->team_id)
-                : (!empty($row->edit_token) ? $this->tracker->generate_qr_management_url($row->edit_token) : '');
+                : '';
             if (!empty($management_url)) {
-                $url_display .= '<br><code>' . esc_html($management_url) . '</code><br><span class="description">' . ($row->team_id ? 'Team management link' : 'Management link') . '</span>';
+                $url_display .= '<br><code>' . esc_html($management_url) . '</code><br><span class="description">Team management link</span>';
             }
             
             echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td>{$url_display}</td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>{$row->last_scanned}</td>";
@@ -2051,19 +2040,15 @@ window.showRollupDayChart = function() {
         $subject = sprintf('[%s] Your QR access request was approved', wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES));
         $management_url = !empty($request->team_id)
             ? $this->tracker->generate_team_management_url((int) $request->team_id)
-            : (!empty($request->edit_token) ? $this->tracker->generate_qr_management_url($request->edit_token) : '');
-        $message = !empty($request->team_id)
-            ? "Your request to manage a team has been approved.\n\n"
-            : "Your request to manage a QR code has been approved.\n\n";
+            : '';
+        $message = "Your request to manage a team has been approved.\n\n";
         $message .= 'Postcode: ' . $request->postcode . "\n";
         $message .= 'City: ' . $request->city . "\n";
         $message .= 'Tree: ' . $request->tree . "\n";
         if (!empty($management_url)) {
-            $message .= (!empty($request->team_id) ? 'Team Management Link: ' : 'Management Link: ') . $management_url . "\n";
+            $message .= 'Team Management Link: ' . $management_url . "\n";
         }
-        $message .= !empty($request->team_id)
-            ? "\nLog in to your account to manage this team's QR codes.\n"
-            : "\nLog in to your account to manage this QR code.\n";
+        $message .= "\nLog in to your account to manage this team's QR codes.\n";
 
         wp_mail(sanitize_email($user->user_email), $subject, $message);
     }
