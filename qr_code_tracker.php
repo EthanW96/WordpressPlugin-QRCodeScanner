@@ -914,17 +914,28 @@ class QRCodeTracker {
         wp_mail($emails, $subject, $message);
     }
 
-    private function get_team_tree_count($team_id) {
+    /**
+     * Get the number of trees (QR rows) currently assigned to a team.
+     *
+     * @param int $team_id Team ID.
+     * @return int Returns 0 when team ID is invalid, no trees are assigned, or count lookup fails.
+     */
+    public function get_team_tree_count($team_id) {
         $team_id = (int) $team_id;
         if ($team_id <= 0) {
             return 0;
         }
 
         global $wpdb;
-        return (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$this->main_table} WHERE team_id = %d",
+        $team_table = $wpdb->prefix . 'qr_tracker';
+        $team_tree_count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$team_table} WHERE team_id = %d",
             $team_id
         ));
+        if ($team_tree_count === null || $team_tree_count === false) {
+            return 0;
+        }
+        return (int) $team_tree_count;
     }
 
     private function render_team_management_access_request_page($team, $request_qr_code = null, $notice = '') {
