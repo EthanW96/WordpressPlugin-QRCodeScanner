@@ -1142,9 +1142,6 @@ class QRCodeTracker {
         }
 
         $milestone_key = 'qr_tracker_milestone_' . (int) $qr_row->id . '_' . (int) $new_scan_count;
-        if (get_option($milestone_key, false) !== false) {
-            return;
-        }
         if (!add_option($milestone_key, current_time('mysql'), '', false)) {
             return;
         }
