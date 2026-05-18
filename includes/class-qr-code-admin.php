@@ -464,7 +464,8 @@ class QRCodeTracker_Admin {
                 : (!empty($edit_data->edit_token) ? $this->tracker->generate_qr_management_url($edit_data->edit_token) : '');
             if (!empty($management_url)) {
                 if ($edit_data->team_id) {
-                    echo '<div class="notice notice-info"><p><strong>Team Management Link:</strong> <a href="' . esc_url($management_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($management_url) . '</a><br><span class="description">Share this link with someone who can log in (or create a WordPress account), request team access, and then manage QR codes for this team.</span></p></div>';
+                    $team_management_description = 'Share this link with someone who can log in (or create a WordPress account), request team access, and then manage QR codes for this team.';
+                    echo '<div class="notice notice-info"><p><strong>Team Management Link:</strong> <a href="' . esc_url($management_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($management_url) . '</a><br><span class="description">' . esc_html($team_management_description) . '</span></p></div>';
                 } else {
                     echo '<div class="notice notice-info"><p><strong>Management Link:</strong> <a href="' . esc_url($management_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($management_url) . '</a><br><span class="description">Share this link with someone who can log in or create a WordPress account, then edit this QR code\'s message/details.</span></p></div>';
                 }
@@ -2051,14 +2052,18 @@ window.showRollupDayChart = function() {
         $management_url = !empty($request->team_id)
             ? $this->tracker->generate_team_management_url((int) $request->team_id)
             : (!empty($request->edit_token) ? $this->tracker->generate_qr_management_url($request->edit_token) : '');
-        $message = "Your request to manage a QR code has been approved.\n\n";
+        $message = !empty($request->team_id)
+            ? "Your request to manage a team has been approved.\n\n"
+            : "Your request to manage a QR code has been approved.\n\n";
         $message .= 'Postcode: ' . $request->postcode . "\n";
         $message .= 'City: ' . $request->city . "\n";
         $message .= 'Tree: ' . $request->tree . "\n";
         if (!empty($management_url)) {
             $message .= (!empty($request->team_id) ? 'Team Management Link: ' : 'Management Link: ') . $management_url . "\n";
         }
-        $message .= "\nLog in to your account to manage this QR code.\n";
+        $message .= !empty($request->team_id)
+            ? "\nLog in to your account to manage this team's QR codes.\n"
+            : "\nLog in to your account to manage this QR code.\n";
 
         wp_mail(sanitize_email($user->user_email), $subject, $message);
     }
@@ -2319,7 +2324,10 @@ window.showRollupDayChart = function() {
         // Display teams list
         $teams = $this->teams->get_all_teams_stats();
         echo '<h2>Teams Overview</h2>';
-        echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Team Name</th><th>City/Town</th><th>QR Codes</th><th>Total Scans</th><th>Active QR Codes</th><th>Members</th><th>Management Link</th><th>Actions</th></tr></thead><tbody>';
+        echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr>';
+        echo '<th>Team Name</th><th>City/Town</th><th>QR Codes</th><th>Total Scans</th>';
+        echo '<th>Active QR Codes</th><th>Members</th><th>Management Link</th><th>Actions</th>';
+        echo '</tr></thead><tbody>';
         
         foreach ($teams as $team) {
             $edit_url = esc_url(add_query_arg(['edit_team' => $team->id]));

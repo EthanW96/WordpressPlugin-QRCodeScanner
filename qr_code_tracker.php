@@ -563,18 +563,18 @@ class QRCodeTracker {
             return '';
         }
 
-        $signature = substr(hash_hmac('sha256', 'qr-team-manage:' . $team_id, wp_salt('auth')), 0, 32);
+        $signature = hash_hmac('sha256', 'qr-team-manage:' . $team_id, wp_salt('auth'));
         return add_query_arg(['qr_manage_team' => $team_id . '-' . $signature], home_url('/'));
     }
 
     private function parse_team_management_token($team_management_token) {
-        $team_management_token = strtolower(sanitize_text_field((string) $team_management_token));
-        if (!preg_match('/^([1-9][0-9]*)-([a-f0-9]{32})$/', $team_management_token, $matches)) {
+        $team_management_token = sanitize_text_field((string) $team_management_token);
+        if (!preg_match('/^([1-9][0-9]*)-([a-f0-9]{64})$/', $team_management_token, $matches)) {
             return 0;
         }
 
         $team_id = (int) $matches[1];
-        $expected_signature = substr(hash_hmac('sha256', 'qr-team-manage:' . $team_id, wp_salt('auth')), 0, 32);
+        $expected_signature = hash_hmac('sha256', 'qr-team-manage:' . $team_id, wp_salt('auth'));
         if (!hash_equals($expected_signature, $matches[2])) {
             return 0;
         }
@@ -689,7 +689,7 @@ class QRCodeTracker {
         }
 
         $edit_token = isset($_GET['qr_manage']) ? strtolower(sanitize_text_field(wp_unslash($_GET['qr_manage']))) : '';
-        $team_management_token = isset($_GET['qr_manage_team']) ? strtolower(sanitize_text_field(wp_unslash($_GET['qr_manage_team']))) : '';
+        $team_management_token = isset($_GET['qr_manage_team']) ? sanitize_text_field(wp_unslash($_GET['qr_manage_team'])) : '';
         if (empty($edit_token) && empty($team_management_token)) {
             return;
         }
@@ -758,9 +758,11 @@ class QRCodeTracker {
                     }
                 }
                 $this->render_team_management_access_request_page($team, $request_qr_code, $request_notice);
+                return;
             }
 
             $this->render_team_management_page($team);
+            return;
         }
 
         $team_id = isset($qr_code->team_id) ? (int) $qr_code->team_id : 0;
@@ -1013,22 +1015,44 @@ class QRCodeTracker {
 
         echo '<p>Select a QR code to edit its details.</p>';
         echo '<table class="widefat striped"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Action</th></tr></thead><tbody>';
+        $has_link_generation_errors = false;
         foreach ($qr_codes as $qr_code) {
             if (empty($qr_code->edit_token)) {
-                $qr_code->edit_token = $this->generate_unique_edit_token();
-                $wpdb->update($this->main_table, ['edit_token' => $qr_code->edit_token], ['id' => $qr_code->id]);
+                $new_edit_token = $this->generate_unique_edit_token();
+                $token_update_result = $wpdb->update(
+                    $this->main_table,
+                    ['edit_token' => $new_edit_token],
+                    ['id' => (int) $qr_code->id],
+                    ['%s'],
+                    ['%d']
+                );
+                if ($token_update_result !== false) {
+                    $qr_code->edit_token = $new_edit_token;
+                } else {
+                    $has_link_generation_errors = true;
+                    if (!empty($wpdb->last_error)) {
+                        error_log('QR Code Tracker: Failed to save edit token for QR ID ' . (int) $qr_code->id . '. DB error: ' . $wpdb->last_error);
+                    }
+                }
             }
 
-            $management_url = $this->generate_qr_management_url($qr_code->edit_token);
+            $management_url = !empty($qr_code->edit_token) ? $this->generate_qr_management_url($qr_code->edit_token) : '';
             echo '<tr>';
             echo '<td>' . esc_html($qr_code->postcode) . '</td>';
             echo '<td>' . esc_html($qr_code->city) . '</td>';
             echo '<td>' . esc_html($qr_code->tree) . '</td>';
             echo '<td>' . esc_html($qr_code->label) . '</td>';
-            echo '<td><a class="button button-primary" href="' . esc_url($management_url) . '">Manage QR Code</a></td>';
+            if (!empty($management_url)) {
+                echo '<td><a class="button button-primary" href="' . esc_url($management_url) . '">Manage QR Code</a></td>';
+            } else {
+                echo '<td><span class="description">Management link unavailable</span></td>';
+            }
             echo '</tr>';
         }
         echo '</tbody></table>';
+        if ($has_link_generation_errors) {
+            echo '<div class="notice notice-warning" style="padding:10px;margin:10px 0;"><p>Some management links could not be generated. Please refresh or contact an administrator.</p></div>';
+        }
         echo '</div>';
         get_footer();
         exit;
