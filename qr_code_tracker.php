@@ -683,7 +683,7 @@ class QRCodeTracker {
         $team_management_token = isset($_GET['qr_manage_team']) ? sanitize_text_field(wp_unslash($_GET['qr_manage_team'])) : '';
         if (empty($team_management_token)) {
             if (isset($_GET['qr_manage'])) {
-                wp_die('This QR management link is no longer supported. Use a team management link instead.', 'QR Code Manager', ['response' => 404]);
+                wp_die('Individual QR management links are no longer supported. Please contact your team administrator to obtain the team management link.', 'QR Code Manager', ['response' => 410]);
             }
             return;
         }
@@ -736,7 +736,7 @@ class QRCodeTracker {
             return;
         }
 
-        $selected_qr_id = isset($_GET['team_qr_id']) ? (int) $_GET['team_qr_id'] : 0;
+        $selected_qr_id = isset($_GET['team_qr_id']) ? absint($_GET['team_qr_id']) : 0;
         if ($selected_qr_id > 0) {
             $qr_code = $wpdb->get_row($wpdb->prepare(
                 "SELECT * FROM {$this->main_table} WHERE id = %d AND team_id = %d LIMIT 1",
@@ -744,7 +744,7 @@ class QRCodeTracker {
                 (int) $team->id
             ));
             if (!$qr_code) {
-                wp_die('Invalid QR code selection for this team.', 'QR Code Manager', ['response' => 404]);
+                wp_die('The selected QR code could not be found.', 'QR Code Manager', ['response' => 404]);
             }
             $this->render_team_qr_management_page($team, $qr_code);
             return;
@@ -753,6 +753,13 @@ class QRCodeTracker {
         $this->render_team_management_page($team);
     }
 
+    /**
+     * Render the team-scoped QR management form for a selected team QR code.
+     *
+     * @param object $team Team record object.
+     * @param object $qr_code QR code record object that belongs to the team.
+     * @return void
+     */
     private function render_team_qr_management_page($team, $qr_code) {
         global $wpdb;
 

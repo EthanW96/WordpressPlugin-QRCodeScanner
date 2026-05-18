@@ -462,7 +462,7 @@ class QRCodeTracker_Admin {
                 $team_management_description = 'Share this link with someone who can log in (or create a WordPress account), request team access, and then manage QR codes for this team.';
                 echo '<div class="notice notice-info"><p><strong>Team Management Link:</strong> <a href="' . esc_url($management_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($management_url) . '</a><br><span class="description">' . esc_html($team_management_description) . '</span></p></div>';
             } else {
-                echo '<div class="notice notice-warning"><p><strong>Team Management Link:</strong> unavailable until this QR code is assigned to a team.</p></div>';
+                echo '<div class="notice notice-warning"><p><strong>Team Management Link:</strong> This QR code must be assigned to a team before it can be managed. Edit this QR code and choose a team in the Team field to generate a management link.</p></div>';
             }
             echo '<form method="post" id="qr-edit-form">
                 <input type="hidden" name="qr_edit_id" value="' . $edit_data->id . '">
