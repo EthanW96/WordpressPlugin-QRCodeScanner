@@ -1134,6 +1134,14 @@ class QRCodeTracker {
             return;
         }
 
+        $milestone_key = 'qr_tracker_milestone_' . (int) $qr_row->id . '_' . (int) $new_scan_count;
+        if (get_option($milestone_key, false) !== false) {
+            return;
+        }
+        if (!add_option($milestone_key, current_time('mysql'), '', false)) {
+            return;
+        }
+
         $report_url = admin_url('admin.php?page=qr-single-report&qr_id=' . (int) $qr_row->id);
         $manage_url = !empty($qr_row->edit_token) ? $this->generate_qr_management_url($qr_row->edit_token) : '';
 
@@ -1149,7 +1157,13 @@ class QRCodeTracker {
             $message .= 'Manage this QR code: ' . esc_url_raw($manage_url) . "\n";
         }
 
-        wp_mail($recipients, $subject, $message);
+        $sent = wp_mail($recipients, $subject, $message);
+        if (!$sent) {
+            delete_option($milestone_key);
+            if ((int) get_option('qr_tracker_debug_mode', 0) === 1 || (defined('WP_DEBUG') && WP_DEBUG)) {
+                error_log('QR Tracker: milestone email failed for QR ID ' . (int) $qr_row->id . ' at scan count ' . (int) $new_scan_count);
+            }
+        }
     }
 
     public function validate_tree_checkout_fields($passed, $product_id) {
@@ -1387,7 +1401,10 @@ class QRCodeTracker {
             $message .= 'Manage this QR code: ' . esc_url_raw($manage_link) . "\n";
         }
 
-        wp_mail($recipients, $subject, $message);
+        $sent = wp_mail($recipients, $subject, $message);
+        if (!$sent && ((int) get_option('qr_tracker_debug_mode', 0) === 1 || (defined('WP_DEBUG') && WP_DEBUG))) {
+            error_log('QR Tracker: initial report email failed for QR ID ' . (int) $record_id);
+        }
     }
 
     public function create_qr_records_for_completed_order($order_id) {
