@@ -1145,7 +1145,7 @@ class QRCodeTracker {
         if (get_transient($milestone_key) !== false) {
             return;
         }
-        set_transient($milestone_key, current_time('mysql'), 5 * YEAR_IN_SECONDS);
+        set_transient($milestone_key, current_time('mysql'), 2 * WEEK_IN_SECONDS);
 
         $report_url = admin_url('admin.php?page=qr-single-report&qr_id=' . (int) $qr_row->id);
         $manage_url = !empty($qr_row->edit_token) ? $this->generate_qr_management_url($qr_row->edit_token) : '';
