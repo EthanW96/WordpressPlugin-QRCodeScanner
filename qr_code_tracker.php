@@ -552,12 +552,29 @@ class QRCodeTracker {
         return home_url('/' . rawurlencode($short_code));
     }
 
-    public function generate_qr_management_url($edit_token) {
-        $edit_token = strtolower(sanitize_text_field((string) $edit_token));
-        if (empty($edit_token)) {
+    public function generate_team_management_url($team_id) {
+        $team_id = (int) $team_id;
+        if ($team_id <= 0) {
             return '';
         }
-        return add_query_arg(['qr_manage' => $edit_token], home_url('/'));
+
+        $signature = hash_hmac('sha256', 'qr-team-manage:' . $team_id, wp_salt('auth'));
+        return add_query_arg(['qr_manage_team' => $team_id . '-' . $signature], home_url('/'));
+    }
+
+    private function parse_team_management_token($team_management_token) {
+        $team_management_token = sanitize_text_field((string) $team_management_token);
+        if (!preg_match('/^([1-9][0-9]*)-([a-f0-9]{64})$/', $team_management_token, $matches)) {
+            return 0;
+        }
+
+        $team_id = (int) $matches[1];
+        $expected_signature = hash_hmac('sha256', 'qr-team-manage:' . $team_id, wp_salt('auth'));
+        if (!hash_equals($expected_signature, $matches[2])) {
+            return 0;
+        }
+
+        return $team_id;
     }
 
     public function generate_unique_edit_token($length = self::EDIT_TOKEN_LENGTH) {
@@ -623,7 +640,7 @@ class QRCodeTracker {
             return;
         }
 
-        if (isset($_GET['qr']) || isset($_GET['postcode']) || isset($_GET['city']) || isset($_GET['tree']) || isset($_GET['qr_manage'])) {
+        if (isset($_GET['qr']) || isset($_GET['postcode']) || isset($_GET['city']) || isset($_GET['tree']) || isset($_GET['qr_manage']) || isset($_GET['qr_manage_team'])) {
             return;
         }
 
@@ -666,29 +683,29 @@ class QRCodeTracker {
             return;
         }
 
-        $edit_token = isset($_GET['qr_manage']) ? strtolower(sanitize_text_field(wp_unslash($_GET['qr_manage']))) : '';
-        if (empty($edit_token)) {
+        $team_management_token = isset($_GET['qr_manage_team']) ? sanitize_text_field(wp_unslash($_GET['qr_manage_team'])) : '';
+        if (empty($team_management_token)) {
+            if (isset($_GET['qr_manage'])) {
+                wp_die('Individual QR management links are no longer supported. Please contact your team administrator to obtain the team management link.', 'QR Code Manager', ['response' => 410]);
+            }
             return;
         }
-        if (!preg_match('/^[a-z0-9]{' . self::EDIT_TOKEN_MIN_LENGTH . ',' . self::EDIT_TOKEN_MAX_LENGTH . '}$/', $edit_token)) {
-            wp_die('Invalid QR code management link.', 'QR Code Manager', ['response' => 404]);
+
+        $team_id = $this->parse_team_management_token($team_management_token);
+        if ($team_id <= 0) {
+            wp_die('Invalid team management link.', 'QR Code Manager', ['response' => 404]);
         }
 
-        global $wpdb;
-        $qr_code = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$this->main_table} WHERE edit_token = %s LIMIT 1",
-            $edit_token
-        ));
-
-        if (!$qr_code) {
-            wp_die('Invalid QR code management link.', 'QR Code Manager', ['response' => 404]);
+        $team = $this->teams->get_team($team_id);
+        if (!$team) {
+            wp_die('Invalid team management link.', 'QR Code Manager', ['response' => 404]);
         }
 
         if (!is_user_logged_in()) {
             $request_url = esc_url_raw(add_query_arg([]));
             $login_url = wp_login_url($request_url);
             $register_url = add_query_arg(['redirect_to' => $request_url], wp_registration_url());
-            $message = '<p>You must log in to manage this QR code.</p>';
+            $message = '<p>You must log in to manage this team.</p>';
             $message .= '<p><a class="button button-primary" href="' . esc_url($login_url) . '">Log in</a></p>';
             if (get_option('users_can_register')) {
                 $message .= '<p><a href="' . esc_url($register_url) . '">Create an account</a></p>';
@@ -697,25 +714,57 @@ class QRCodeTracker {
             wp_die($message, 'QR Code Manager', ['response' => 403]);
         }
 
+        global $wpdb;
         $user_id = get_current_user_id();
-        $team_id = isset($qr_code->team_id) ? (int) $qr_code->team_id : 0;
-        $can_access_qr = $team_id > 0 && $this->teams->user_can_access_team($user_id, $team_id);
-        if (!$can_access_qr) {
+        if (!$this->teams->user_can_access_team($user_id, (int) $team->id)) {
             $request_notice = '';
+            $request_qr_code = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$this->main_table} WHERE team_id = %d ORDER BY id ASC LIMIT 1",
+                (int) $team->id
+            ));
+
             if (isset($_POST['qr_request_access_submit'])) {
-                check_admin_referer('qr_manage_request_' . $qr_code->id);
-                if ($team_id > 0) {
-                    if ($this->submit_qr_access_request($qr_code, $user_id)) {
-                        $request_notice = '<div class="notice notice-success" style="padding:10px;margin:10px 0;"><p>Your access request was submitted and reviewers were notified.</p></div>';
+                check_admin_referer('qr_manage_team_request_' . (int) $team->id);
+                if ($request_qr_code) {
+                    if ($this->submit_qr_access_request($request_qr_code, $user_id)) {
+                        $request_notice = '<div class="notice notice-success" style="padding:10px;margin:10px 0;"><p>Your team access request was submitted and reviewers were notified.</p></div>';
                     } else {
                         $request_notice = '<div class="notice notice-error" style="padding:10px;margin:10px 0;"><p>Unable to submit your request. Please try again.</p></div>';
                     }
                 } else {
-                    $request_notice = '<div class="notice notice-error" style="padding:10px;margin:10px 0;"><p>Access cannot be requested for this QR code right now.</p></div>';
+                    $request_notice = '<div class="notice notice-error" style="padding:10px;margin:10px 0;"><p>Access cannot be requested for this team right now.</p></div>';
                 }
             }
-            $this->render_qr_management_access_request_page($qr_code, $request_notice);
+            $this->render_team_management_access_request_page($team, $request_qr_code, $request_notice);
+            return;
         }
+
+        $selected_qr_id = isset($_GET['team_qr_id']) ? absint($_GET['team_qr_id']) : 0;
+        if ($selected_qr_id > 0) {
+            $qr_code = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$this->main_table} WHERE id = %d AND team_id = %d LIMIT 1",
+                $selected_qr_id,
+                (int) $team->id
+            ));
+            if (!$qr_code) {
+                wp_die('The selected QR code could not be found.', 'QR Code Manager', ['response' => 404]);
+            }
+            $this->render_team_qr_management_page($team, $qr_code);
+            return;
+        }
+
+        $this->render_team_management_page($team);
+    }
+
+    /**
+     * Render the team-scoped QR management form for a selected team QR code.
+     *
+     * @param object $team Team record object.
+     * @param object $qr_code QR code record object that belongs to the team.
+     * @return void
+     */
+    private function render_team_qr_management_page($team, $qr_code) {
+        global $wpdb;
 
         $notice = '';
         if (isset($_POST['qr_manage_submit'])) {
@@ -745,7 +794,10 @@ class QRCodeTracker {
         nocache_headers();
         get_header();
         echo '<div class="wrap" style="max-width:900px;margin:40px auto;padding:20px;">';
+        $back_link = $this->generate_team_management_url((int) $team->id);
+        echo '<p><a href="' . esc_url($back_link) . '">← Back to Team QR Codes</a></p>';
         echo '<h1>Manage QR Code</h1>';
+        echo '<p><strong>Team:</strong> ' . esc_html($team->name) . '</p>';
         echo '<p><strong>Postcode:</strong> ' . esc_html($qr_code->postcode) . ' &nbsp; <strong>City:</strong> ' . esc_html($qr_code->city) . ' &nbsp; <strong>Tree:</strong> ' . esc_html($qr_code->tree) . '</p>';
         echo wp_kses_post($notice);
         echo '<form method="post">';
@@ -835,39 +887,78 @@ class QRCodeTracker {
         }
 
         $subject = sprintf('[%s] QR access request pending review', wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES));
-        $management_url = !empty($qr_code->edit_token) ? $this->generate_qr_management_url($qr_code->edit_token) : '';
+        $team_id = isset($qr_code->team_id) ? (int) $qr_code->team_id : 0;
+        $management_url = $team_id > 0 ? $this->generate_team_management_url($team_id) : '';
+        $team_name = '';
+        if ($team_id > 0) {
+            $team = $this->teams->get_team($team_id);
+            if ($team && !empty($team->name)) {
+                $team_name = $team->name;
+            }
+        }
+        $team_tree_count = $this->get_team_tree_count($team_id);
         $review_url = admin_url('admin.php?page=qr-teams');
-        $message = "A user requested access to manage a QR code.\n\n";
+        $message = "A user requested access to manage a team.\n\n";
         $message .= 'Request ID: ' . $request_id . "\n";
         $message .= 'User: ' . $user->display_name . ' (' . $user->user_email . ")\n";
-        $message .= 'QR ID: ' . (int) $qr_code->id . "\n";
-        $message .= 'Postcode: ' . $qr_code->postcode . "\n";
-        $message .= 'City: ' . $qr_code->city . "\n";
-        $message .= 'Tree: ' . $qr_code->tree . "\n";
+        if (!empty($team_name)) {
+            $message .= 'Team: ' . $team_name . "\n";
+        } elseif ($team_id > 0) {
+            $message .= 'Team ID: ' . $team_id . "\n";
+        }
+        if ($team_id > 0) {
+            $message .= 'Trees in Team: ' . $team_tree_count . "\n";
+        }
         if (!empty($management_url)) {
-            $message .= 'Management Link: ' . $management_url . "\n";
+            $message .= 'Team Management Link: ' . $management_url . "\n";
         }
         $message .= "\nReview requests in WordPress admin:\n" . $review_url . "\n";
 
         wp_mail($emails, $subject, $message);
     }
 
-    private function render_qr_management_access_request_page($qr_code, $notice = '') {
+    /**
+     * Get the number of trees (QR rows) currently assigned to a team.
+     *
+     * @param int $team_id Team ID.
+     * @return int Returns 0 when team ID is invalid, no trees are assigned, or count lookup fails.
+     */
+    public function get_team_tree_count($team_id) {
+        $team_id = (int) $team_id;
+        if ($team_id <= 0) {
+            return 0;
+        }
+
+        global $wpdb;
+        $team_table = $wpdb->prefix . 'qr_tracker';
+        $team_tree_count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$team_table} WHERE team_id = %d",
+            $team_id
+        ));
+        if ($team_tree_count === null || $team_tree_count === false) {
+            return 0;
+        }
+        return (int) $team_tree_count;
+    }
+
+    private function render_team_management_access_request_page($team, $request_qr_code = null, $notice = '') {
         $user_id = get_current_user_id();
-        $team_id = isset($qr_code->team_id) ? (int) $qr_code->team_id : 0;
-        $existing_request = $this->get_qr_access_request((int) $qr_code->id, (int) $user_id);
+        $existing_request = null;
+        if ($request_qr_code) {
+            $existing_request = $this->get_qr_access_request((int) $request_qr_code->id, (int) $user_id);
+        }
 
         status_header(403);
         nocache_headers();
         get_header();
         echo '<div class="wrap" style="max-width:900px;margin:40px auto;padding:20px;">';
         echo '<h1>Access Required</h1>';
-        echo '<p>You do not currently have permission to manage this QR code.</p>';
-        echo '<p><strong>Postcode:</strong> ' . esc_html($qr_code->postcode) . ' &nbsp; <strong>City:</strong> ' . esc_html($qr_code->city) . ' &nbsp; <strong>Tree:</strong> ' . esc_html($qr_code->tree) . '</p>';
+        echo '<p>You do not currently have permission to manage this team.</p>';
+        echo '<p><strong>Team:</strong> ' . esc_html($team->name) . '</p>';
         echo wp_kses_post($notice);
 
-        if ($team_id <= 0) {
-            echo '<p>Access requests are unavailable for this QR code.</p>';
+        if (!$request_qr_code) {
+            echo '<p>Access requests are unavailable for this team right now.</p>';
             echo '</div>';
             get_footer();
             exit;
@@ -876,13 +967,49 @@ class QRCodeTracker {
         if ($existing_request && $existing_request->status === 'pending') {
             echo '<div class="notice notice-info" style="padding:10px;margin:10px 0;"><p>Your access request is pending review.</p></div>';
         } else {
-            echo '<p>Request access and a reviewer will assess it.</p>';
+            echo '<p>Request team access and a reviewer will assess it.</p>';
             echo '<form method="post">';
-            wp_nonce_field('qr_manage_request_' . $qr_code->id);
-            echo '<p><button type="submit" name="qr_request_access_submit" class="button button-primary">Request Access</button></p>';
+            wp_nonce_field('qr_manage_team_request_' . (int) $team->id);
+            echo '<p><button type="submit" name="qr_request_access_submit" class="button button-primary">Request Team Access</button></p>';
             echo '</form>';
         }
 
+        echo '</div>';
+        get_footer();
+        exit;
+    }
+
+    private function render_team_management_page($team) {
+        $qr_codes = $this->teams->get_team_qr_codes((int) $team->id);
+        $team_management_url = $this->generate_team_management_url((int) $team->id);
+
+        status_header(200);
+        nocache_headers();
+        get_header();
+        echo '<div class="wrap" style="max-width:900px;margin:40px auto;padding:20px;">';
+        echo '<h1>Manage Team QR Codes</h1>';
+        echo '<p><strong>Team:</strong> ' . esc_html($team->name) . '</p>';
+
+        if (empty($qr_codes)) {
+            echo '<p>No QR codes are currently assigned to this team.</p>';
+            echo '</div>';
+            get_footer();
+            exit;
+        }
+
+        echo '<p>Select a QR code to edit its details.</p>';
+        echo '<table class="widefat striped"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Action</th></tr></thead><tbody>';
+        foreach ($qr_codes as $qr_code) {
+            $management_url = add_query_arg(['team_qr_id' => (int) $qr_code->id], $team_management_url);
+            echo '<tr>';
+            echo '<td>' . esc_html($qr_code->postcode) . '</td>';
+            echo '<td>' . esc_html($qr_code->city) . '</td>';
+            echo '<td>' . esc_html($qr_code->tree) . '</td>';
+            echo '<td>' . esc_html($qr_code->label) . '</td>';
+            echo '<td><a class="button button-primary" href="' . esc_url($management_url) . '">Manage QR Code</a></td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
         echo '</div>';
         get_footer();
         exit;

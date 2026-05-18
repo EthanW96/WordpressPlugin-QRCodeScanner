@@ -455,13 +455,14 @@ class QRCodeTracker_Admin {
                     echo '<div class="notice notice-info"><p><strong>Anonymous Link:</strong> <a href="' . esc_url($anonymous_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($anonymous_url) . '</a><br><span class="description">Share this short link externally. Existing legacy links continue to work.</span></p></div>';
                 }
             }
-            if (empty($edit_data->edit_token)) {
-                $edit_data->edit_token = $this->tracker->generate_unique_edit_token();
-                $wpdb->update($this->main_table, ['edit_token' => $edit_data->edit_token], ['id' => $edit_data->id]);
-            }
-            $management_url = !empty($edit_data->edit_token) ? $this->tracker->generate_qr_management_url($edit_data->edit_token) : '';
+            $management_url = $edit_data->team_id
+                ? $this->tracker->generate_team_management_url((int) $edit_data->team_id)
+                : '';
             if (!empty($management_url)) {
-                echo '<div class="notice notice-info"><p><strong>Management Link:</strong> <a href="' . esc_url($management_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($management_url) . '</a><br><span class="description">Share this link with someone who can log in or create a WordPress account, then edit this QR code\'s message/details.</span></p></div>';
+                $team_management_description = 'Share this link with someone who can log in (or create a WordPress account), request team access, and then manage QR codes for this team.';
+                echo '<div class="notice notice-info"><p><strong>Team Management Link:</strong> <a href="' . esc_url($management_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($management_url) . '</a><br><span class="description">' . esc_html($team_management_description) . '</span></p></div>';
+            } else {
+                echo '<div class="notice notice-warning"><p><strong>Team Management Link:</strong> This QR code must be assigned to a team before it can be managed. Edit this QR code and choose a team in the Team field to generate a management link.</p></div>';
             }
             echo '<form method="post" id="qr-edit-form">
                 <input type="hidden" name="qr_edit_id" value="' . $edit_data->id . '">
@@ -788,19 +789,16 @@ class QRCodeTracker_Admin {
                 }
             }
 
-            if (empty($row->edit_token)) {
-                $row->edit_token = $this->tracker->generate_unique_edit_token();
-                $wpdb->update($this->main_table, ['edit_token' => $row->edit_token], ['id' => $row->id]);
-            }
-
             $url_display = '<code>' . esc_html($row->url) . '</code>';
             $anonymous_url = !empty($row->short_code) ? $this->tracker->generate_anonymous_tracker_url($row->short_code) : '';
             if (!empty($anonymous_url) && untrailingslashit($anonymous_url) !== untrailingslashit($row->url)) {
                 $url_display .= '<br><code>' . esc_html($anonymous_url) . '</code><br><span class="description">Anonymous link</span>';
             }
-            $management_url = !empty($row->edit_token) ? $this->tracker->generate_qr_management_url($row->edit_token) : '';
+            $management_url = $row->team_id
+                ? $this->tracker->generate_team_management_url((int) $row->team_id)
+                : '';
             if (!empty($management_url)) {
-                $url_display .= '<br><code>' . esc_html($management_url) . '</code><br><span class="description">Management link</span>';
+                $url_display .= '<br><code>' . esc_html($management_url) . '</code><br><span class="description">Team management link</span>';
             }
             
             echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td>{$url_display}</td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>{$row->last_scanned}</td>";
@@ -2039,16 +2037,33 @@ window.showRollupDayChart = function() {
             return;
         }
 
-        $subject = sprintf('[%s] Your QR access request was approved', wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES));
-        $management_url = !empty($request->edit_token) ? $this->tracker->generate_qr_management_url($request->edit_token) : '';
-        $message = "Your request to manage a QR code has been approved.\n\n";
-        $message .= 'Postcode: ' . $request->postcode . "\n";
-        $message .= 'City: ' . $request->city . "\n";
-        $message .= 'Tree: ' . $request->tree . "\n";
-        if (!empty($management_url)) {
-            $message .= 'Management Link: ' . $management_url . "\n";
+        $team_id = isset($request->team_id) ? (int) $request->team_id : 0;
+        $team_name = '';
+        if ($team_id > 0) {
+            $team = $this->teams->get_team($team_id);
+            if ($team && !empty($team->name)) {
+                $team_name = $team->name;
+            }
         }
-        $message .= "\nLog in to your account to manage this QR code.\n";
+        $team_tree_count = $this->tracker->get_team_tree_count($team_id);
+
+        $subject = sprintf('[%s] Your QR access request was approved', wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES));
+        $management_url = $team_id > 0
+            ? $this->tracker->generate_team_management_url($team_id)
+            : '';
+        $message = "Your request to manage a team has been approved.\n\n";
+        if (!empty($team_name)) {
+            $message .= 'Team: ' . $team_name . "\n";
+        } elseif ($team_id > 0) {
+            $message .= 'Team ID: ' . $team_id . "\n";
+        }
+        if ($team_id > 0) {
+            $message .= 'Trees in Team: ' . $team_tree_count . "\n";
+        }
+        if (!empty($management_url)) {
+            $message .= 'Team Management Link: ' . $management_url . "\n";
+        }
+        $message .= "\nLog in to your account to manage this team's QR codes.\n";
 
         wp_mail(sanitize_email($user->user_email), $subject, $message);
     }
@@ -2262,17 +2277,15 @@ window.showRollupDayChart = function() {
         if ($can_review_access_requests) {
             echo '<h2>Pending QR Access Requests</h2>';
             if (!empty($pending_requests)) {
-                echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Requested</th><th>User</th><th>Team</th><th>QR Code</th><th>Actions</th></tr></thead><tbody>';
+                echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Requested</th><th>User</th><th>Team</th><th>Actions</th></tr></thead><tbody>';
                 foreach ($pending_requests as $request) {
                     $user_profile_url = add_query_arg(['user_id' => (int) $request->user_id], admin_url('user-edit.php'));
                     $qr_edit_url = add_query_arg(['page' => 'qr-tracker', 'edit_id' => (int) $request->qr_id], admin_url('admin.php'));
                     $user_text = sprintf('%s (%s)', $request->display_name, $request->user_email);
-                    $qr_text = sprintf('Postcode: %s / City: %s / Tree: %s', $request->postcode, $request->city, $request->tree);
                     echo '<tr>';
                     echo '<td>' . esc_html($request->requested_at) . '</td>';
                     echo '<td><a href="' . esc_url($user_profile_url) . '">' . esc_html($user_text) . '</a></td>';
                     echo '<td>' . esc_html($request->team_name) . '</td>';
-                    echo '<td>' . esc_html($qr_text) . ' (<a href="' . esc_url($qr_edit_url) . '">' . esc_html('View QR Code') . '</a>)</td>';
                     echo '<td>';
                     echo '<form method="post" style="display:inline-block;margin-right:8px;">';
                     wp_nonce_field('qr_access_request_review_' . (int) $request->id);
@@ -2309,11 +2322,15 @@ window.showRollupDayChart = function() {
         // Display teams list
         $teams = $this->teams->get_all_teams_stats();
         echo '<h2>Teams Overview</h2>';
-        echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Team Name</th><th>City/Town</th><th>QR Codes</th><th>Total Scans</th><th>Active QR Codes</th><th>Members</th><th>Actions</th></tr></thead><tbody>';
+        echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr>';
+        echo '<th>Team Name</th><th>City/Town</th><th>QR Codes</th><th>Total Scans</th>';
+        echo '<th>Active QR Codes</th><th>Members</th><th>Management Link</th><th>Actions</th>';
+        echo '</tr></thead><tbody>';
         
         foreach ($teams as $team) {
             $edit_url = esc_url(add_query_arg(['edit_team' => $team->id]));
             $manage_url = esc_url(add_query_arg(['manage_team' => $team->id]));
+            $team_management_url = $this->tracker->generate_team_management_url((int) $team->id);
             
             echo "<tr>";
             echo "<td><strong>" . esc_html($team->name) . "</strong></td>";
@@ -2322,6 +2339,7 @@ window.showRollupDayChart = function() {
             echo "<td>" . number_format($team->total_scans) . "</td>";
             echo "<td>" . number_format($team->active_qr_codes) . "</td>";
             echo "<td>" . number_format($team->member_count) . "</td>";
+            echo "<td><code>" . esc_html($team_management_url) . "</code></td>";
             echo "<td><div class='qr-action-buttons'>";
             
             if ($this->teams->user_can_manage_team(get_current_user_id(), $team->id)) {
