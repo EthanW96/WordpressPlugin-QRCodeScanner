@@ -2037,20 +2037,48 @@ window.showRollupDayChart = function() {
             return;
         }
 
+        $team_id = isset($request->team_id) ? (int) $request->team_id : 0;
+        $team_name = '';
+        if ($team_id > 0) {
+            $team = $this->teams->get_team($team_id);
+            if ($team && !empty($team->name)) {
+                $team_name = $team->name;
+            }
+        }
+        $team_tree_count = $this->get_team_tree_count($team_id);
+
         $subject = sprintf('[%s] Your QR access request was approved', wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES));
-        $management_url = !empty($request->team_id)
-            ? $this->tracker->generate_team_management_url((int) $request->team_id)
+        $management_url = $team_id > 0
+            ? $this->tracker->generate_team_management_url($team_id)
             : '';
         $message = "Your request to manage a team has been approved.\n\n";
-        $message .= 'Postcode: ' . $request->postcode . "\n";
-        $message .= 'City: ' . $request->city . "\n";
-        $message .= 'Tree: ' . $request->tree . "\n";
+        if (!empty($team_name)) {
+            $message .= 'Team: ' . $team_name . "\n";
+        } elseif ($team_id > 0) {
+            $message .= 'Team ID: ' . $team_id . "\n";
+        }
+        if ($team_id > 0) {
+            $message .= 'Trees in Team: ' . $team_tree_count . "\n";
+        }
         if (!empty($management_url)) {
             $message .= 'Team Management Link: ' . $management_url . "\n";
         }
         $message .= "\nLog in to your account to manage this team's QR codes.\n";
 
         wp_mail(sanitize_email($user->user_email), $subject, $message);
+    }
+
+    private function get_team_tree_count($team_id) {
+        $team_id = (int) $team_id;
+        if ($team_id <= 0) {
+            return 0;
+        }
+
+        global $wpdb;
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$this->main_table} WHERE team_id = %d",
+            $team_id
+        ));
     }
 
     /**

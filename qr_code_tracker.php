@@ -884,23 +884,47 @@ class QRCodeTracker {
         }
 
         $subject = sprintf('[%s] QR access request pending review', wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES));
-        $management_url = !empty($qr_code->team_id)
-            ? $this->generate_team_management_url((int) $qr_code->team_id)
-            : '';
+        $team_id = isset($qr_code->team_id) ? (int) $qr_code->team_id : 0;
+        $management_url = $team_id > 0 ? $this->generate_team_management_url($team_id) : '';
+        $team_name = '';
+        if ($team_id > 0) {
+            $team = $this->teams->get_team($team_id);
+            if ($team && !empty($team->name)) {
+                $team_name = $team->name;
+            }
+        }
+        $team_tree_count = $this->get_team_tree_count($team_id);
         $review_url = admin_url('admin.php?page=qr-teams');
-        $message = "A user requested access to manage a QR code.\n\n";
+        $message = "A user requested access to manage a team.\n\n";
         $message .= 'Request ID: ' . $request_id . "\n";
         $message .= 'User: ' . $user->display_name . ' (' . $user->user_email . ")\n";
-        $message .= 'QR ID: ' . (int) $qr_code->id . "\n";
-        $message .= 'Postcode: ' . $qr_code->postcode . "\n";
-        $message .= 'City: ' . $qr_code->city . "\n";
-        $message .= 'Tree: ' . $qr_code->tree . "\n";
+        if (!empty($team_name)) {
+            $message .= 'Team: ' . $team_name . "\n";
+        } elseif ($team_id > 0) {
+            $message .= 'Team ID: ' . $team_id . "\n";
+        }
+        if ($team_id > 0) {
+            $message .= 'Trees in Team: ' . $team_tree_count . "\n";
+        }
         if (!empty($management_url)) {
             $message .= 'Team Management Link: ' . $management_url . "\n";
         }
         $message .= "\nReview requests in WordPress admin:\n" . $review_url . "\n";
 
         wp_mail($emails, $subject, $message);
+    }
+
+    private function get_team_tree_count($team_id) {
+        $team_id = (int) $team_id;
+        if ($team_id <= 0) {
+            return 0;
+        }
+
+        global $wpdb;
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$this->main_table} WHERE team_id = %d",
+            $team_id
+        ));
     }
 
     private function render_team_management_access_request_page($team, $request_qr_code = null, $notice = '') {
