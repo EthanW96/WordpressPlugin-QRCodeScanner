@@ -31,6 +31,10 @@ class QRCodeTracker_DB {
             tree VARCHAR(64),
             label VARCHAR(100),
             reporting_id VARCHAR(64),
+            purchaser_type VARCHAR(20),
+            org_or_individual_name VARCHAR(190),
+            contact_emails TEXT,
+            report_emails TEXT,
             scan_count BIGINT UNSIGNED DEFAULT 0,
             last_scanned DATETIME DEFAULT NULL,
             message_1 LONGTEXT,
@@ -177,6 +181,22 @@ class QRCodeTracker_DB {
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'reporting_id'");
         if (empty($columns)) {
             $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN reporting_id VARCHAR(64) AFTER label");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'purchaser_type'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN purchaser_type VARCHAR(20) AFTER reporting_id");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'org_or_individual_name'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN org_or_individual_name VARCHAR(190) AFTER purchaser_type");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'contact_emails'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN contact_emails TEXT AFTER org_or_individual_name");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'report_emails'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN report_emails TEXT AFTER contact_emails");
         }
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->log_table} LIKE 'postcode'");
         if (empty($columns)) {

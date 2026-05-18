@@ -32,6 +32,7 @@ class QRCodeTracker {
     private const EDIT_TOKEN_LENGTH = 32;
     private const EDIT_TOKEN_MIN_LENGTH = 16;
     private const EDIT_TOKEN_MAX_LENGTH = 64;
+    private const SCAN_MILESTONE_THRESHOLDS = [10, 25, 50, 100, 250, 500, 1000];
 
     private $main_table;
     private $log_table;
@@ -246,6 +247,8 @@ class QRCodeTracker {
 
             $recorded = ($update_result !== false && $insert_result !== false);
             if ($recorded) {
+                $new_scan_count = (int) $row->scan_count + 1;
+                $this->maybe_send_scan_milestone_email($row, $new_scan_count);
                 $this->set_visit_debug(true, 'Visit recorded successfully.', $scan_source, $visit_start);
             } else {
                 $error_message = !empty($wpdb->last_error) ? $wpdb->last_error : 'Unknown database error.';
@@ -1236,6 +1239,63 @@ class QRCodeTracker {
         return implode(', ', array_unique($sanitized));
     }
 
+    private function parse_email_list($raw_value) {
+        $sanitized = $this->sanitize_email_list($raw_value);
+        if (empty($sanitized)) {
+            return [];
+        }
+        return array_values(array_filter(array_map('trim', explode(',', $sanitized))));
+    }
+
+    private function get_notification_recipients($report_emails_raw, $contact_emails_raw) {
+        $report_emails = $this->parse_email_list($report_emails_raw);
+        $contact_emails = $this->parse_email_list($contact_emails_raw);
+        return !empty($report_emails) ? $report_emails : $contact_emails;
+    }
+
+    private function maybe_send_scan_milestone_email($qr_row, $new_scan_count) {
+        $thresholds = apply_filters('qr_tracker_scan_milestone_thresholds', self::SCAN_MILESTONE_THRESHOLDS, $qr_row);
+        $thresholds = array_values(array_unique(array_map('intval', (array) $thresholds)));
+        if (empty($thresholds) || !in_array((int) $new_scan_count, $thresholds, true)) {
+            return;
+        }
+
+        $recipients = $this->get_notification_recipients(
+            isset($qr_row->report_emails) ? $qr_row->report_emails : '',
+            isset($qr_row->contact_emails) ? $qr_row->contact_emails : ''
+        );
+        if (empty($recipients)) {
+            return;
+        }
+
+        $milestone_key = 'qr_tracker_milestone_' . (int) $qr_row->id . '_' . (int) $new_scan_count;
+        if (!add_option($milestone_key, current_time('mysql'), '', false)) {
+            return;
+        }
+
+        $report_url = admin_url('admin.php?page=qr-single-report&qr_id=' . (int) $qr_row->id);
+        $manage_url = !empty($qr_row->edit_token) ? $this->generate_qr_management_url($qr_row->edit_token) : '';
+
+        $subject = sprintf('QR milestone reached: %d scans (%s)', (int) $new_scan_count, (string) $qr_row->label);
+        $message = "A QR code milestone has been reached.\n\n";
+        $message .= 'Label: ' . (string) $qr_row->label . "\n";
+        $message .= 'Postcode: ' . (string) $qr_row->postcode . "\n";
+        $message .= 'City: ' . (string) $qr_row->city . "\n";
+        $message .= 'Tree: ' . (string) $qr_row->tree . "\n";
+        $message .= 'Scan milestone: ' . number_format((int) $new_scan_count) . "\n\n";
+        $message .= 'View report: ' . esc_url_raw($report_url) . "\n";
+        if (!empty($manage_url)) {
+            $message .= 'Manage this QR code: ' . esc_url_raw($manage_url) . "\n";
+        }
+
+        $sent = wp_mail($recipients, $subject, $message);
+        if (!$sent) {
+            if ((int) get_option('qr_tracker_debug_mode', 0) === 1 || (defined('WP_DEBUG') && WP_DEBUG)) {
+                error_log('QR Tracker: milestone email failed for QR ID ' . (int) $qr_row->id . ' at scan count ' . (int) $new_scan_count);
+            }
+        }
+    }
+
     public function validate_tree_checkout_fields($passed, $product_id) {
         if (!$this->is_tree_product($product_id)) {
             return $passed;
@@ -1430,6 +1490,10 @@ class QRCodeTracker {
             'city' => $tree_data['city'],
             'tree' => $tree_data['tree'],
             'label' => $tree_data['label'],
+            'purchaser_type' => isset($tree_data['purchaser_type']) ? $tree_data['purchaser_type'] : '',
+            'org_or_individual_name' => isset($tree_data['org_or_individual_name']) ? $tree_data['org_or_individual_name'] : '',
+            'contact_emails' => isset($tree_data['contact_emails']) ? $tree_data['contact_emails'] : '',
+            'report_emails' => isset($tree_data['report_emails']) ? $tree_data['report_emails'] : '',
             'message_1' => $tree_data['message_1'],
             'message_2' => $tree_data['message_2'],
             'shop_link' => $tree_data['shop_link'],
@@ -1438,6 +1502,40 @@ class QRCodeTracker {
         ]);
 
         return $wpdb->insert_id ? (int) $wpdb->insert_id : 0;
+    }
+
+    private function send_tree_qr_report_email($record_id, $tree_data) {
+        $recipients = $this->get_notification_recipients(
+            isset($tree_data['report_emails']) ? $tree_data['report_emails'] : '',
+            isset($tree_data['contact_emails']) ? $tree_data['contact_emails'] : ''
+        );
+        if (empty($recipients)) {
+            return;
+        }
+
+        $qr_link = isset($tree_data['url']) ? $tree_data['url'] : '';
+        $manage_link = isset($tree_data['edit_token']) ? $this->generate_qr_management_url($tree_data['edit_token']) : '';
+        $report_link = admin_url('admin.php?page=qr-single-report&qr_id=' . (int) $record_id);
+
+        $subject_name = isset($tree_data['org_or_individual_name']) ? $tree_data['org_or_individual_name'] : '';
+        $subject = !empty($subject_name)
+            ? 'Your QR report is ready for ' . $subject_name
+            : 'Your QR report is ready';
+        $message = "Your QR code report links are ready.\n\n";
+        $message .= 'Label: ' . (isset($tree_data['label']) ? $tree_data['label'] : '') . "\n";
+        $message .= 'Postcode: ' . (isset($tree_data['postcode']) ? $tree_data['postcode'] : '') . "\n";
+        $message .= 'City: ' . (isset($tree_data['city']) ? $tree_data['city'] : '') . "\n";
+        $message .= 'Tree: ' . (isset($tree_data['tree']) ? $tree_data['tree'] : '') . "\n\n";
+        $message .= 'QR destination link: ' . esc_url_raw($qr_link) . "\n";
+        $message .= 'Team dashboard report: ' . esc_url_raw($report_link) . "\n";
+        if (!empty($manage_link)) {
+            $message .= 'Manage this QR code: ' . esc_url_raw($manage_link) . "\n";
+        }
+
+        $sent = wp_mail($recipients, $subject, $message);
+        if (!$sent && ((int) get_option('qr_tracker_debug_mode', 0) === 1 || (defined('WP_DEBUG') && WP_DEBUG))) {
+            error_log('QR Tracker: initial report email failed for QR ID ' . (int) $record_id);
+        }
     }
 
     public function create_qr_records_for_completed_order($order_id) {
@@ -1470,6 +1568,10 @@ class QRCodeTracker {
             $shop_logo = esc_url_raw($this->get_tree_field_from_order_item($item, 'qr_tree_shop_logo', 'Shop Logo URL'));
             $show_shop_link_raw = $this->get_tree_field_from_order_item($item, 'qr_tree_show_shop_link', 'Show Shop Link');
             $show_shop_link = in_array(strtolower((string) $show_shop_link_raw), ['1', 'yes', 'true'], true) ? 1 : 0;
+            $purchaser_type = sanitize_text_field($this->get_tree_field_from_order_item($item, 'purchaser_type', 'Purchasing As'));
+            $org_or_individual_name = sanitize_text_field($this->get_tree_field_from_order_item($item, 'org_or_individual_name', 'Organization / Individual Name'));
+            $contact_emails = $this->sanitize_email_list($this->get_tree_field_from_order_item($item, 'contact_emails', 'Contact Email(s)'));
+            $report_emails = $this->sanitize_email_list($this->get_tree_field_from_order_item($item, 'report_emails', 'Report Email(s)'));
 
             if (empty($postcode) || empty($city) || empty($tree) || empty($label)) {
                 continue;
@@ -1482,6 +1584,10 @@ class QRCodeTracker {
                     'city' => $city,
                     'tree' => $tree,
                     'label' => $quantity > 1 ? $label . ' #' . ($i + 1) : $label,
+                    'purchaser_type' => $purchaser_type,
+                    'org_or_individual_name' => $org_or_individual_name,
+                    'contact_emails' => $contact_emails,
+                    'report_emails' => $report_emails,
                     'message_1' => $message_1,
                     'message_2' => $message_2,
                     'shop_link' => $shop_link,
@@ -1490,6 +1596,23 @@ class QRCodeTracker {
                 ]);
 
                 if ($record_id > 0) {
+                    global $wpdb;
+                    $created_row = $wpdb->get_row($wpdb->prepare(
+                        "SELECT id, url, edit_token FROM {$this->main_table} WHERE id = %d LIMIT 1",
+                        $record_id
+                    ));
+                    $email_payload = [
+                        'label' => $quantity > 1 ? $label . ' #' . ($i + 1) : $label,
+                        'postcode' => $postcode,
+                        'city' => $city,
+                        'tree' => $tree,
+                        'org_or_individual_name' => $org_or_individual_name,
+                        'contact_emails' => $contact_emails,
+                        'report_emails' => $report_emails,
+                        'url' => $created_row ? $created_row->url : '',
+                        'edit_token' => $created_row ? $created_row->edit_token : '',
+                    ];
+                    $this->send_tree_qr_report_email($record_id, $email_payload);
                     $inserted_count++;
                 }
             }

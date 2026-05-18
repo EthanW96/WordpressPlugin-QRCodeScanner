@@ -86,6 +86,7 @@ class QRCodeTracker_ReportsDisplay {
         // Build WHERE clause for date filtering
         $where_clause = "WHERE 1=1";
         $where_params = [];
+        $search_forced_empty = false;
         
         // Add team access restrictions
         list($team_restriction, $team_params) = $this->build_team_access_restrictions();
@@ -93,12 +94,12 @@ class QRCodeTracker_ReportsDisplay {
         $where_params = array_merge($where_params, $team_params);
         
         if (!empty($date_from)) {
-            $where_clause .= " AND l.scanned_at >= %s";
+            $where_clause .= " AND (l.scanned_at >= %s OR l.id IS NULL)";
             $where_params[] = $date_from . ' 00:00:00';
         }
         
         if (!empty($date_to)) {
-            $where_clause .= " AND l.scanned_at <= %s";
+            $where_clause .= " AND (l.scanned_at <= %s OR l.id IS NULL)";
             $where_params[] = $date_to . ' 23:59:59';
         }
         
@@ -110,21 +111,21 @@ class QRCodeTracker_ReportsDisplay {
             // Add postcode conditions
             if (!empty($postcode_filters)) {
                 $placeholders = array_fill(0, count($postcode_filters), '%s');
-                $search_conditions[] = "l.postcode IN (" . implode(',', $placeholders) . ")";
+                $search_conditions[] = "t.postcode IN (" . implode(',', $placeholders) . ")";
                 $search_params = array_merge($search_params, $postcode_filters);
             }
             
             // Add city conditions
             if (!empty($city_filters)) {
                 $placeholders = array_fill(0, count($city_filters), '%s');
-                $search_conditions[] = "l.city IN (" . implode(',', $placeholders) . ")";
+                $search_conditions[] = "t.city IN (" . implode(',', $placeholders) . ")";
                 $search_params = array_merge($search_params, $city_filters);
             }
             
             // Add tree conditions
             if (!empty($tree_filters)) {
                 $placeholders = array_fill(0, count($tree_filters), '%s');
-                $search_conditions[] = "l.tree IN (" . implode(',', $placeholders) . ")";
+                $search_conditions[] = "t.tree IN (" . implode(',', $placeholders) . ")";
                 $search_params = array_merge($search_params, $tree_filters);
             }
             
@@ -139,21 +140,23 @@ class QRCodeTracker_ReportsDisplay {
             if (!empty($search_conditions)) {
                 $where_clause .= " AND (" . implode(' OR ', $search_conditions) . ")";
                 $where_params = array_merge($where_params, $search_params);
+            } else {
+                $search_forced_empty = true;
             }
         } else {
             // Handle single filter values (for backward compatibility)
             if (!empty($postcode_filter)) {
-                $where_clause .= " AND l.postcode = %s";
+                $where_clause .= " AND t.postcode = %s";
                 $where_params[] = $postcode_filter;
             }
             
             if (!empty($tree_filter)) {
-                $where_clause .= " AND l.tree = %s";
+                $where_clause .= " AND t.tree = %s";
                 $where_params[] = $tree_filter;
             }
             
             if (!empty($city_filter)) {
-                $where_clause .= " AND l.city = %s";
+                $where_clause .= " AND t.city = %s";
                 $where_params[] = $city_filter;
             }
             
@@ -167,27 +170,24 @@ class QRCodeTracker_ReportsDisplay {
         list($team_restriction, $team_params) = $this->build_team_access_restrictions();
         
         $postcodes = $wpdb->get_col($wpdb->prepare("
-            SELECT DISTINCT l.postcode 
-            FROM {$this->log_table} l 
-            JOIN {$this->main_table} t ON l.tracker_id = t.id 
-            WHERE l.postcode IS NOT NULL AND l.postcode != '' {$team_restriction}
-            ORDER BY l.postcode
+            SELECT DISTINCT t.postcode 
+            FROM {$this->main_table} t 
+            WHERE t.postcode IS NOT NULL AND t.postcode != '' {$team_restriction}
+            ORDER BY t.postcode
         ", $team_params));
         
         $trees = $wpdb->get_col($wpdb->prepare("
-            SELECT DISTINCT l.tree 
-            FROM {$this->log_table} l 
-            JOIN {$this->main_table} t ON l.tracker_id = t.id 
-            WHERE l.tree IS NOT NULL AND l.tree != '' {$team_restriction}
-            ORDER BY l.tree
+            SELECT DISTINCT t.tree 
+            FROM {$this->main_table} t 
+            WHERE t.tree IS NOT NULL AND t.tree != '' {$team_restriction}
+            ORDER BY t.tree
         ", $team_params));
         
         $cities = $wpdb->get_col($wpdb->prepare("
-            SELECT DISTINCT l.city 
-            FROM {$this->log_table} l 
-            JOIN {$this->main_table} t ON l.tracker_id = t.id 
-            WHERE l.city IS NOT NULL AND l.city != '' {$team_restriction}
-            ORDER BY l.city
+            SELECT DISTINCT t.city 
+            FROM {$this->main_table} t 
+            WHERE t.city IS NOT NULL AND t.city != '' {$team_restriction}
+            ORDER BY t.city
         ", $team_params));
     
         $this->display_styles();
@@ -201,7 +201,7 @@ class QRCodeTracker_ReportsDisplay {
         
         if ($has_active_filters) {
             // Check if there are any results
-            $result_count = $this->get_result_count($where_clause, $where_params);
+            $result_count = $search_forced_empty ? 0 : $this->get_result_count($where_clause, $where_params);
             
             if ($result_count > 0) {
                 // Show search context if search terms were used or show all is requested
@@ -267,6 +267,24 @@ class QRCodeTracker_ReportsDisplay {
         .search-term-tag { display: inline-block; background: #0073aa; color: white; padding: 4px 8px; margin: 2px; border-radius: 12px; font-size: 12px; }
         .remove-term { cursor: pointer; margin-left: 5px; font-weight: bold; }
         .remove-term:hover { color: #ff6b6b; }
+        .qr-search-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        .qr-search-meta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+        @media screen and (max-width: 782px) {
+            .qr-search-actions,
+            .qr-search-meta,
+            .qr-search-meta > div {
+                display: block;
+                width: 100%;
+            }
+            .qr-search-actions .button,
+            .qr-search-actions input[type="submit"],
+            .qr-search-actions input[type="button"],
+            .qr-search-actions input[type="text"] {
+                width: 100%;
+                margin-bottom: 8px;
+                box-sizing: border-box;
+            }
+        }
         </style>';
     }
 
@@ -478,7 +496,7 @@ class QRCodeTracker_ReportsDisplay {
         echo '<h3 style="margin: 0 0 10px 0; color: #0073aa;">Search & Filter</h3>';
         echo '<div style="margin-bottom: 10px;">';
         echo '<label style="font-weight: bold; display: block; margin-bottom: 5px;">Search Terms:</label>';
-        echo '<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">';
+        echo '<div class="qr-search-actions">';
         echo '<input type="text" name="search_input" placeholder="Enter postcode, city, tree value, or reporting ID..." class="qr-search-input">';
         echo '<input type="button" class="button button-secondary" value="Add Term" onclick="addSearchTerm()">';
         echo '<input type="submit" class="button button-primary" value="Search">';
@@ -486,7 +504,7 @@ class QRCodeTracker_ReportsDisplay {
         echo '<input type="hidden" name="search_terms" value="' . esc_attr(implode(',', $search_terms)) . '">';
         echo '<div id="search-terms-container" style="margin-top: 10px; min-height: 30px;"></div>';
         echo '</div>';
-        echo '<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px;">';
+        echo '<div class="qr-search-meta">';
         echo '<div style="font-size: 12px; color: #666;">';
         echo 'Enter multiple search terms separated by pressing Enter. Supports postcodes, cities, tree values, and reporting IDs.';
         echo '</div>';
@@ -618,7 +636,7 @@ class QRCodeTracker_ReportsDisplay {
     private function get_result_count($where_clause, $where_params) {
         global $wpdb;
         
-        $sql = "SELECT COUNT(DISTINCT l.id) FROM {$this->log_table} l JOIN {$this->main_table} t ON l.tracker_id = t.id {$where_clause}";
+        $sql = "SELECT COUNT(DISTINCT t.id) FROM {$this->main_table} t LEFT JOIN {$this->log_table} l ON l.tracker_id = t.id {$where_clause}";
         
         if (!empty($where_params)) {
             return (int) $wpdb->get_var($wpdb->prepare($sql, $where_params));
@@ -637,11 +655,11 @@ class QRCodeTracker_ReportsDisplay {
         
         // Get summary statistics
         $sql = "SELECT 
-                    COUNT(DISTINCT l.id) as total_scans,
-                    COUNT(DISTINCT l.tracker_id) as unique_qr_codes,
+                    COUNT(l.id) as total_scans,
+                    COUNT(DISTINCT t.id) as unique_qr_codes,
                     COUNT(DISTINCT DATE(l.scanned_at)) as unique_days
-                FROM {$this->log_table} l 
-                JOIN {$this->main_table} t ON l.tracker_id = t.id 
+                FROM {$this->main_table} t
+                LEFT JOIN {$this->log_table} l ON l.tracker_id = t.id 
                 {$where_clause}";
         
         if (!empty($where_params)) {
@@ -650,7 +668,7 @@ class QRCodeTracker_ReportsDisplay {
             $stats = $wpdb->get_row($sql);
         }
         
-        if ($stats && $stats->total_scans > 0) {
+        if ($stats) {
             // Calculate average scans per day
             $avg_scans_per_day = $stats->unique_days > 0 ? $stats->total_scans / $stats->unique_days : 0;
             
@@ -672,8 +690,6 @@ class QRCodeTracker_ReportsDisplay {
             echo '<div class="qr-stat-label">Avg Scans/Day</div>';
             echo '</div>';
             echo '</div>';
-        } else {
-            echo '<div class="notice notice-warning"><p>No scan data found for the selected filters.</p></div>';
         }
     }
 
@@ -688,18 +704,18 @@ class QRCodeTracker_ReportsDisplay {
         
         // Get the data for breakdown report
         $sql = "SELECT 
-                    l.tracker_id,
+                    t.id as tracker_id,
                     t.reporting_id,
                     t.postcode,
                     t.city,
                     t.tree,
-                    COUNT(*) as scan_count,
+                    COUNT(l.id) as scan_count,
                     MIN(l.scanned_at) as first_scan,
                     MAX(l.scanned_at) as last_scan
-                FROM {$this->log_table} l 
-                JOIN {$this->main_table} t ON l.tracker_id = t.id 
+                FROM {$this->main_table} t
+                LEFT JOIN {$this->log_table} l ON l.tracker_id = t.id
                 {$where_clause}
-                GROUP BY l.tracker_id, t.reporting_id, t.postcode, t.city, t.tree
+                GROUP BY t.id, t.reporting_id, t.postcode, t.city, t.tree
                 ORDER BY scan_count DESC";
         
         if (!empty($where_params)) {
