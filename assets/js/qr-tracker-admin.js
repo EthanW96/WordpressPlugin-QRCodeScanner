@@ -72,12 +72,12 @@
             };
 
             /**
-             * Determine which list item should come after the dragged element.
+             * Determine which list item should be inserted before the dragged element.
              * @param {Element} zone Drag-and-drop list container.
              * @param {number} clientY Current pointer Y coordinate.
-             * @returns {Element|undefined} Item that should remain after insertion, or undefined to append.
+             * @returns {Element|undefined} Item to insert before, or undefined to append.
              */
-            var getDragAfterElement = function (zone, clientY) {
+            var getInsertBeforeElement = function (zone, clientY) {
                 var items = Array.from(zone.querySelectorAll('.qr-tree-field-item:not(.dragging)'));
                 // Find the nearest item whose midpoint is above the cursor,
                 // then insert the dragged item immediately before that item.
@@ -106,7 +106,7 @@
             zones.forEach(function (zone) {
                 zone.addEventListener('dragover', function (event) {
                     event.preventDefault();
-                    var afterElement = getDragAfterElement(zone, event.clientY);
+                    var afterElement = getInsertBeforeElement(zone, event.clientY);
                     if (!draggedItem) {
                         return;
                     }
