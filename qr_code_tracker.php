@@ -1060,6 +1060,7 @@ class QRCodeTracker {
             '_report_emails',
             '_org_or_individual_name',
             '_referral_code',
+            '_referral_link',
             '_discount_code',
             '_delivery_or_collection',
             '_pay_forward_type',
@@ -1147,7 +1148,7 @@ class QRCodeTracker {
             'type'        => 'textarea',
             'class'       => ['form-row-wide'],
             'label'       => 'Message 2',
-            'description' => 'Suggestion: Add [qr_message_2_button url="https://example.com" label="Read More"], [qr_message_2_button url="mailto:hello@example.com" label="Email"], or [qr_message_2_button url="https://example.com" label="Click Here"].',
+            'description' => 'Suggestions: Click Here, Read More, Email. To render a button in Message 2, use [qr_message_2_button ...] only when that shortcode is available in your site (check with your site admin/plugin docs).',
         ], isset($_POST['qr_tree_message_2']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_2'])) : '');
 
         woocommerce_form_field('qr_tree_tree', [
@@ -1164,13 +1165,13 @@ class QRCodeTracker {
             'required' => true,
         ], isset($_POST['qr_tree_label']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_label'])) : '');
 
-        woocommerce_form_field('referral_code', [
+        woocommerce_form_field('referral_link', [
             'type'        => 'url',
             'class'       => ['form-row-wide'],
             'label'       => 'Referral Link',
             'description' => 'Optional link to connect an individual purchase with an organization.',
             'placeholder' => 'https://example.com/referral',
-        ], isset($_POST['referral_code']) ? esc_url_raw(wp_unslash($_POST['referral_code'])) : '');
+        ], isset($_POST['referral_link']) ? esc_url_raw(wp_unslash($_POST['referral_link'])) : '');
 
         woocommerce_form_field('discount_code', [
             'type'        => 'text',
@@ -1326,7 +1327,7 @@ class QRCodeTracker {
             return false;
         }
 
-        $referral_link = isset($_POST['referral_code']) ? esc_url_raw(wp_unslash($_POST['referral_code'])) : '';
+        $referral_link = isset($_POST['referral_link']) ? esc_url_raw(wp_unslash($_POST['referral_link'])) : '';
         if (!empty($referral_link) && !filter_var($referral_link, FILTER_VALIDATE_URL)) {
             wc_add_notice('Please provide a valid referral link URL.', 'error');
             return false;
@@ -1334,7 +1335,7 @@ class QRCodeTracker {
 
         $delivery_or_collection = isset($_POST['delivery_or_collection']) ? sanitize_text_field(wp_unslash($_POST['delivery_or_collection'])) : '';
         if (!in_array($delivery_or_collection, ['delivery', 'collection'], true)) {
-            wc_add_notice('Please select delivery or collection.', 'error');
+            wc_add_notice('Please select either Delivery or Collection.', 'error');
             return false;
         }
 
@@ -1351,7 +1352,7 @@ class QRCodeTracker {
             'contact_emails' => isset($_POST['contact_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['contact_emails'])) : '',
             'report_emails' => isset($_POST['report_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['report_emails'])) : '',
             'org_or_individual_name' => isset($_POST['org_or_individual_name']) ? sanitize_text_field(wp_unslash($_POST['org_or_individual_name'])) : '',
-            'referral_code' => isset($_POST['referral_code']) ? esc_url_raw(wp_unslash($_POST['referral_code'])) : '',
+            'referral_link' => isset($_POST['referral_link']) ? esc_url_raw(wp_unslash($_POST['referral_link'])) : '',
             'discount_code' => isset($_POST['discount_code']) ? sanitize_text_field(wp_unslash($_POST['discount_code'])) : '',
             'delivery_or_collection' => isset($_POST['delivery_or_collection']) ? sanitize_text_field(wp_unslash($_POST['delivery_or_collection'])) : '',
             'pay_forward_type' => isset($_POST['pay_forward_type']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) : '',
@@ -1386,7 +1387,7 @@ class QRCodeTracker {
             'qr_tree_message_2' => 'Message 2',
             'qr_tree_tree' => 'Tree',
             'qr_tree_label' => 'Label',
-            'referral_code' => 'Referral Link',
+            'referral_link' => 'Referral Link',
             'discount_code' => 'Discount Code',
             'delivery_or_collection' => 'Delivery or Collection',
             'contact_emails' => 'Contact Email(s)',
@@ -1423,7 +1424,7 @@ class QRCodeTracker {
             'qr_tree_message_2' => 'Message 2',
             'qr_tree_tree' => 'Tree',
             'qr_tree_label' => 'Label',
-            'referral_code' => 'Referral Link',
+            'referral_link' => 'Referral Link',
             'discount_code' => 'Discount Code',
             'delivery_or_collection' => 'Delivery or Collection',
             'contact_emails' => 'Contact Email(s)',
