@@ -64,6 +64,7 @@ class QRCodeTracker {
     private $export;
     private $popup;
     private $teams;
+    private $tree_checkout_field_overrides_cache = null;
 
     public function __construct() {
         global $wpdb;
@@ -1078,12 +1079,16 @@ class QRCodeTracker {
 
     public function get_tree_checkout_field_choices() {
         $default_labels = $this->get_default_tree_checkout_field_labels();
+        $overrides = $this->get_tree_checkout_field_overrides();
         $field_choices = [];
         foreach (self::TREE_FIELD_KEYS as $field_key) {
-            $field_choices[$field_key] = $this->get_tree_field_label(
-                $field_key,
-                isset($default_labels[$field_key]) ? $default_labels[$field_key] : $field_key
-            );
+            if (isset($overrides[$field_key]['label']) && $overrides[$field_key]['label'] !== '') {
+                $field_choices[$field_key] = $overrides[$field_key]['label'];
+            } elseif (isset($default_labels[$field_key])) {
+                $field_choices[$field_key] = $default_labels[$field_key];
+            } else {
+                $field_choices[$field_key] = $field_key;
+            }
         }
 
         return $field_choices;
@@ -1154,7 +1159,14 @@ class QRCodeTracker {
     }
 
     public function get_tree_checkout_field_overrides() {
-        return $this->sanitize_tree_checkout_field_overrides(get_option('qr_tracker_tree_field_overrides', []));
+        if ($this->tree_checkout_field_overrides_cache === null) {
+            $this->tree_checkout_field_overrides_cache = $this->sanitize_tree_checkout_field_overrides(get_option('qr_tracker_tree_field_overrides', []));
+        }
+        return $this->tree_checkout_field_overrides_cache;
+    }
+
+    public function reset_tree_checkout_field_override_cache() {
+        $this->tree_checkout_field_overrides_cache = null;
     }
 
     private function get_tree_field_label($field_key, $default = '') {
@@ -1388,8 +1400,8 @@ class QRCodeTracker {
     }
 
     private function render_customizable_tree_form_field($field_key, $args, $value = '') {
-        $args['label'] = $this->get_tree_field_label($field_key, isset($args['label']) ? $args['label'] : '');
-        $description = $this->get_tree_field_description($field_key, isset($args['description']) ? $args['description'] : '');
+        $args['label'] = $this->get_tree_field_label($field_key, $args['label'] ?? '');
+        $description = $this->get_tree_field_description($field_key, $args['description'] ?? '');
         if ($description !== '') {
             $args['description'] = $description;
         } else {

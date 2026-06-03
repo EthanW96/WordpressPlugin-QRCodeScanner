@@ -885,6 +885,10 @@ class QRCodeTracker_Admin {
         $reports_display->display_reports_page();
     }
 
+    private function get_fallback_wc_attribute_label($attribute_name) {
+        return ucwords(str_replace('_', ' ', preg_replace('/^pa_/', '', (string) $attribute_name)));
+    }
+
     public function settings_page() {
         // Check permissions
         if (!QRCodeTracker_Permissions::can_view_settings()) {
@@ -933,22 +937,38 @@ class QRCodeTracker_Admin {
                 ? wp_unslash($_POST['qr_tracker_tree_field_description'])
                 : [];
             $tree_field_overrides = [];
-            foreach ((array) $raw_tree_field_labels as $field_key => $label) {
-                $tree_field_overrides[sanitize_key($field_key)]['label'] = $label;
-            }
-            foreach ((array) $raw_tree_field_descriptions as $field_key => $description) {
+            $tree_field_override_keys = array_values(array_unique(array_merge(
+                array_keys((array) $raw_tree_field_labels),
+                array_keys((array) $raw_tree_field_descriptions)
+            )));
+            foreach ($tree_field_override_keys as $field_key) {
                 $tree_field_key = sanitize_key($field_key);
-                if (!isset($tree_field_overrides[$tree_field_key])) {
-                    $tree_field_overrides[$tree_field_key] = [];
+                if ($tree_field_key === '') {
+                    continue;
                 }
-                $tree_field_overrides[$tree_field_key]['description'] = $description;
+
+                $label = isset($raw_tree_field_labels[$field_key]) ? sanitize_text_field($raw_tree_field_labels[$field_key]) : '';
+                $description = isset($raw_tree_field_descriptions[$field_key]) ? sanitize_textarea_field($raw_tree_field_descriptions[$field_key]) : '';
+
+                if ($label === '' && $description === '') {
+                    continue;
+                }
+
+                $tree_field_overrides[$tree_field_key] = [];
+                if ($label !== '') {
+                    $tree_field_overrides[$tree_field_key]['label'] = $label;
+                }
+                if ($description !== '') {
+                    $tree_field_overrides[$tree_field_key]['description'] = $description;
+                }
             }
             if (is_object($this->tracker) && method_exists($this->tracker, 'sanitize_tree_checkout_field_overrides')) {
                 $tree_field_overrides = $this->tracker->sanitize_tree_checkout_field_overrides($tree_field_overrides);
-            } else {
-                $tree_field_overrides = [];
             }
             update_option('qr_tracker_tree_field_overrides', $tree_field_overrides);
+            if (is_object($this->tracker) && method_exists($this->tracker, 'reset_tree_checkout_field_override_cache')) {
+                $this->tracker->reset_tree_checkout_field_override_cache();
+            }
             
             echo '<div class="updated"><p>Settings saved.</p></div>';
         }
@@ -997,9 +1017,10 @@ class QRCodeTracker_Admin {
                     if ($attribute_name === '') {
                         continue;
                     }
+                    $fallback_attribute_label = $this->get_fallback_wc_attribute_label($attribute_name);
                     $attribute_label = function_exists('wc_attribute_label')
                         ? wc_attribute_label($attribute_name, $tree_product)
-                        : ucwords(str_replace('_', ' ', preg_replace('/^pa_/', '', $attribute_name)));
+                        : $fallback_attribute_label;
                     $woocommerce_product_context_fields[$attribute_label] = true;
                 }
             }
@@ -1120,7 +1141,7 @@ class QRCodeTracker_Admin {
             }
             echo '</ul>';
         }
-        echo '<p class="description">These are native WooCommerce product option fields shown by product setup/theme and are not managed by QR Tracker field layout.</p>';
+        echo '<p class="description">These are native WooCommerce product option fields displayed through product setup or theme configuration and are not managed by QR Tracker field layout.</p>';
         echo '</td></tr>';
         echo '</table>';
         echo '<p><input type="submit" name="qr_tracker_settings_submit" class="button button-primary" value="Save Settings"></p>';
