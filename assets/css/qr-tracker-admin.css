@@ -288,6 +288,51 @@
     max-width: 600px;
 }
 
+.qr-tree-field-layout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    max-width: 900px;
+}
+
+.qr-tree-field-layout-zone {
+    flex: 1 1 320px;
+}
+
+.qr-tree-field-layout-zone h4 {
+    margin: 0 0 8px;
+}
+
+.qr-tree-field-zone {
+    margin: 0;
+    padding: 8px;
+    min-height: 160px;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    background: #fff;
+}
+
+.qr-tree-field-item {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 8px 10px;
+    border: 1px solid #dcdcde;
+    border-radius: 4px;
+    background: #f6f7f7;
+    cursor: move;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.qr-tree-field-item:last-child {
+    margin-bottom: 0;
+}
+
+.qr-tree-field-item.dragging {
+    opacity: 0.6;
+}
+
 /* Notification badge */
 .update-plugins {
     display: inline-block;

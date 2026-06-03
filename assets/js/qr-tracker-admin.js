@@ -48,5 +48,82 @@
             }
         });
 
+        // ── 3. Tree field layout drag-and-drop (settings page) ───────────────────────
+        var treeFieldLayout = document.querySelector('.qr-tree-field-layout');
+        if (treeFieldLayout) {
+            var draggedItem = null;
+            var zones = treeFieldLayout.querySelectorAll('.qr-tree-field-zone');
+
+            var syncFieldLayoutInputs = function () {
+                zones.forEach(function (zone) {
+                    var inputId = zone.getAttribute('data-target-input');
+                    if (!inputId) {
+                        return;
+                    }
+                    var hiddenInput = document.getElementById(inputId);
+                    if (!hiddenInput) {
+                        return;
+                    }
+                    var order = Array.from(zone.querySelectorAll('.qr-tree-field-item')).map(function (item) {
+                        return item.getAttribute('data-field-key');
+                    });
+                    hiddenInput.value = order.join(',');
+                });
+            };
+
+            /**
+             * Determine which list item should be inserted before the dragged element.
+             * @param {Element} zone Drag-and-drop list container.
+             * @param {number} clientY Current pointer Y coordinate.
+             * @returns {Element|undefined} Item to insert before, or undefined to append.
+             */
+            var getInsertBeforeElement = function (zone, clientY) {
+                var items = Array.from(zone.querySelectorAll('.qr-tree-field-item:not(.dragging)'));
+                // Find the nearest item whose midpoint is above the cursor,
+                // then insert the dragged item immediately before that item.
+                return items.reduce(function (closest, child) {
+                    var box = child.getBoundingClientRect();
+                    var offset = clientY - box.top - box.height / 2;
+                    if (offset < 0 && offset > closest.offset) {
+                        return { offset: offset, element: child };
+                    }
+                    return closest;
+                }, { offset: Number.NEGATIVE_INFINITY }).element;
+            };
+
+            treeFieldLayout.querySelectorAll('.qr-tree-field-item').forEach(function (item) {
+                item.addEventListener('dragstart', function () {
+                    draggedItem = item;
+                    item.classList.add('dragging');
+                });
+                item.addEventListener('dragend', function () {
+                    item.classList.remove('dragging');
+                    draggedItem = null;
+                    syncFieldLayoutInputs();
+                });
+            });
+
+            zones.forEach(function (zone) {
+                zone.addEventListener('dragover', function (event) {
+                    event.preventDefault();
+                    var afterElement = getInsertBeforeElement(zone, event.clientY);
+                    if (!draggedItem) {
+                        return;
+                    }
+                    if (!afterElement) {
+                        zone.appendChild(draggedItem);
+                    } else {
+                        zone.insertBefore(draggedItem, afterElement);
+                    }
+                });
+            });
+
+            var settingsForm = treeFieldLayout.closest('form');
+            if (settingsForm) {
+                settingsForm.addEventListener('submit', syncFieldLayoutInputs);
+            }
+            syncFieldLayoutInputs();
+        }
+
     });
 }());
