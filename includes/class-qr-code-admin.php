@@ -918,8 +918,8 @@ class QRCodeTracker_Admin {
             $product_field_keys_csv = isset($_POST['qr_tracker_tree_field_layout_product']) ? sanitize_text_field(wp_unslash($_POST['qr_tracker_tree_field_layout_product'])) : '';
             $checkout_field_keys_csv = isset($_POST['qr_tracker_tree_field_layout_checkout']) ? sanitize_text_field(wp_unslash($_POST['qr_tracker_tree_field_layout_checkout'])) : '';
             $tree_field_layout = [
-                'product' => array_values(array_filter(array_map('trim', explode(',', $product_field_keys_csv)))),
-                'checkout' => array_values(array_filter(array_map('trim', explode(',', $checkout_field_keys_csv)))),
+                'product' => array_values(array_filter(array_map('sanitize_key', array_map('trim', explode(',', $product_field_keys_csv))))),
+                'checkout' => array_values(array_filter(array_map('sanitize_key', array_map('trim', explode(',', $checkout_field_keys_csv))))),
             ];
             if (is_object($this->tracker) && method_exists($this->tracker, 'sanitize_tree_checkout_field_layout')) {
                 $tree_field_layout = $this->tracker->sanitize_tree_checkout_field_layout($tree_field_layout);

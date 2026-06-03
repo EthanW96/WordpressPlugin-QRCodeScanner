@@ -1186,7 +1186,20 @@ class QRCodeTracker {
             return [];
         }
         $stored_values = WC()->session->get('qr_tracker_checkout_tree_fields', []);
-        return is_array($stored_values) ? $stored_values : [];
+        if (!is_array($stored_values)) {
+            return [];
+        }
+
+        $sanitized_values = [];
+        foreach ($stored_values as $field_key => $field_value) {
+            $field_key = sanitize_key($field_key);
+            if (!in_array($field_key, self::TREE_FIELD_KEYS, true)) {
+                continue;
+            }
+            $sanitized_values[$field_key] = $this->sanitize_tree_field_value($field_key, $field_value);
+        }
+
+        return $sanitized_values;
     }
 
     private function store_tree_checkout_session_values($field_keys) {
@@ -1456,7 +1469,10 @@ class QRCodeTracker {
             return $default;
         }
 
-        $raw_value = wp_unslash($_POST[$field_key]);
+        return $this->sanitize_tree_field_value($field_key, wp_unslash($_POST[$field_key]));
+    }
+
+    private function sanitize_tree_field_value($field_key, $raw_value) {
         switch ($field_key) {
             case 'qr_tree_postcode':
                 return strtoupper(sanitize_text_field($raw_value));
@@ -1659,7 +1675,13 @@ class QRCodeTracker {
                 continue;
             }
 
-            $field_value = array_key_exists($field, $values) ? $values[$field] : (isset($session_checkout_values[$field]) ? $session_checkout_values[$field] : '');
+            if (array_key_exists($field, $values)) {
+                $field_value = $values[$field];
+            } elseif (isset($session_checkout_values[$field])) {
+                $field_value = $session_checkout_values[$field];
+            } else {
+                $field_value = '';
+            }
             if ($field_value !== '') {
                 $stored_value = $field === 'qr_tree_show_shop_link' ? (int) $field_value : $field_value;
                 $display_value = $field === 'qr_tree_show_shop_link'
