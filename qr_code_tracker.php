@@ -276,6 +276,14 @@ class QRCodeTracker {
             return;
         }
 
+        // Anonymous short codes are handled by handle_anonymous_short_code_redirect,
+        // which serves the destination content in-place so the browser URL stays as
+        // the short link. Skip them here to avoid an early redirect.
+        $anon_pattern = '/^[a-z0-9]{' . self::SHORT_CODE_MIN_LENGTH . ',' . self::SHORT_CODE_MAX_LENGTH . '}$/';
+        if (preg_match($anon_pattern, strtolower($short_code))) {
+            return;
+        }
+
         global $wpdb;
         $row = $wpdb->get_row($wpdb->prepare(
             "SELECT url FROM {$this->main_table} WHERE short_code = %s",
@@ -656,23 +664,14 @@ class QRCodeTracker {
             return;
         }
 
-        $current_url = $this->current_request_url;
-        if (empty($current_url)) {
-            return;
-        }
-        $stored_url = esc_url_raw($row->url);
-
-        if (empty($stored_url)) {
-            return;
-        }
-
-        // Prevent redirect loops when the anonymous URL already resolves to the stored URL.
-        if (untrailingslashit($current_url) === untrailingslashit($stored_url)) {
-            return;
-        }
-
-        wp_safe_redirect($stored_url, 302);
-        exit;
+        // Serve the destination content at the short link URL without redirecting so
+        // the browser URL remains the short link (e.g. /abc123 shows the home page
+        // but the address bar never changes to the full stored URL).
+        global $wp_query, $wp_the_query;
+        $wp_query->query('');
+        $wp_the_query = $wp_query;
+        status_header(200);
+        nocache_headers();
     }
 
     public function handle_qr_management_request() {
