@@ -743,9 +743,10 @@ class QRCodeTracker {
                     $queries_to_normalize = [$wp_query, $wp_the_query];
                     $normalized_query_vars = [];
                     foreach (['qr', 'postcode', 'city', 'tree'] as $query_key) {
-                        if (isset($_GET[$query_key])) {
-                            $normalized_query_vars[$query_key] = sanitize_text_field((string) $_GET[$query_key]);
+                        if (!isset($_GET[$query_key]) || !is_scalar($_GET[$query_key])) {
+                            continue;
                         }
+                        $normalized_query_vars[$query_key] = sanitize_text_field(wp_unslash((string) $_GET[$query_key]));
                     }
                     if (get_option('show_on_front') === 'page') {
                         $front_page_id = (int) get_option('page_on_front');
@@ -759,7 +760,7 @@ class QRCodeTracker {
                         }
 
                         $query_to_normalize->set_404(false);
-                        // Re-parse as a home/front request so /{shortcode} does not resolve to a 404 template.
+                        // Re-parse as a home/front request so /{shortcode} renders the correct template instead of 404.
                         if (method_exists($query_to_normalize, 'parse_query')) {
                             $query_to_normalize->parse_query($normalized_query_vars);
                         }
