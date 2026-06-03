@@ -742,7 +742,7 @@ class QRCodeTracker {
                     global $wp_query, $wp_the_query;
                     $queries_to_normalize = [$wp_query, $wp_the_query];
                     foreach ($queries_to_normalize as $query_to_normalize) {
-                        if (!($query_to_normalize instanceof WP_Query)) {
+                        if (!($query_to_normalize instanceof WP_Query) || !method_exists($query_to_normalize, 'set_404')) {
                             continue;
                         }
 
