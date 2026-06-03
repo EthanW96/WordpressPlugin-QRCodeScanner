@@ -742,11 +742,12 @@ class QRCodeTracker {
                     global $wp_query, $wp_the_query;
                     $queries_to_normalize = [$wp_query, $wp_the_query];
                     foreach ($queries_to_normalize as $query_to_normalize) {
-                        if (!($query_to_normalize instanceof WP_Query) || !method_exists($query_to_normalize, 'set_404')) {
+                        if (!($query_to_normalize instanceof WP_Query)) {
                             continue;
                         }
 
                         $query_to_normalize->set_404(false);
+                        // Normalize to home-query state so /{shortcode} renders front content instead of 404.
                         $query_to_normalize->is_home = true;
                         $query_to_normalize->is_page = false;
                         $query_to_normalize->is_singular = false;
