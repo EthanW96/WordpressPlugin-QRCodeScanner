@@ -1077,6 +1077,19 @@ class QRCodeTracker {
     }
 
     public function get_tree_checkout_field_choices() {
+        $default_labels = $this->get_default_tree_checkout_field_labels();
+        $field_choices = [];
+        foreach (self::TREE_FIELD_KEYS as $field_key) {
+            $field_choices[$field_key] = $this->get_tree_field_label(
+                $field_key,
+                isset($default_labels[$field_key]) ? $default_labels[$field_key] : $field_key
+            );
+        }
+
+        return $field_choices;
+    }
+
+    private function get_default_tree_checkout_field_labels() {
         return [
             'purchaser_type' => 'Purchasing As',
             'org_or_individual_name' => 'Organization / Individual Name',
@@ -1097,6 +1110,79 @@ class QRCodeTracker {
             'qr_tree_shop_logo' => 'Shop Logo URL',
             'qr_tree_show_shop_link' => 'Show Shop Link',
         ];
+    }
+
+    private function get_default_tree_checkout_field_descriptions() {
+        return [
+            'qr_tree_message_1' => 'Suggestion: "Merry Christmas from [Name]!"',
+            'qr_tree_message_2' => 'Suggestions: Click Here, Read More, Email. To render a button in Message 2, use [qr_message_2_button ...] only when that shortcode is available in your site (check with your site admin/plugin docs).',
+            'referral_link' => 'Optional link to connect an individual purchase with an organization.',
+            'discount_code' => 'Optional coupon or discount reference.',
+            'contact_emails' => 'Separate multiple emails with commas, spaces, or semicolons.',
+            'report_emails' => 'Weekly report recipient(s), separated by commas, spaces, or semicolons.',
+        ];
+    }
+
+    public function sanitize_tree_checkout_field_overrides($overrides) {
+        if (!is_array($overrides)) {
+            return [];
+        }
+
+        $sanitized = [];
+        foreach (self::TREE_FIELD_KEYS as $field_key) {
+            if (!isset($overrides[$field_key]) || !is_array($overrides[$field_key])) {
+                continue;
+            }
+
+            $label = isset($overrides[$field_key]['label']) ? sanitize_text_field($overrides[$field_key]['label']) : '';
+            $description = isset($overrides[$field_key]['description']) ? sanitize_textarea_field($overrides[$field_key]['description']) : '';
+
+            if ($label === '' && $description === '') {
+                continue;
+            }
+
+            $sanitized[$field_key] = [];
+            if ($label !== '') {
+                $sanitized[$field_key]['label'] = $label;
+            }
+            if ($description !== '') {
+                $sanitized[$field_key]['description'] = $description;
+            }
+        }
+
+        return $sanitized;
+    }
+
+    public function get_tree_checkout_field_overrides() {
+        return $this->sanitize_tree_checkout_field_overrides(get_option('qr_tracker_tree_field_overrides', []));
+    }
+
+    private function get_tree_field_label($field_key, $default = '') {
+        $overrides = $this->get_tree_checkout_field_overrides();
+        if (isset($overrides[$field_key]['label']) && $overrides[$field_key]['label'] !== '') {
+            return $overrides[$field_key]['label'];
+        }
+
+        $defaults = $this->get_default_tree_checkout_field_labels();
+        if ($default === '' && isset($defaults[$field_key])) {
+            $default = $defaults[$field_key];
+        }
+
+        return $default;
+    }
+
+    private function get_tree_field_description($field_key, $default = '') {
+        $overrides = $this->get_tree_checkout_field_overrides();
+        if (isset($overrides[$field_key]['description']) && $overrides[$field_key]['description'] !== '') {
+            return $overrides[$field_key]['description'];
+        }
+
+        $defaults = $this->get_default_tree_checkout_field_descriptions();
+        if ($default === '' && isset($defaults[$field_key])) {
+            $default = $defaults[$field_key];
+        }
+
+        return $default;
     }
 
     private function get_default_tree_checkout_field_layout() {
@@ -1301,10 +1387,21 @@ class QRCodeTracker {
         echo '</div>';
     }
 
+    private function render_customizable_tree_form_field($field_key, $args, $value = '') {
+        $args['label'] = $this->get_tree_field_label($field_key, isset($args['label']) ? $args['label'] : '');
+        $description = $this->get_tree_field_description($field_key, isset($args['description']) ? $args['description'] : '');
+        if ($description !== '') {
+            $args['description'] = $description;
+        } else {
+            unset($args['description']);
+        }
+        woocommerce_form_field($field_key, $args, $value);
+    }
+
     private function render_tree_checkout_field($field_key) {
         switch ($field_key) {
             case 'purchaser_type':
-                woocommerce_form_field('purchaser_type', [
+                $this->render_customizable_tree_form_field('purchaser_type', [
                     'type'    => 'select',
                     'class'   => ['form-row-wide'],
                     'label'   => 'Purchasing as',
@@ -1315,7 +1412,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('purchaser_type', 'individual'));
                 break;
             case 'org_or_individual_name':
-                woocommerce_form_field('org_or_individual_name', [
+                $this->render_customizable_tree_form_field('org_or_individual_name', [
                     'type'     => 'text',
                     'class'    => ['form-row-wide'],
                     'label'    => 'Organization / Individual Name',
@@ -1323,7 +1420,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('org_or_individual_name'));
                 break;
             case 'qr_tree_postcode':
-                woocommerce_form_field('qr_tree_postcode', [
+                $this->render_customizable_tree_form_field('qr_tree_postcode', [
                     'type'     => 'text',
                     'class'    => ['form-row-wide'],
                     'label'    => 'Postcode',
@@ -1331,7 +1428,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('qr_tree_postcode'));
                 break;
             case 'qr_tree_city':
-                woocommerce_form_field('qr_tree_city', [
+                $this->render_customizable_tree_form_field('qr_tree_city', [
                     'type'     => 'text',
                     'class'    => ['form-row-wide'],
                     'label'    => 'City',
@@ -1339,7 +1436,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('qr_tree_city'));
                 break;
             case 'qr_tree_message_1':
-                woocommerce_form_field('qr_tree_message_1', [
+                $this->render_customizable_tree_form_field('qr_tree_message_1', [
                     'type'        => 'textarea',
                     'class'       => ['form-row-wide'],
                     'label'       => 'Message 1',
@@ -1347,7 +1444,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('qr_tree_message_1'));
                 break;
             case 'qr_tree_message_2':
-                woocommerce_form_field('qr_tree_message_2', [
+                $this->render_customizable_tree_form_field('qr_tree_message_2', [
                     'type'        => 'textarea',
                     'class'       => ['form-row-wide'],
                     'label'       => 'Message 2',
@@ -1355,7 +1452,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('qr_tree_message_2'));
                 break;
             case 'qr_tree_tree':
-                woocommerce_form_field('qr_tree_tree', [
+                $this->render_customizable_tree_form_field('qr_tree_tree', [
                     'type'     => 'text',
                     'class'    => ['form-row-wide'],
                     'label'    => 'Tree',
@@ -1363,7 +1460,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('qr_tree_tree'));
                 break;
             case 'qr_tree_label':
-                woocommerce_form_field('qr_tree_label', [
+                $this->render_customizable_tree_form_field('qr_tree_label', [
                     'type'     => 'text',
                     'class'    => ['form-row-wide'],
                     'label'    => 'Label',
@@ -1371,7 +1468,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('qr_tree_label'));
                 break;
             case 'referral_link':
-                woocommerce_form_field('referral_link', [
+                $this->render_customizable_tree_form_field('referral_link', [
                     'type'        => 'url',
                     'class'       => ['form-row-wide'],
                     'label'       => 'Referral Link',
@@ -1380,7 +1477,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('referral_link'));
                 break;
             case 'discount_code':
-                woocommerce_form_field('discount_code', [
+                $this->render_customizable_tree_form_field('discount_code', [
                     'type'        => 'text',
                     'class'       => ['form-row-wide'],
                     'label'       => 'Discount Code',
@@ -1388,7 +1485,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('discount_code'));
                 break;
             case 'delivery_or_collection':
-                woocommerce_form_field('delivery_or_collection', [
+                $this->render_customizable_tree_form_field('delivery_or_collection', [
                     'type'     => 'select',
                     'class'    => ['form-row-wide'],
                     'label'    => 'Delivery or Collection',
@@ -1401,7 +1498,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('delivery_or_collection'));
                 break;
             case 'contact_emails':
-                woocommerce_form_field('contact_emails', [
+                $this->render_customizable_tree_form_field('contact_emails', [
                     'type'        => 'text',
                     'class'       => ['form-row-wide'],
                     'label'       => 'Contact email(s)',
@@ -1410,7 +1507,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('contact_emails'));
                 break;
             case 'report_emails':
-                woocommerce_form_field('report_emails', [
+                $this->render_customizable_tree_form_field('report_emails', [
                     'type'        => 'text',
                     'class'       => ['form-row-wide'],
                     'label'       => 'Report email(s)',
@@ -1418,7 +1515,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('report_emails'));
                 break;
             case 'pay_forward_type':
-                woocommerce_form_field('pay_forward_type', [
+                $this->render_customizable_tree_form_field('pay_forward_type', [
                     'type'    => 'select',
                     'class'   => ['form-row-wide'],
                     'label'   => 'Pay a Tree Forward?',
@@ -1430,7 +1527,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('pay_forward_type'));
                 break;
             case 'pay_forward_contact':
-                woocommerce_form_field('pay_forward_contact', [
+                $this->render_customizable_tree_form_field('pay_forward_contact', [
                     'type'        => 'text',
                     'class'       => ['form-row-wide'],
                     'label'       => 'Pay Forward Recipient (email or name)',
@@ -1438,7 +1535,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('pay_forward_contact'));
                 break;
             case 'qr_tree_shop_link':
-                woocommerce_form_field('qr_tree_shop_link', [
+                $this->render_customizable_tree_form_field('qr_tree_shop_link', [
                     'type'        => 'url',
                     'class'       => ['form-row-wide'],
                     'label'       => 'Shop Link',
@@ -1446,7 +1543,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('qr_tree_shop_link'));
                 break;
             case 'qr_tree_shop_logo':
-                woocommerce_form_field('qr_tree_shop_logo', [
+                $this->render_customizable_tree_form_field('qr_tree_shop_logo', [
                     'type'        => 'url',
                     'class'       => ['form-row-wide'],
                     'label'       => 'Shop Logo URL',
@@ -1454,7 +1551,7 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('qr_tree_shop_logo'));
                 break;
             case 'qr_tree_show_shop_link':
-                woocommerce_form_field('qr_tree_show_shop_link', [
+                $this->render_customizable_tree_form_field('qr_tree_show_shop_link', [
                     'type'    => 'checkbox',
                     'class'   => ['form-row-wide'],
                     'label'   => 'Display shop logo link for this QR code',

@@ -925,6 +925,30 @@ class QRCodeTracker_Admin {
                 $tree_field_layout = $this->tracker->sanitize_tree_checkout_field_layout($tree_field_layout);
             }
             update_option('qr_tracker_tree_field_layout', $tree_field_layout);
+
+            $raw_tree_field_labels = isset($_POST['qr_tracker_tree_field_label']) && is_array($_POST['qr_tracker_tree_field_label'])
+                ? wp_unslash($_POST['qr_tracker_tree_field_label'])
+                : [];
+            $raw_tree_field_descriptions = isset($_POST['qr_tracker_tree_field_description']) && is_array($_POST['qr_tracker_tree_field_description'])
+                ? wp_unslash($_POST['qr_tracker_tree_field_description'])
+                : [];
+            $tree_field_overrides = [];
+            foreach ((array) $raw_tree_field_labels as $field_key => $label) {
+                $tree_field_overrides[sanitize_key($field_key)]['label'] = $label;
+            }
+            foreach ((array) $raw_tree_field_descriptions as $field_key => $description) {
+                $tree_field_key = sanitize_key($field_key);
+                if (!isset($tree_field_overrides[$tree_field_key])) {
+                    $tree_field_overrides[$tree_field_key] = [];
+                }
+                $tree_field_overrides[$tree_field_key]['description'] = $description;
+            }
+            if (is_object($this->tracker) && method_exists($this->tracker, 'sanitize_tree_checkout_field_overrides')) {
+                $tree_field_overrides = $this->tracker->sanitize_tree_checkout_field_overrides($tree_field_overrides);
+            } else {
+                $tree_field_overrides = [];
+            }
+            update_option('qr_tracker_tree_field_overrides', $tree_field_overrides);
             
             echo '<div class="updated"><p>Settings saved.</p></div>';
         }
@@ -942,6 +966,9 @@ class QRCodeTracker_Admin {
         $tree_field_layout = is_object($this->tracker) && method_exists($this->tracker, 'get_tree_checkout_field_layout')
             ? $this->tracker->get_tree_checkout_field_layout()
             : ['product' => array_keys($tree_field_choices), 'checkout' => []];
+        $tree_field_overrides = is_object($this->tracker) && method_exists($this->tracker, 'get_tree_checkout_field_overrides')
+            ? $this->tracker->get_tree_checkout_field_overrides()
+            : [];
 
         $available_tree_products = [];
         if (post_type_exists('product')) {
@@ -955,6 +982,29 @@ class QRCodeTracker_Admin {
                 'suppress_filters' => false,
             ]);
         }
+        $woocommerce_product_context_fields = [];
+        if (function_exists('wc_get_product')) {
+            foreach ($tree_product_ids as $tree_product_id) {
+                $tree_product = wc_get_product((int) $tree_product_id);
+                if (!$tree_product) {
+                    continue;
+                }
+                foreach ((array) $tree_product->get_attributes() as $attribute) {
+                    if (!is_object($attribute) || !method_exists($attribute, 'get_name')) {
+                        continue;
+                    }
+                    $attribute_name = (string) $attribute->get_name();
+                    if ($attribute_name === '') {
+                        continue;
+                    }
+                    $attribute_label = function_exists('wc_attribute_label')
+                        ? wc_attribute_label($attribute_name, $tree_product)
+                        : ucwords(str_replace('_', ' ', preg_replace('/^pa_/', '', $attribute_name)));
+                    $woocommerce_product_context_fields[$attribute_label] = true;
+                }
+            }
+        }
+        ksort($woocommerce_product_context_fields);
 
         echo '<div class="wrap"><h1>QR Code Tracker Settings</h1>';
         echo '<div class="qr-settings-info">';
@@ -1041,6 +1091,36 @@ class QRCodeTracker_Admin {
             echo '<input type="hidden" name="qr_tracker_tree_field_layout_checkout" id="qr_tracker_tree_field_layout_checkout" value="' . esc_attr(implode(',', $tree_field_layout['checkout'])) . '">';
             echo '<p class="description">Drag and drop fields between zones to choose whether each field appears on the product page or on the WooCommerce checkout screen. Reorder within each zone to control display order.</p>';
         }
+        echo '</td></tr>';
+        echo '<tr><th scope="row">Tree Field Text Overrides</th><td>';
+        if (empty($tree_field_choices)) {
+            echo '<p class="description">Tree field text override controls are unavailable.</p>';
+        } else {
+            echo '<table class="widefat striped" style="max-width: 900px;"><thead><tr><th style="width: 220px;">Field</th><th style="width: 280px;">Visible Label</th><th>Description</th></tr></thead><tbody>';
+            foreach ($tree_field_choices as $field_key => $field_label) {
+                $custom_label = isset($tree_field_overrides[$field_key]['label']) ? $tree_field_overrides[$field_key]['label'] : '';
+                $custom_description = isset($tree_field_overrides[$field_key]['description']) ? $tree_field_overrides[$field_key]['description'] : '';
+                echo '<tr>';
+                echo '<td><code>' . esc_html($field_key) . '</code></td>';
+                echo '<td><input type="text" name="qr_tracker_tree_field_label[' . esc_attr($field_key) . ']" value="' . esc_attr($custom_label) . '" placeholder="' . esc_attr($field_label) . '" style="width:100%;"></td>';
+                echo '<td><textarea name="qr_tracker_tree_field_description[' . esc_attr($field_key) . ']" rows="2" style="width:100%;" placeholder="Leave blank to keep existing helper text.">' . esc_textarea($custom_description) . '</textarea></td>';
+                echo '</tr>';
+            }
+            echo '</tbody></table>';
+            echo '<p class="description">Optional overrides for customer-facing labels and helper text shown on product and checkout forms. Leave fields blank to keep built-in text.</p>';
+        }
+        echo '</td></tr>';
+        echo '<tr><th scope="row">WooCommerce Built-in Field Context</th><td>';
+        if (empty($woocommerce_product_context_fields)) {
+            echo '<p class="description">No built-in WooCommerce product option fields were detected for the currently selected tree products.</p>';
+        } else {
+            echo '<p><strong>Detected product option fields (read-only):</strong></p><ul style="margin-top: 6px;">';
+            foreach (array_keys($woocommerce_product_context_fields) as $context_field) {
+                echo '<li>' . esc_html($context_field) . '</li>';
+            }
+            echo '</ul>';
+        }
+        echo '<p class="description">These are native WooCommerce product option fields shown by product setup/theme and are not managed by QR Tracker field layout.</p>';
         echo '</td></tr>';
         echo '</table>';
         echo '<p><input type="submit" name="qr_tracker_settings_submit" class="button button-primary" value="Save Settings"></p>';
