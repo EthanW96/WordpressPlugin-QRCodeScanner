@@ -282,6 +282,9 @@ class QRCodeTracker {
                     $city,
                     $tree
                 ));
+                if (empty($short_code)) {
+                    return;
+                }
                 $short_url = $this->generate_anonymous_tracker_url($short_code);
                 if (!empty($short_url)) {
                     $current_url = home_url(add_query_arg(null, null));
