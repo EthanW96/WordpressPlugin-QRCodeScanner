@@ -671,6 +671,45 @@ class QRCodeTracker {
             return;
         }
 
+        $site_host = wp_parse_url(home_url('/'), PHP_URL_HOST);
+        $stored_host = wp_parse_url($stored_url, PHP_URL_HOST);
+        if (!empty($site_host) && (empty($stored_host) || strcasecmp($site_host, $stored_host) === 0)) {
+            $home_path = trim((string) wp_parse_url(home_url('/'), PHP_URL_PATH), '/');
+            $stored_path = trim((string) wp_parse_url($stored_url, PHP_URL_PATH), '/');
+
+            // Keep the browser URL short when the resolved target stays on the site's home route.
+            if ($stored_path === '' || $stored_path === $home_path) {
+                $stored_query = wp_parse_url($stored_url, PHP_URL_QUERY);
+                if (is_string($stored_query) && $stored_query !== '') {
+                    $stored_params = [];
+                    parse_str($stored_query, $stored_params);
+                    if (!empty($stored_params) && is_array($stored_params)) {
+                        foreach ($stored_params as $key => $value) {
+                            $sanitized_key = sanitize_key((string) $key);
+                            if ($sanitized_key === '' || isset($_GET[$sanitized_key]) || is_array($value) || is_object($value)) {
+                                continue;
+                            }
+
+                            $sanitized_value = sanitize_text_field((string) $value);
+                            $_GET[$sanitized_key] = $sanitized_value;
+                            $_REQUEST[$sanitized_key] = $sanitized_value;
+                        }
+                    }
+                }
+
+                if (function_exists('is_404') && is_404()) {
+                    global $wp_query;
+                    if ($wp_query instanceof WP_Query) {
+                        $wp_query->is_404 = false;
+                        $wp_query->is_home = true;
+                        $wp_query->is_front_page = true;
+                    }
+                    status_header(200);
+                }
+                return;
+            }
+        }
+
         wp_safe_redirect($stored_url, 302);
         exit;
     }
