@@ -699,7 +699,15 @@ class QRCodeTracker {
 
         $site_host = wp_parse_url(home_url('/'), PHP_URL_HOST);
         $stored_host = wp_parse_url($stored_url, PHP_URL_HOST);
-        if (!empty($site_host) && !empty($stored_host) && strcasecmp($site_host, $stored_host) === 0) {
+        $is_same_site_host = false;
+        if (empty($stored_host)) {
+            // Relative URLs are same-site by definition.
+            $is_same_site_host = true;
+        } elseif (!empty($site_host) && strcasecmp($site_host, $stored_host) === 0) {
+            $is_same_site_host = true;
+        }
+
+        if ($is_same_site_host) {
             $home_path = trim((string) wp_parse_url(home_url('/'), PHP_URL_PATH), '/');
             $stored_path = trim((string) wp_parse_url($stored_url, PHP_URL_PATH), '/');
 
