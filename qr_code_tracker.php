@@ -263,11 +263,38 @@ class QRCodeTracker {
             return;
         }
 
-        if (!function_exists('is_404') || !is_404()) {
+        if (isset($_GET['qr']) && $_GET['qr'] !== '') {
             return;
         }
 
-        if (isset($_GET['qr']) && $_GET['qr'] !== '') {
+        $postcode = isset($_GET['postcode']) ? sanitize_text_field(wp_unslash($_GET['postcode'])) : '';
+        $city = isset($_GET['city']) ? sanitize_text_field(wp_unslash($_GET['city'])) : '';
+        $tree = isset($_GET['tree']) ? sanitize_text_field(wp_unslash($_GET['tree'])) : '';
+        if ($postcode !== '' && $city !== '' && $tree !== '') {
+            $request_uri = isset($_SERVER['REQUEST_URI']) ? wp_unslash($_SERVER['REQUEST_URI']) : '';
+            $request_path = is_string($request_uri) ? wp_parse_url($request_uri, PHP_URL_PATH) : '';
+            $home_path = wp_parse_url(home_url('/'), PHP_URL_PATH);
+            if (trim((string) $request_path, '/') === trim((string) $home_path, '/')) {
+                global $wpdb;
+                $short_code = $wpdb->get_var($wpdb->prepare(
+                    "SELECT short_code FROM {$this->main_table} WHERE postcode = %s AND city = %s AND tree = %s LIMIT 1",
+                    $postcode,
+                    $city,
+                    $tree
+                ));
+                $short_url = $this->generate_anonymous_tracker_url($short_code);
+                if (!empty($short_url)) {
+                    $current_url = home_url(add_query_arg(null, null));
+                    if (untrailingslashit($current_url) !== untrailingslashit($short_url)) {
+                        wp_safe_redirect($short_url, 302);
+                        exit;
+                    }
+                }
+            }
+            return;
+        }
+
+        if (!function_exists('is_404') || !is_404()) {
             return;
         }
 
@@ -290,10 +317,6 @@ class QRCodeTracker {
         if (empty($validated_url)) {
             return;
         }
-
-        $redirect_url = add_query_arg('_qr_redirect', '1', $validated_url);
-        wp_safe_redirect($redirect_url, 302);
-        exit;
     }
 
     private function get_path_short_code_from_request() {
