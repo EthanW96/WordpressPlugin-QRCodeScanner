@@ -739,9 +739,19 @@ class QRCodeTracker {
                 }
 
                 if (function_exists('is_404') && is_404()) {
-                    global $wp_query;
-                    if ($wp_query instanceof WP_Query && method_exists($wp_query, 'set_404')) {
-                        $wp_query->set_404(false);
+                    global $wp_query, $wp_the_query;
+                    $queries_to_normalize = [$wp_query, $wp_the_query];
+                    foreach ($queries_to_normalize as $query_to_normalize) {
+                        if (!($query_to_normalize instanceof WP_Query) || !method_exists($query_to_normalize, 'set_404')) {
+                            continue;
+                        }
+
+                        $query_to_normalize->set_404(false);
+                        $query_to_normalize->is_home = true;
+                        $query_to_normalize->is_page = false;
+                        $query_to_normalize->is_singular = false;
+                        $query_to_normalize->is_archive = false;
+                        $query_to_normalize->is_search = false;
                     }
                     status_header(200);
                 }
