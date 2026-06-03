@@ -673,7 +673,7 @@ class QRCodeTracker {
 
         $site_host = wp_parse_url(home_url('/'), PHP_URL_HOST);
         $stored_host = wp_parse_url($stored_url, PHP_URL_HOST);
-        if (!empty($site_host) && (empty($stored_host) || strcasecmp($site_host, $stored_host) === 0)) {
+        if (!empty($site_host) && !empty($stored_host) && strcasecmp($site_host, $stored_host) === 0) {
             $home_path = trim((string) wp_parse_url(home_url('/'), PHP_URL_PATH), '/');
             $stored_path = trim((string) wp_parse_url($stored_url, PHP_URL_PATH), '/');
 
@@ -683,26 +683,31 @@ class QRCodeTracker {
                 if (is_string($stored_query) && $stored_query !== '') {
                     $stored_params = [];
                     parse_str($stored_query, $stored_params);
-                    if (!empty($stored_params) && is_array($stored_params)) {
+                    if (!empty($stored_params)) {
+                        $allowed_params = ['qr', 'postcode', 'city', 'tree'];
                         foreach ($stored_params as $key => $value) {
                             $sanitized_key = sanitize_key((string) $key);
-                            if ($sanitized_key === '' || isset($_GET[$sanitized_key]) || is_array($value) || is_object($value)) {
+                            if (
+                                $sanitized_key === '' ||
+                                !in_array($sanitized_key, $allowed_params, true) ||
+                                isset($_GET[$sanitized_key]) ||
+                                is_array($value) ||
+                                is_object($value)
+                            ) {
                                 continue;
                             }
 
                             $sanitized_value = sanitize_text_field((string) $value);
                             $_GET[$sanitized_key] = $sanitized_value;
-                            $_REQUEST[$sanitized_key] = $sanitized_value;
+                            set_query_var($sanitized_key, $sanitized_value);
                         }
                     }
                 }
 
                 if (function_exists('is_404') && is_404()) {
                     global $wp_query;
-                    if ($wp_query instanceof WP_Query) {
-                        $wp_query->is_404 = false;
-                        $wp_query->is_home = true;
-                        $wp_query->is_front_page = true;
+                    if ($wp_query instanceof WP_Query && method_exists($wp_query, 'set_404')) {
+                        $wp_query->set_404(false);
                     }
                     status_header(200);
                 }
