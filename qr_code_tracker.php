@@ -1060,6 +1060,8 @@ class QRCodeTracker {
             '_report_emails',
             '_org_or_individual_name',
             '_referral_code',
+            '_discount_code',
+            '_delivery_or_collection',
             '_pay_forward_type',
             '_pay_forward_contact',
             '_qr_tree_postcode',
@@ -1113,6 +1115,82 @@ class QRCodeTracker {
             ],
         ], isset($_POST['purchaser_type']) ? sanitize_text_field(wp_unslash($_POST['purchaser_type'])) : 'individual');
 
+        woocommerce_form_field('org_or_individual_name', [
+            'type'     => 'text',
+            'class'    => ['form-row-wide'],
+            'label'    => 'Organization / Individual Name',
+            'required' => true,
+        ], isset($_POST['org_or_individual_name']) ? sanitize_text_field(wp_unslash($_POST['org_or_individual_name'])) : '');
+
+        woocommerce_form_field('qr_tree_postcode', [
+            'type'     => 'text',
+            'class'    => ['form-row-wide'],
+            'label'    => 'Postcode',
+            'required' => true,
+        ], isset($_POST['qr_tree_postcode']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_postcode'])) : '');
+
+        woocommerce_form_field('qr_tree_city', [
+            'type'     => 'text',
+            'class'    => ['form-row-wide'],
+            'label'    => 'City',
+            'required' => true,
+        ], isset($_POST['qr_tree_city']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_city'])) : '');
+
+        woocommerce_form_field('qr_tree_message_1', [
+            'type'        => 'textarea',
+            'class'       => ['form-row-wide'],
+            'label'       => 'Message 1',
+            'description' => 'Suggestion: "Merry Christmas from [Name]!"',
+        ], isset($_POST['qr_tree_message_1']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_1'])) : '');
+
+        woocommerce_form_field('qr_tree_message_2', [
+            'type'        => 'textarea',
+            'class'       => ['form-row-wide'],
+            'label'       => 'Message 2',
+            'description' => 'Suggestion: Add [qr_message_2_button url="https://example.com" label="Read More"], [qr_message_2_button url="mailto:hello@example.com" label="Email"], or [qr_message_2_button url="https://example.com" label="Click Here"].',
+        ], isset($_POST['qr_tree_message_2']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_2'])) : '');
+
+        woocommerce_form_field('qr_tree_tree', [
+            'type'     => 'text',
+            'class'    => ['form-row-wide'],
+            'label'    => 'Tree',
+            'required' => true,
+        ], isset($_POST['qr_tree_tree']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_tree'])) : '');
+
+        woocommerce_form_field('qr_tree_label', [
+            'type'     => 'text',
+            'class'    => ['form-row-wide'],
+            'label'    => 'Label',
+            'required' => true,
+        ], isset($_POST['qr_tree_label']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_label'])) : '');
+
+        woocommerce_form_field('referral_code', [
+            'type'        => 'url',
+            'class'       => ['form-row-wide'],
+            'label'       => 'Referral Link',
+            'description' => 'Optional link to connect an individual purchase with an organization.',
+            'placeholder' => 'https://example.com/referral',
+        ], isset($_POST['referral_code']) ? esc_url_raw(wp_unslash($_POST['referral_code'])) : '');
+
+        woocommerce_form_field('discount_code', [
+            'type'        => 'text',
+            'class'       => ['form-row-wide'],
+            'label'       => 'Discount Code',
+            'description' => 'Optional coupon or discount reference.',
+        ], isset($_POST['discount_code']) ? sanitize_text_field(wp_unslash($_POST['discount_code'])) : '');
+
+        woocommerce_form_field('delivery_or_collection', [
+            'type'     => 'select',
+            'class'    => ['form-row-wide'],
+            'label'    => 'Delivery or Collection',
+            'required' => true,
+            'options'  => [
+                ''           => 'Select an option',
+                'delivery'   => 'Delivery',
+                'collection' => 'Collection',
+            ],
+        ], isset($_POST['delivery_or_collection']) ? sanitize_text_field(wp_unslash($_POST['delivery_or_collection'])) : '');
+
         woocommerce_form_field('contact_emails', [
             'type'        => 'text',
             'class'       => ['form-row-wide'],
@@ -1127,20 +1205,6 @@ class QRCodeTracker {
             'label'       => 'Report email(s)',
             'description' => 'Weekly report recipient(s), separated by commas, spaces, or semicolons.',
         ], isset($_POST['report_emails']) ? sanitize_text_field(wp_unslash($_POST['report_emails'])) : '');
-
-        woocommerce_form_field('org_or_individual_name', [
-            'type'     => 'text',
-            'class'    => ['form-row-wide'],
-            'label'    => 'Organization / Individual Name',
-            'required' => true,
-        ], isset($_POST['org_or_individual_name']) ? sanitize_text_field(wp_unslash($_POST['org_or_individual_name'])) : '');
-
-        woocommerce_form_field('referral_code', [
-            'type'        => 'text',
-            'class'       => ['form-row-wide'],
-            'label'       => 'Referral Code',
-            'description' => 'Optional sharable referral code.',
-        ], isset($_POST['referral_code']) ? sanitize_text_field(wp_unslash($_POST['referral_code'])) : '');
 
         woocommerce_form_field('pay_forward_type', [
             'type'    => 'select',
@@ -1159,46 +1223,6 @@ class QRCodeTracker {
             'label'       => 'Pay Forward Recipient (email or name)',
             'placeholder' => 'Leave blank if general',
         ], isset($_POST['pay_forward_contact']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_contact'])) : '');
-
-        woocommerce_form_field('qr_tree_postcode', [
-            'type'        => 'text',
-            'class'       => ['form-row-wide'],
-            'label'       => 'Postcode',
-            'required'    => true,
-        ], isset($_POST['qr_tree_postcode']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_postcode'])) : '');
-
-        woocommerce_form_field('qr_tree_city', [
-            'type'        => 'text',
-            'class'       => ['form-row-wide'],
-            'label'       => 'City',
-            'required'    => true,
-        ], isset($_POST['qr_tree_city']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_city'])) : '');
-
-        woocommerce_form_field('qr_tree_tree', [
-            'type'     => 'text',
-            'class'    => ['form-row-wide'],
-            'label'    => 'Tree',
-            'required' => true,
-        ], isset($_POST['qr_tree_tree']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_tree'])) : '');
-
-        woocommerce_form_field('qr_tree_label', [
-            'type'     => 'text',
-            'class'       => ['form-row-wide'],
-            'label'       => 'Label',
-            'required'    => true,
-        ], isset($_POST['qr_tree_label']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_label'])) : '');
-
-        woocommerce_form_field('qr_tree_message_1', [
-            'type'    => 'textarea',
-            'class'   => ['form-row-wide'],
-            'label'   => 'Message 1',
-        ], isset($_POST['qr_tree_message_1']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_1'])) : '');
-
-        woocommerce_form_field('qr_tree_message_2', [
-            'type'    => 'textarea',
-            'class'   => ['form-row-wide'],
-            'label'   => 'Message 2',
-        ], isset($_POST['qr_tree_message_2']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_2'])) : '');
 
         woocommerce_form_field('qr_tree_shop_link', [
             'type'        => 'url',
@@ -1302,6 +1326,18 @@ class QRCodeTracker {
             return false;
         }
 
+        $referral_link = isset($_POST['referral_code']) ? esc_url_raw(wp_unslash($_POST['referral_code'])) : '';
+        if (!empty($referral_link) && !filter_var($referral_link, FILTER_VALIDATE_URL)) {
+            wc_add_notice('Please provide a valid referral link URL.', 'error');
+            return false;
+        }
+
+        $delivery_or_collection = isset($_POST['delivery_or_collection']) ? sanitize_text_field(wp_unslash($_POST['delivery_or_collection'])) : '';
+        if (!in_array($delivery_or_collection, ['delivery', 'collection'], true)) {
+            wc_add_notice('Please select delivery or collection.', 'error');
+            return false;
+        }
+
         return $passed;
     }
 
@@ -1315,7 +1351,9 @@ class QRCodeTracker {
             'contact_emails' => isset($_POST['contact_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['contact_emails'])) : '',
             'report_emails' => isset($_POST['report_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['report_emails'])) : '',
             'org_or_individual_name' => isset($_POST['org_or_individual_name']) ? sanitize_text_field(wp_unslash($_POST['org_or_individual_name'])) : '',
-            'referral_code' => isset($_POST['referral_code']) ? sanitize_text_field(wp_unslash($_POST['referral_code'])) : '',
+            'referral_code' => isset($_POST['referral_code']) ? esc_url_raw(wp_unslash($_POST['referral_code'])) : '',
+            'discount_code' => isset($_POST['discount_code']) ? sanitize_text_field(wp_unslash($_POST['discount_code'])) : '',
+            'delivery_or_collection' => isset($_POST['delivery_or_collection']) ? sanitize_text_field(wp_unslash($_POST['delivery_or_collection'])) : '',
             'pay_forward_type' => isset($_POST['pay_forward_type']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) : '',
             'pay_forward_contact' => isset($_POST['pay_forward_contact']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_contact'])) : '',
             'qr_tree_postcode' => isset($_POST['qr_tree_postcode']) ? strtoupper(sanitize_text_field(wp_unslash($_POST['qr_tree_postcode']))) : '',
@@ -1341,18 +1379,20 @@ class QRCodeTracker {
     public function display_tree_checkout_fields_in_cart($item_data, $cart_item) {
         $labels = [
             'purchaser_type' => 'Purchasing As',
-            'contact_emails' => 'Contact Email(s)',
-            'report_emails' => 'Report Email(s)',
             'org_or_individual_name' => 'Organization / Individual Name',
-            'referral_code' => 'Referral Code',
-            'pay_forward_type' => 'Pay Forward',
-            'pay_forward_contact' => 'Pay Forward Recipient',
             'qr_tree_postcode' => 'Postcode',
             'qr_tree_city' => 'City',
-            'qr_tree_tree' => 'Tree',
-            'qr_tree_label' => 'Label',
             'qr_tree_message_1' => 'Message 1',
             'qr_tree_message_2' => 'Message 2',
+            'qr_tree_tree' => 'Tree',
+            'qr_tree_label' => 'Label',
+            'referral_code' => 'Referral Link',
+            'discount_code' => 'Discount Code',
+            'delivery_or_collection' => 'Delivery or Collection',
+            'contact_emails' => 'Contact Email(s)',
+            'report_emails' => 'Report Email(s)',
+            'pay_forward_type' => 'Pay Forward',
+            'pay_forward_contact' => 'Pay Forward Recipient',
             'qr_tree_shop_link' => 'Shop Link',
             'qr_tree_shop_logo' => 'Shop Logo URL',
             'qr_tree_show_shop_link' => 'Show Shop Link',
@@ -1376,18 +1416,20 @@ class QRCodeTracker {
     public function save_tree_checkout_fields_to_order_items($item, $cart_item_key, $values) {
         $labels = [
             'purchaser_type' => 'Purchasing As',
-            'contact_emails' => 'Contact Email(s)',
-            'report_emails' => 'Report Email(s)',
             'org_or_individual_name' => 'Organization / Individual Name',
-            'referral_code' => 'Referral Code',
-            'pay_forward_type' => 'Pay Forward',
-            'pay_forward_contact' => 'Pay Forward Recipient',
             'qr_tree_postcode' => 'Postcode',
             'qr_tree_city' => 'City',
-            'qr_tree_tree' => 'Tree',
-            'qr_tree_label' => 'Label',
             'qr_tree_message_1' => 'Message 1',
             'qr_tree_message_2' => 'Message 2',
+            'qr_tree_tree' => 'Tree',
+            'qr_tree_label' => 'Label',
+            'referral_code' => 'Referral Link',
+            'discount_code' => 'Discount Code',
+            'delivery_or_collection' => 'Delivery or Collection',
+            'contact_emails' => 'Contact Email(s)',
+            'report_emails' => 'Report Email(s)',
+            'pay_forward_type' => 'Pay Forward',
+            'pay_forward_contact' => 'Pay Forward Recipient',
             'qr_tree_shop_link' => 'Shop Link',
             'qr_tree_shop_logo' => 'Shop Logo URL',
             'qr_tree_show_shop_link' => 'Show Shop Link',
