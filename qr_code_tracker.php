@@ -1446,7 +1446,7 @@ class QRCodeTracker {
                     'class'   => ['form-row-wide'],
                     'label'   => 'Display shop logo link for this QR code',
                     'default' => 1,
-                ], $this->get_tree_field_value_from_request('qr_tree_show_shop_link', 0));
+                ], $this->get_tree_field_value_from_request('qr_tree_show_shop_link', 1));
                 break;
         }
     }
@@ -1529,9 +1529,8 @@ class QRCodeTracker {
         }
 
         if (isset($field_lookup['report_emails'])) {
-            $report_emails_raw = isset($_POST['report_emails']) ? wp_unslash($_POST['report_emails']) : '';
-            $sanitized_report_emails = $report_emails_raw !== '' ? $this->sanitize_email_list($report_emails_raw) : '';
-            if (!empty($report_emails_raw) && empty($sanitized_report_emails)) {
+            $report_emails = $this->get_tree_field_value_from_request('report_emails');
+            if (isset($_POST['report_emails']) && $report_emails === '') {
                 wc_add_notice('Please enter valid report email(s).', 'error');
                 return false;
             }

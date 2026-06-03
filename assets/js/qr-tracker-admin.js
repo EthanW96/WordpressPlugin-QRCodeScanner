@@ -73,8 +73,8 @@
 
             var getDragAfterElement = function (zone, clientY) {
                 var items = Array.from(zone.querySelectorAll('.qr-tree-field-item:not(.dragging)'));
-                // Find the nearest item whose midpoint is still below the cursor,
-                // so we can insert the dragged item immediately before it.
+                // Find the nearest item whose midpoint is above the cursor,
+                // then insert the dragged item immediately before that item.
                 return items.reduce(function (closest, child) {
                     var box = child.getBoundingClientRect();
                     var offset = clientY - box.top - box.height / 2;

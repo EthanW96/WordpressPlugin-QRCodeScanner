@@ -1037,8 +1037,8 @@ class QRCodeTracker_Admin {
             echo '</ul>';
             echo '</div>';
             echo '</div>';
-            echo '<input type="hidden" name="qr_tracker_tree_field_layout_product" id="qr_tracker_tree_field_layout_product" value="">';
-            echo '<input type="hidden" name="qr_tracker_tree_field_layout_checkout" id="qr_tracker_tree_field_layout_checkout" value="">';
+            echo '<input type="hidden" name="qr_tracker_tree_field_layout_product" id="qr_tracker_tree_field_layout_product" value="' . esc_attr(implode(',', $tree_field_layout['product'])) . '">';
+            echo '<input type="hidden" name="qr_tracker_tree_field_layout_checkout" id="qr_tracker_tree_field_layout_checkout" value="' . esc_attr(implode(',', $tree_field_layout['checkout'])) . '">';
             echo '<p class="description">Drag and drop fields between zones to choose whether each field appears on the product page or on the WooCommerce checkout screen. Reorder within each zone to control display order.</p>';
         }
         echo '</td></tr>';
