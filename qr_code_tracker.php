@@ -1071,6 +1071,7 @@ class QRCodeTracker {
         add_filter('woocommerce_add_cart_item_data', [$this, 'add_tree_checkout_fields_to_cart'], 10, 2);
         add_filter('woocommerce_get_item_data', [$this, 'display_tree_checkout_fields_in_cart'], 10, 2);
         add_action('woocommerce_checkout_create_order_line_item', [$this, 'save_tree_checkout_fields_to_order_items'], 10, 3);
+        add_action('woocommerce_checkout_order_processed', [$this, 'clear_tree_checkout_session_values']);
         add_action('woocommerce_order_status_completed', [$this, 'create_qr_records_for_completed_order'], 10, 1);
         add_filter('woocommerce_hidden_order_itemmeta', [$this, 'hide_legacy_tree_item_meta_keys']);
     }
@@ -1178,6 +1179,33 @@ class QRCodeTracker {
             $this->get_tree_field_keys_for_context('checkout'),
             self::TREE_FIELD_KEYS
         )));
+    }
+
+    private function get_tree_checkout_session_values() {
+        if (!function_exists('WC') || !WC() || !WC()->session) {
+            return [];
+        }
+        $stored_values = WC()->session->get('qr_tracker_checkout_tree_fields', []);
+        return is_array($stored_values) ? $stored_values : [];
+    }
+
+    private function store_tree_checkout_session_values($field_keys) {
+        if (!function_exists('WC') || !WC() || !WC()->session) {
+            return;
+        }
+
+        $stored_values = [];
+        foreach ($field_keys as $field_key) {
+            $stored_values[$field_key] = $this->get_tree_field_value_from_request($field_key);
+        }
+        WC()->session->set('qr_tracker_checkout_tree_fields', $stored_values);
+    }
+
+    public function clear_tree_checkout_session_values($order_id = 0) {
+        if (!function_exists('WC') || !WC() || !WC()->session) {
+            return;
+        }
+        WC()->session->__unset('qr_tracker_checkout_tree_fields');
     }
 
     public function hide_legacy_tree_item_meta_keys($hidden_meta_keys) {
@@ -1443,7 +1471,7 @@ class QRCodeTracker {
             case 'report_emails':
                 return $this->sanitize_email_list($raw_value);
             case 'qr_tree_show_shop_link':
-                return isset($_POST['qr_tree_show_shop_link']) ? 1 : 0;
+                return (int) !empty($raw_value);
             default:
                 return sanitize_text_field($raw_value);
         }
@@ -1474,7 +1502,10 @@ class QRCodeTracker {
             return;
         }
 
-        $this->validate_tree_checkout_fields_by_context($this->get_tree_field_keys_for_context('checkout'));
+        $checkout_fields = $this->get_tree_field_keys_for_context('checkout');
+        if ($this->validate_tree_checkout_fields_by_context($checkout_fields)) {
+            $this->store_tree_checkout_session_values($checkout_fields);
+        }
     }
 
     private function validate_tree_checkout_fields_by_context($field_keys) {
@@ -1489,14 +1520,18 @@ class QRCodeTracker {
             return false;
         }
 
-        if (isset($field_lookup['contact_emails']) && empty($this->sanitize_email_list($this->get_tree_field_value_from_request('contact_emails')))) {
-            wc_add_notice('Please enter at least one valid contact email.', 'error');
-            return false;
+        if (isset($field_lookup['contact_emails'])) {
+            $contact_emails = $this->get_tree_field_value_from_request('contact_emails');
+            if (empty($contact_emails)) {
+                wc_add_notice('Please enter at least one valid contact email.', 'error');
+                return false;
+            }
         }
 
         if (isset($field_lookup['report_emails'])) {
             $report_emails_raw = isset($_POST['report_emails']) ? wp_unslash($_POST['report_emails']) : '';
-            if (!empty($report_emails_raw) && empty($this->sanitize_email_list($report_emails_raw))) {
+            $sanitized_report_emails = $report_emails_raw !== '' ? $this->sanitize_email_list($report_emails_raw) : '';
+            if (!empty($report_emails_raw) && empty($sanitized_report_emails)) {
                 wc_add_notice('Please enter valid report email(s).', 'error');
                 return false;
             }
@@ -1619,12 +1654,13 @@ class QRCodeTracker {
 
     public function save_tree_checkout_fields_to_order_items($item, $cart_item_key, $values) {
         $all_labels = $this->get_tree_checkout_field_choices();
+        $session_checkout_values = $this->get_tree_checkout_session_values();
         foreach ($this->get_tree_field_display_order() as $field) {
             if (!isset($all_labels[$field])) {
                 continue;
             }
 
-            $field_value = array_key_exists($field, $values) ? $values[$field] : $this->get_tree_field_value_from_request($field);
+            $field_value = array_key_exists($field, $values) ? $values[$field] : (isset($session_checkout_values[$field]) ? $session_checkout_values[$field] : '');
             if ($field_value !== '') {
                 $stored_value = $field === 'qr_tree_show_shop_link' ? (int) $field_value : $field_value;
                 $display_value = $field === 'qr_tree_show_shop_link'
