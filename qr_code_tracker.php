@@ -741,18 +741,28 @@ class QRCodeTracker {
                 if (function_exists('is_404') && is_404()) {
                     global $wp_query, $wp_the_query;
                     $queries_to_normalize = [$wp_query, $wp_the_query];
+                    $normalized_query_vars = [];
+                    foreach (['qr', 'postcode', 'city', 'tree'] as $query_key) {
+                        if (isset($_GET[$query_key])) {
+                            $normalized_query_vars[$query_key] = sanitize_text_field((string) $_GET[$query_key]);
+                        }
+                    }
+                    if (get_option('show_on_front') === 'page') {
+                        $front_page_id = (int) get_option('page_on_front');
+                        if ($front_page_id > 0) {
+                            $normalized_query_vars['page_id'] = $front_page_id;
+                        }
+                    }
                     foreach ($queries_to_normalize as $query_to_normalize) {
                         if (!($query_to_normalize instanceof WP_Query) || !method_exists($query_to_normalize, 'set_404')) {
                             continue;
                         }
 
                         $query_to_normalize->set_404(false);
-                        // Normalize to home-query state so /{shortcode} renders front content instead of 404.
-                        $query_to_normalize->is_home = true;
-                        $query_to_normalize->is_page = false;
-                        $query_to_normalize->is_singular = false;
-                        $query_to_normalize->is_archive = false;
-                        $query_to_normalize->is_search = false;
+                        // Re-parse as a home/front request so /{shortcode} does not resolve to a 404 template.
+                        if (method_exists($query_to_normalize, 'parse_query')) {
+                            $query_to_normalize->parse_query($normalized_query_vars);
+                        }
                     }
                     status_header(200);
                 }
