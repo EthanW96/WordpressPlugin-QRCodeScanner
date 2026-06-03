@@ -69,6 +69,7 @@ class QRCodeTracker {
         // Initialize popup functionality
         $this->popup = new QRCodeTracker_Popup($this);
 
+        add_action('parse_request', [$this, 'maybe_redirect_query_url_to_short_code'], 1);
         add_action('wp', [$this, 'track_visit'], 0);
         add_action('template_redirect', [$this, 'handle_legacy_short_code_redirect'], 0);
         add_action('template_redirect', [$this, 'handle_qr_management_request']);
@@ -648,6 +649,57 @@ class QRCodeTracker {
         return strtolower($request_path);
     }
 
+    public function maybe_redirect_query_url_to_short_code($wp = null) {
+        if (is_admin() || wp_doing_ajax() || wp_doing_cron() || (defined('REST_REQUEST') && REST_REQUEST)) {
+            return;
+        }
+
+        if (isset($_GET['qr']) || isset($_GET['_qr_redirect']) || isset($_GET['qr_manage']) || isset($_GET['qr_manage_team'])) {
+            return;
+        }
+
+        $postcode = isset($_GET['postcode']) ? sanitize_text_field(wp_unslash($_GET['postcode'])) : '';
+        $city = isset($_GET['city']) ? sanitize_text_field(wp_unslash($_GET['city'])) : '';
+        $tree = isset($_GET['tree']) ? sanitize_text_field(wp_unslash($_GET['tree'])) : '';
+
+        if ($postcode === '' || $city === '' || $tree === '') {
+            return;
+        }
+
+        global $wpdb;
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT short_code FROM {$this->main_table} WHERE postcode = %s AND city = %s AND tree = %s ORDER BY id DESC LIMIT 1",
+            $postcode,
+            $city,
+            $tree
+        ));
+
+        if (!$row || empty($row->short_code)) {
+            return;
+        }
+
+        $short_code = strtolower(sanitize_text_field((string) $row->short_code));
+        if ($short_code === '') {
+            return;
+        }
+
+        $target_url = $this->is_anonymous_short_code($short_code)
+            ? $this->generate_anonymous_tracker_url($short_code)
+            : add_query_arg(['qr' => $short_code], home_url('/'));
+
+        if (empty($target_url)) {
+            return;
+        }
+
+        $current_url = home_url(add_query_arg([]));
+        if (untrailingslashit($current_url) === untrailingslashit($target_url)) {
+            return;
+        }
+
+        wp_safe_redirect($target_url, 302);
+        exit;
+    }
+
     public function handle_anonymous_short_code_redirect() {
         if (is_admin() || wp_doing_ajax()) {
             return;
@@ -678,14 +730,59 @@ class QRCodeTracker {
             return;
         }
 
-        // Serve the destination content at the short link URL without redirecting so
-        // the browser URL remains the short link (e.g. /abc123 shows the home page
-        // but the address bar never changes to the full stored URL).
-        // Passing an empty string to WP_Query::query() re-parses the request as a
-        // front-page request, which is how WordPress serves the home page.
+        // Serve the destination content at the short-link URL without redirecting
+        // the browser. Rebuild the main query against the internal destination URL
+        // so theme/plugin code sees a consistent queried object and global post.
+        $target_path = wp_parse_url($row->url, PHP_URL_PATH);
+        $target_query = wp_parse_url($row->url, PHP_URL_QUERY);
+        if (!is_string($target_path) || $target_path === '') {
+            $target_path = '/';
+        }
+
+        $target_query_vars = [];
+        if (is_string($target_query) && $target_query !== '') {
+            wp_parse_str($target_query, $target_query_vars);
+        }
+
+        $normalized_path = trim($target_path, '/');
+        $home_path = wp_parse_url(home_url('/'), PHP_URL_PATH);
+        if (is_string($home_path)) {
+            $home_path = trim($home_path, '/');
+            if ($home_path !== '') {
+                if (strpos($normalized_path, $home_path . '/') === 0) {
+                    $normalized_path = substr($normalized_path, strlen($home_path) + 1);
+                } elseif ($normalized_path === $home_path) {
+                    $normalized_path = '';
+                }
+            }
+        }
+
+        if ($normalized_path === '') {
+            if (get_option('show_on_front') === 'page') {
+                $front_page_id = (int) get_option('page_on_front');
+                if ($front_page_id > 0 && !isset($target_query_vars['page_id']) && !isset($target_query_vars['pagename'])) {
+                    $target_query_vars['page_id'] = $front_page_id;
+                }
+            }
+        } elseif (!isset($target_query_vars['page_id']) && !isset($target_query_vars['pagename']) && !isset($target_query_vars['name'])) {
+            $target_post_id = url_to_postid(home_url('/' . ltrim($normalized_path, '/')));
+            if ($target_post_id > 0) {
+                $target_query_vars['page_id'] = $target_post_id;
+            } else {
+                $target_query_vars['pagename'] = $normalized_path;
+            }
+        }
+
         global $wp_query, $wp_the_query;
-        $wp_query->query('');
+        $wp_query->query($target_query_vars);
+        $wp_query->is_404 = false;
         $wp_the_query = $wp_query;
+
+        if (!empty($wp_query->post) && $wp_query->post instanceof WP_Post) {
+            $GLOBALS['post'] = $wp_query->post;
+            setup_postdata($GLOBALS['post']);
+        }
+
         status_header(200);
         nocache_headers();
     }
