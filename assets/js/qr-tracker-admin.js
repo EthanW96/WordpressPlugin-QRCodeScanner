@@ -75,7 +75,7 @@
              * Determine which list item should come after the dragged element.
              * @param {Element} zone Drag-and-drop list container.
              * @param {number} clientY Current pointer Y coordinate.
-             * @returns {Element|undefined} Item to insert before, or undefined to append.
+             * @returns {Element|undefined} Item that should remain after insertion, or undefined to append.
              */
             var getDragAfterElement = function (zone, clientY) {
                 var items = Array.from(zone.querySelectorAll('.qr-tree-field-item:not(.dragging)'));

@@ -1546,13 +1546,14 @@ class QRCodeTracker {
 
         if (isset($field_lookup['report_emails'])) {
             $report_emails = $this->get_tree_field_value_from_request('report_emails');
-            if (isset($_POST['report_emails']) && $report_emails === '') {
+            $report_emails_raw = isset($_POST['report_emails']) ? sanitize_text_field(wp_unslash($_POST['report_emails'])) : '';
+            if ($report_emails_raw !== '' && $report_emails === '') {
                 wc_add_notice('Please enter valid report email(s).', 'error');
                 return false;
             }
         }
 
-        if (isset($field_lookup['pay_forward_type']) && $this->get_tree_field_value_from_request('pay_forward_type') === 'specific' && $this->get_tree_field_value_from_request('pay_forward_contact') === '') {
+        if (isset($field_lookup['pay_forward_type']) && isset($field_lookup['pay_forward_contact']) && $this->get_tree_field_value_from_request('pay_forward_type') === 'specific' && $this->get_tree_field_value_from_request('pay_forward_contact') === '') {
             wc_add_notice('Please provide a recipient for the pay-forward tree.', 'error');
             return false;
         }
