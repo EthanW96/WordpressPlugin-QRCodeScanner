@@ -32,6 +32,26 @@ class QRCodeTracker {
     private const EDIT_TOKEN_LENGTH = 32;
     private const EDIT_TOKEN_MIN_LENGTH = 16;
     private const EDIT_TOKEN_MAX_LENGTH = 64;
+    private const TREE_FIELD_KEYS = [
+        'purchaser_type',
+        'org_or_individual_name',
+        'qr_tree_postcode',
+        'qr_tree_city',
+        'qr_tree_message_1',
+        'qr_tree_message_2',
+        'qr_tree_tree',
+        'qr_tree_label',
+        'referral_link',
+        'discount_code',
+        'delivery_or_collection',
+        'contact_emails',
+        'report_emails',
+        'pay_forward_type',
+        'pay_forward_contact',
+        'qr_tree_shop_link',
+        'qr_tree_shop_logo',
+        'qr_tree_show_shop_link',
+    ];
 
     private $main_table;
     private $log_table;
@@ -44,6 +64,7 @@ class QRCodeTracker {
     private $export;
     private $popup;
     private $teams;
+    private $tree_checkout_field_overrides_cache = null;
 
     public function __construct() {
         global $wpdb;
@@ -1157,12 +1178,257 @@ class QRCodeTracker {
 
     private function init_woocommerce_tree_fields() {
         add_action('woocommerce_before_add_to_cart_button', [$this, 'render_tree_checkout_fields']);
+        add_action('woocommerce_after_order_notes', [$this, 'render_tree_checkout_fields_on_checkout']);
         add_filter('woocommerce_add_to_cart_validation', [$this, 'validate_tree_checkout_fields'], 10, 2);
+        add_action('woocommerce_checkout_process', [$this, 'validate_tree_checkout_fields_on_checkout']);
         add_filter('woocommerce_add_cart_item_data', [$this, 'add_tree_checkout_fields_to_cart'], 10, 2);
         add_filter('woocommerce_get_item_data', [$this, 'display_tree_checkout_fields_in_cart'], 10, 2);
         add_action('woocommerce_checkout_create_order_line_item', [$this, 'save_tree_checkout_fields_to_order_items'], 10, 3);
+        add_action('woocommerce_checkout_order_processed', [$this, 'clear_tree_checkout_session_values']);
         add_action('woocommerce_order_status_completed', [$this, 'create_qr_records_for_completed_order'], 10, 1);
         add_filter('woocommerce_hidden_order_itemmeta', [$this, 'hide_legacy_tree_item_meta_keys']);
+    }
+
+    public function get_tree_checkout_field_choices() {
+        $default_labels = $this->get_default_tree_checkout_field_labels();
+        $overrides = $this->get_tree_checkout_field_overrides();
+        $field_choices = [];
+        foreach (self::TREE_FIELD_KEYS as $field_key) {
+            if (isset($overrides[$field_key]['label']) && $overrides[$field_key]['label'] !== '') {
+                $field_choices[$field_key] = $overrides[$field_key]['label'];
+            } elseif (isset($default_labels[$field_key])) {
+                $field_choices[$field_key] = $default_labels[$field_key];
+            } else {
+                $field_choices[$field_key] = $field_key;
+            }
+        }
+
+        return $field_choices;
+    }
+
+    private function get_default_tree_checkout_field_labels() {
+        return [
+            'purchaser_type' => 'Purchasing As',
+            'org_or_individual_name' => 'Organization / Individual Name',
+            'qr_tree_postcode' => 'Postcode',
+            'qr_tree_city' => 'City',
+            'qr_tree_message_1' => 'Message 1',
+            'qr_tree_message_2' => 'Message 2',
+            'qr_tree_tree' => 'Tree',
+            'qr_tree_label' => 'Label',
+            'referral_link' => 'Referral Link',
+            'discount_code' => 'Discount Code',
+            'delivery_or_collection' => 'Delivery or Collection',
+            'contact_emails' => 'Contact Email(s)',
+            'report_emails' => 'Report Email(s)',
+            'pay_forward_type' => 'Pay Forward',
+            'pay_forward_contact' => 'Pay Forward Recipient',
+            'qr_tree_shop_link' => 'Shop Link',
+            'qr_tree_shop_logo' => 'Shop Logo URL',
+            'qr_tree_show_shop_link' => 'Show Shop Link',
+        ];
+    }
+
+    private function get_default_tree_checkout_field_descriptions() {
+        return [
+            'qr_tree_message_1' => 'Suggestion: "Merry Christmas from [Name]!"',
+            'qr_tree_message_2' => 'Suggestions: Click Here, Read More, Email. To render a button in Message 2, use [qr_message_2_button ...] only when that shortcode is available in your site (check with your site admin/plugin docs).',
+            'referral_link' => 'Optional link to connect an individual purchase with an organization.',
+            'discount_code' => 'Optional coupon or discount reference.',
+            'contact_emails' => 'Separate multiple emails with commas, spaces, or semicolons.',
+            'report_emails' => 'Weekly report recipient(s), separated by commas, spaces, or semicolons.',
+        ];
+    }
+
+    public function sanitize_tree_checkout_field_overrides($overrides) {
+        if (!is_array($overrides)) {
+            return [];
+        }
+
+        $sanitized = [];
+        foreach (self::TREE_FIELD_KEYS as $field_key) {
+            if (!isset($overrides[$field_key]) || !is_array($overrides[$field_key])) {
+                continue;
+            }
+
+            $label = isset($overrides[$field_key]['label']) ? sanitize_text_field($overrides[$field_key]['label']) : '';
+            $description = isset($overrides[$field_key]['description']) ? sanitize_textarea_field($overrides[$field_key]['description']) : '';
+
+            if ($label === '' && $description === '') {
+                continue;
+            }
+
+            $sanitized[$field_key] = [];
+            if ($label !== '') {
+                $sanitized[$field_key]['label'] = $label;
+            }
+            if ($description !== '') {
+                $sanitized[$field_key]['description'] = $description;
+            }
+        }
+
+        return $sanitized;
+    }
+
+    public function get_tree_checkout_field_overrides() {
+        if ($this->tree_checkout_field_overrides_cache === null) {
+            $this->tree_checkout_field_overrides_cache = $this->sanitize_tree_checkout_field_overrides(get_option('qr_tracker_tree_field_overrides', []));
+        }
+        return $this->tree_checkout_field_overrides_cache;
+    }
+
+    public function reset_tree_checkout_field_override_cache() {
+        $this->tree_checkout_field_overrides_cache = null;
+    }
+
+    private function get_tree_field_label($field_key, $default = '') {
+        $overrides = $this->get_tree_checkout_field_overrides();
+        if (isset($overrides[$field_key]['label']) && $overrides[$field_key]['label'] !== '') {
+            return $overrides[$field_key]['label'];
+        }
+
+        $defaults = $this->get_default_tree_checkout_field_labels();
+        if ($default === '' && isset($defaults[$field_key])) {
+            $default = $defaults[$field_key];
+        }
+
+        return $default;
+    }
+
+    private function get_tree_field_description($field_key, $default = '') {
+        $overrides = $this->get_tree_checkout_field_overrides();
+        if (isset($overrides[$field_key]['description']) && $overrides[$field_key]['description'] !== '') {
+            return $overrides[$field_key]['description'];
+        }
+
+        $defaults = $this->get_default_tree_checkout_field_descriptions();
+        if ($default === '' && isset($defaults[$field_key])) {
+            $default = $defaults[$field_key];
+        }
+
+        return $default;
+    }
+
+    private function get_default_tree_checkout_field_layout() {
+        return [
+            'product' => self::TREE_FIELD_KEYS,
+            'checkout' => [],
+        ];
+    }
+
+    public function sanitize_tree_checkout_field_layout($layout) {
+        $default_layout = $this->get_default_tree_checkout_field_layout();
+        if (!is_array($layout)) {
+            return $default_layout;
+        }
+
+        $known_keys = self::TREE_FIELD_KEYS;
+        $product = isset($layout['product']) && is_array($layout['product']) ? $layout['product'] : [];
+        $checkout = isset($layout['checkout']) && is_array($layout['checkout']) ? $layout['checkout'] : [];
+
+        $product = array_values(array_unique(array_filter(array_map('sanitize_key', $product), function ($field_key) use ($known_keys) {
+            return in_array($field_key, $known_keys, true);
+        })));
+
+        $checkout = array_values(array_unique(array_filter(array_map('sanitize_key', $checkout), function ($field_key) use ($known_keys, $product) {
+            return in_array($field_key, $known_keys, true) && !in_array($field_key, $product, true);
+        })));
+
+        $paired_keys = ['pay_forward_type', 'pay_forward_contact'];
+        $product_pair_count = count(array_intersect($paired_keys, $product));
+        $checkout_pair_count = count(array_intersect($paired_keys, $checkout));
+        if ($product_pair_count === 1 || $checkout_pair_count === 1) {
+            foreach ($paired_keys as $paired_key) {
+                $checkout = array_values(array_diff($checkout, [$paired_key]));
+                if (!in_array($paired_key, $product, true)) {
+                    $product[] = $paired_key;
+                }
+            }
+        }
+
+        $remaining = array_values(array_diff($known_keys, array_merge($product, $checkout)));
+        $product = array_values(array_merge($product, $remaining));
+
+        return [
+            'product' => $product,
+            'checkout' => $checkout,
+        ];
+    }
+
+    public function get_tree_checkout_field_layout() {
+        return $this->sanitize_tree_checkout_field_layout(get_option('qr_tracker_tree_field_layout', $this->get_default_tree_checkout_field_layout()));
+    }
+
+    private function has_tree_product_in_cart() {
+        if (!function_exists('WC') || !WC() || !WC()->cart) {
+            return false;
+        }
+
+        foreach (WC()->cart->get_cart() as $cart_item) {
+            $product_id = isset($cart_item['variation_id']) && (int) $cart_item['variation_id'] > 0
+                ? (int) $cart_item['variation_id']
+                : (isset($cart_item['product_id']) ? (int) $cart_item['product_id'] : 0);
+            if ($product_id > 0 && $this->is_tree_product($product_id)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function get_tree_field_keys_for_context($context) {
+        $layout = $this->get_tree_checkout_field_layout();
+        return $context === 'checkout'
+            ? $layout['checkout']
+            : $layout['product'];
+    }
+
+    private function get_tree_field_display_order() {
+        return array_values(array_unique(array_merge(
+            $this->get_tree_field_keys_for_context('product'),
+            $this->get_tree_field_keys_for_context('checkout'),
+            self::TREE_FIELD_KEYS
+        )));
+    }
+
+    private function get_tree_checkout_session_values() {
+        if (!function_exists('WC') || !WC() || !WC()->session) {
+            return [];
+        }
+        $stored_values = WC()->session->get('qr_tracker_checkout_tree_fields', []);
+        if (!is_array($stored_values)) {
+            return [];
+        }
+
+        $sanitized_values = [];
+        foreach ($stored_values as $field_key => $field_value) {
+            $field_key = sanitize_key($field_key);
+            if (!in_array($field_key, self::TREE_FIELD_KEYS, true)) {
+                continue;
+            }
+            $sanitized_values[$field_key] = $this->sanitize_tree_field_value($field_key, $field_value);
+        }
+
+        return $sanitized_values;
+    }
+
+    private function store_tree_checkout_session_values($field_keys) {
+        if (!function_exists('WC') || !WC() || !WC()->session) {
+            return;
+        }
+
+        $stored_values = [];
+        foreach ($field_keys as $field_key) {
+            $stored_values[$field_key] = $this->get_tree_field_value_from_request($field_key);
+        }
+        WC()->session->set('qr_tracker_checkout_tree_fields', $stored_values);
+    }
+
+    public function clear_tree_checkout_session_values($order_id = 0) {
+        if (!function_exists('WC') || !WC() || !WC()->session) {
+            return;
+        }
+        WC()->session->__unset('qr_tracker_checkout_tree_fields');
     }
 
     public function hide_legacy_tree_item_meta_keys($hidden_meta_keys) {
@@ -1172,6 +1438,9 @@ class QRCodeTracker {
             '_report_emails',
             '_org_or_individual_name',
             '_referral_code',
+            '_referral_link',
+            '_discount_code',
+            '_delivery_or_collection',
             '_pay_forward_type',
             '_pay_forward_contact',
             '_qr_tree_postcode',
@@ -1213,127 +1482,236 @@ class QRCodeTracker {
             return;
         }
 
+        $product_field_keys = $this->get_tree_field_keys_for_context('product');
+        if (empty($product_field_keys)) {
+            return;
+        }
+
         echo '<div class="advent-tree-fields">';
-
-        woocommerce_form_field('purchaser_type', [
-            'type'    => 'select',
-            'class'   => ['form-row-wide'],
-            'label'   => 'Purchasing as',
-            'options' => [
-                'individual' => 'Individual',
-                'org'        => 'Organization',
-            ],
-        ], isset($_POST['purchaser_type']) ? sanitize_text_field(wp_unslash($_POST['purchaser_type'])) : 'individual');
-
-        woocommerce_form_field('contact_emails', [
-            'type'        => 'text',
-            'class'       => ['form-row-wide'],
-            'label'       => 'Contact email(s)',
-            'description' => 'Separate multiple emails with commas, spaces, or semicolons.',
-            'required'    => true,
-        ], isset($_POST['contact_emails']) ? sanitize_text_field(wp_unslash($_POST['contact_emails'])) : '');
-
-        woocommerce_form_field('report_emails', [
-            'type'        => 'text',
-            'class'       => ['form-row-wide'],
-            'label'       => 'Report email(s)',
-            'description' => 'Weekly report recipient(s), separated by commas, spaces, or semicolons.',
-        ], isset($_POST['report_emails']) ? sanitize_text_field(wp_unslash($_POST['report_emails'])) : '');
-
-        woocommerce_form_field('org_or_individual_name', [
-            'type'     => 'text',
-            'class'    => ['form-row-wide'],
-            'label'    => 'Organization / Individual Name',
-            'required' => true,
-        ], isset($_POST['org_or_individual_name']) ? sanitize_text_field(wp_unslash($_POST['org_or_individual_name'])) : '');
-
-        woocommerce_form_field('referral_code', [
-            'type'        => 'text',
-            'class'       => ['form-row-wide'],
-            'label'       => 'Referral Code',
-            'description' => 'Optional sharable referral code.',
-        ], isset($_POST['referral_code']) ? sanitize_text_field(wp_unslash($_POST['referral_code'])) : '');
-
-        woocommerce_form_field('pay_forward_type', [
-            'type'    => 'select',
-            'class'   => ['form-row-wide'],
-            'label'   => 'Pay a Tree Forward?',
-            'options' => [
-                ''         => 'No',
-                'specific' => 'Yes - for a specific person',
-                'general'  => 'Yes - for anyone',
-            ],
-        ], isset($_POST['pay_forward_type']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) : '');
-
-        woocommerce_form_field('pay_forward_contact', [
-            'type'        => 'text',
-            'class'       => ['form-row-wide'],
-            'label'       => 'Pay Forward Recipient (email or name)',
-            'placeholder' => 'Leave blank if general',
-        ], isset($_POST['pay_forward_contact']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_contact'])) : '');
-
-        woocommerce_form_field('qr_tree_postcode', [
-            'type'        => 'text',
-            'class'       => ['form-row-wide'],
-            'label'       => 'Postcode',
-            'required'    => true,
-        ], isset($_POST['qr_tree_postcode']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_postcode'])) : '');
-
-        woocommerce_form_field('qr_tree_city', [
-            'type'        => 'text',
-            'class'       => ['form-row-wide'],
-            'label'       => 'City',
-            'required'    => true,
-        ], isset($_POST['qr_tree_city']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_city'])) : '');
-
-        woocommerce_form_field('qr_tree_tree', [
-            'type'     => 'text',
-            'class'    => ['form-row-wide'],
-            'label'    => 'Tree',
-            'required' => true,
-        ], isset($_POST['qr_tree_tree']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_tree'])) : '');
-
-        woocommerce_form_field('qr_tree_label', [
-            'type'     => 'text',
-            'class'       => ['form-row-wide'],
-            'label'       => 'Label',
-            'required'    => true,
-        ], isset($_POST['qr_tree_label']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_label'])) : '');
-
-        woocommerce_form_field('qr_tree_message_1', [
-            'type'    => 'textarea',
-            'class'   => ['form-row-wide'],
-            'label'   => 'Message 1',
-        ], isset($_POST['qr_tree_message_1']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_1'])) : '');
-
-        woocommerce_form_field('qr_tree_message_2', [
-            'type'    => 'textarea',
-            'class'   => ['form-row-wide'],
-            'label'   => 'Message 2',
-        ], isset($_POST['qr_tree_message_2']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_2'])) : '');
-
-        woocommerce_form_field('qr_tree_shop_link', [
-            'type'        => 'url',
-            'class'       => ['form-row-wide'],
-            'label'       => 'Shop Link',
-            'placeholder' => 'https://example.com/shop',
-        ], isset($_POST['qr_tree_shop_link']) ? esc_url_raw(wp_unslash($_POST['qr_tree_shop_link'])) : '');
-
-        woocommerce_form_field('qr_tree_shop_logo', [
-            'type'        => 'url',
-            'class'       => ['form-row-wide'],
-            'label'       => 'Shop Logo URL',
-            'placeholder' => 'https://example.com/logo.png',
-        ], isset($_POST['qr_tree_shop_logo']) ? esc_url_raw(wp_unslash($_POST['qr_tree_shop_logo'])) : '');
-
-        woocommerce_form_field('qr_tree_show_shop_link', [
-            'type'    => 'checkbox',
-            'class'   => ['form-row-wide'],
-            'label'   => 'Display shop logo link for this QR code',
-            'default' => 1,
-        ], isset($_POST['qr_tree_show_shop_link']) ? 1 : 0);
-
+        foreach ($product_field_keys as $field_key) {
+            $this->render_tree_checkout_field($field_key);
+        }
         echo '</div>';
+    }
+
+    public function render_tree_checkout_fields_on_checkout($checkout) {
+        if (!function_exists('woocommerce_form_field') || !$this->has_tree_product_in_cart()) {
+            return;
+        }
+
+        $checkout_field_keys = $this->get_tree_field_keys_for_context('checkout');
+        if (empty($checkout_field_keys)) {
+            return;
+        }
+
+        echo '<div id="qr-tracker-checkout-fields"><h3>Tree Product Details</h3>';
+        foreach ($checkout_field_keys as $field_key) {
+            $this->render_tree_checkout_field($field_key);
+        }
+        echo '</div>';
+    }
+
+    private function render_customizable_tree_form_field($field_key, $args, $value = '') {
+        $args['label'] = $this->get_tree_field_label($field_key, $args['label'] ?? '');
+        $description = $this->get_tree_field_description($field_key, $args['description'] ?? '');
+        if ($description !== '') {
+            $args['description'] = $description;
+        } else {
+            unset($args['description']);
+        }
+        woocommerce_form_field($field_key, $args, $value);
+    }
+
+    private function render_tree_checkout_field($field_key) {
+        switch ($field_key) {
+            case 'purchaser_type':
+                $this->render_customizable_tree_form_field('purchaser_type', [
+                    'type'    => 'select',
+                    'class'   => ['form-row-wide'],
+                    'label'   => 'Purchasing as',
+                    'options' => [
+                        'individual' => 'Individual',
+                        'org'        => 'Organization',
+                    ],
+                ], $this->get_tree_field_value_from_request('purchaser_type', 'individual'));
+                break;
+            case 'org_or_individual_name':
+                $this->render_customizable_tree_form_field('org_or_individual_name', [
+                    'type'     => 'text',
+                    'class'    => ['form-row-wide'],
+                    'label'    => 'Organization / Individual Name',
+                    'required' => true,
+                ], $this->get_tree_field_value_from_request('org_or_individual_name'));
+                break;
+            case 'qr_tree_postcode':
+                $this->render_customizable_tree_form_field('qr_tree_postcode', [
+                    'type'     => 'text',
+                    'class'    => ['form-row-wide'],
+                    'label'    => 'Postcode',
+                    'required' => true,
+                ], $this->get_tree_field_value_from_request('qr_tree_postcode'));
+                break;
+            case 'qr_tree_city':
+                $this->render_customizable_tree_form_field('qr_tree_city', [
+                    'type'     => 'text',
+                    'class'    => ['form-row-wide'],
+                    'label'    => 'City',
+                    'required' => true,
+                ], $this->get_tree_field_value_from_request('qr_tree_city'));
+                break;
+            case 'qr_tree_message_1':
+                $this->render_customizable_tree_form_field('qr_tree_message_1', [
+                    'type'        => 'textarea',
+                    'class'       => ['form-row-wide'],
+                    'label'       => 'Message 1',
+                    'description' => 'Suggestion: "Merry Christmas from [Name]!"',
+                ], $this->get_tree_field_value_from_request('qr_tree_message_1'));
+                break;
+            case 'qr_tree_message_2':
+                $this->render_customizable_tree_form_field('qr_tree_message_2', [
+                    'type'        => 'textarea',
+                    'class'       => ['form-row-wide'],
+                    'label'       => 'Message 2',
+                    'description' => 'Suggestions: Click Here, Read More, Email. To render a button in Message 2, use [qr_message_2_button ...] only when that shortcode is available in your site (check with your site admin/plugin docs).',
+                ], $this->get_tree_field_value_from_request('qr_tree_message_2'));
+                break;
+            case 'qr_tree_tree':
+                $this->render_customizable_tree_form_field('qr_tree_tree', [
+                    'type'     => 'text',
+                    'class'    => ['form-row-wide'],
+                    'label'    => 'Tree',
+                    'required' => true,
+                ], $this->get_tree_field_value_from_request('qr_tree_tree'));
+                break;
+            case 'qr_tree_label':
+                $this->render_customizable_tree_form_field('qr_tree_label', [
+                    'type'     => 'text',
+                    'class'    => ['form-row-wide'],
+                    'label'    => 'Label',
+                    'required' => true,
+                ], $this->get_tree_field_value_from_request('qr_tree_label'));
+                break;
+            case 'referral_link':
+                $this->render_customizable_tree_form_field('referral_link', [
+                    'type'        => 'url',
+                    'class'       => ['form-row-wide'],
+                    'label'       => 'Referral Link',
+                    'description' => 'Optional link to connect an individual purchase with an organization.',
+                    'placeholder' => 'https://example.com/referral',
+                ], $this->get_tree_field_value_from_request('referral_link'));
+                break;
+            case 'discount_code':
+                $this->render_customizable_tree_form_field('discount_code', [
+                    'type'        => 'text',
+                    'class'       => ['form-row-wide'],
+                    'label'       => 'Discount Code',
+                    'description' => 'Optional coupon or discount reference.',
+                ], $this->get_tree_field_value_from_request('discount_code'));
+                break;
+            case 'delivery_or_collection':
+                $this->render_customizable_tree_form_field('delivery_or_collection', [
+                    'type'     => 'select',
+                    'class'    => ['form-row-wide'],
+                    'label'    => 'Delivery or Collection',
+                    'required' => true,
+                    'options'  => [
+                        ''           => 'Select an option',
+                        'delivery'   => 'Delivery',
+                        'collection' => 'Collection',
+                    ],
+                ], $this->get_tree_field_value_from_request('delivery_or_collection'));
+                break;
+            case 'contact_emails':
+                $this->render_customizable_tree_form_field('contact_emails', [
+                    'type'        => 'text',
+                    'class'       => ['form-row-wide'],
+                    'label'       => 'Contact email(s)',
+                    'description' => 'Separate multiple emails with commas, spaces, or semicolons.',
+                    'required'    => true,
+                ], $this->get_tree_field_value_from_request('contact_emails'));
+                break;
+            case 'report_emails':
+                $this->render_customizable_tree_form_field('report_emails', [
+                    'type'        => 'text',
+                    'class'       => ['form-row-wide'],
+                    'label'       => 'Report email(s)',
+                    'description' => 'Weekly report recipient(s), separated by commas, spaces, or semicolons.',
+                ], $this->get_tree_field_value_from_request('report_emails'));
+                break;
+            case 'pay_forward_type':
+                $this->render_customizable_tree_form_field('pay_forward_type', [
+                    'type'    => 'select',
+                    'class'   => ['form-row-wide'],
+                    'label'   => 'Pay a Tree Forward?',
+                    'options' => [
+                        ''         => 'No',
+                        'specific' => 'Yes - for a specific person',
+                        'general'  => 'Yes - for anyone',
+                    ],
+                ], $this->get_tree_field_value_from_request('pay_forward_type'));
+                break;
+            case 'pay_forward_contact':
+                $this->render_customizable_tree_form_field('pay_forward_contact', [
+                    'type'        => 'text',
+                    'class'       => ['form-row-wide'],
+                    'label'       => 'Pay Forward Recipient (email or name)',
+                    'placeholder' => 'Leave blank if general',
+                ], $this->get_tree_field_value_from_request('pay_forward_contact'));
+                break;
+            case 'qr_tree_shop_link':
+                $this->render_customizable_tree_form_field('qr_tree_shop_link', [
+                    'type'        => 'url',
+                    'class'       => ['form-row-wide'],
+                    'label'       => 'Shop Link',
+                    'placeholder' => 'https://example.com/shop',
+                ], $this->get_tree_field_value_from_request('qr_tree_shop_link'));
+                break;
+            case 'qr_tree_shop_logo':
+                $this->render_customizable_tree_form_field('qr_tree_shop_logo', [
+                    'type'        => 'url',
+                    'class'       => ['form-row-wide'],
+                    'label'       => 'Shop Logo URL',
+                    'placeholder' => 'https://example.com/logo.png',
+                ], $this->get_tree_field_value_from_request('qr_tree_shop_logo'));
+                break;
+            case 'qr_tree_show_shop_link':
+                $this->render_customizable_tree_form_field('qr_tree_show_shop_link', [
+                    'type'    => 'checkbox',
+                    'class'   => ['form-row-wide'],
+                    'label'   => 'Display shop logo link for this QR code',
+                    'default' => 1,
+                ], $this->get_tree_field_value_from_request('qr_tree_show_shop_link', 1));
+                break;
+        }
+    }
+
+    private function get_tree_field_value_from_request($field_key, $default = '') {
+        if (!isset($_POST[$field_key])) {
+            return $default;
+        }
+
+        return $this->sanitize_tree_field_value($field_key, wp_unslash($_POST[$field_key]));
+    }
+
+    private function sanitize_tree_field_value($field_key, $raw_value) {
+        switch ($field_key) {
+            case 'qr_tree_postcode':
+                return strtoupper(sanitize_text_field($raw_value));
+            case 'referral_link':
+            case 'qr_tree_shop_link':
+            case 'qr_tree_shop_logo':
+                return esc_url_raw($raw_value);
+            case 'qr_tree_message_1':
+            case 'qr_tree_message_2':
+                return wp_kses_post($raw_value);
+            case 'contact_emails':
+            case 'report_emails':
+                return $this->sanitize_email_list($raw_value);
+            case 'qr_tree_show_shop_link':
+                return (int) !empty($raw_value);
+            default:
+                return sanitize_text_field($raw_value);
+        }
     }
 
     private function sanitize_email_list($raw_value) {
@@ -1353,68 +1731,111 @@ class QRCodeTracker {
             return $passed;
         }
 
-        $name = isset($_POST['org_or_individual_name']) ? sanitize_text_field(wp_unslash($_POST['org_or_individual_name'])) : '';
-        if (empty($name)) {
+        return $this->validate_tree_checkout_fields_by_context($this->get_tree_field_keys_for_context('product')) ? $passed : false;
+    }
+
+    public function validate_tree_checkout_fields_on_checkout() {
+        if (!$this->has_tree_product_in_cart()) {
+            return;
+        }
+
+        $checkout_fields = $this->get_tree_field_keys_for_context('checkout');
+        if ($this->validate_tree_checkout_fields_by_context($checkout_fields)) {
+            $this->store_tree_checkout_session_values($checkout_fields);
+        }
+    }
+
+    private function validate_tree_checkout_fields_by_context($field_keys) {
+        if (empty($field_keys)) {
+            return true;
+        }
+
+        $field_lookup = array_flip($field_keys);
+
+        if (isset($field_lookup['org_or_individual_name']) && $this->get_tree_field_value_from_request('org_or_individual_name') === '') {
             wc_add_notice('Please enter an organization or individual name.', 'error');
             return false;
         }
 
-        $contact_emails = isset($_POST['contact_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['contact_emails'])) : '';
-        if (empty($contact_emails)) {
-            wc_add_notice('Please enter at least one valid contact email.', 'error');
-            return false;
+        if (isset($field_lookup['contact_emails'])) {
+            $contact_emails = $this->get_tree_field_value_from_request('contact_emails');
+            if (empty($contact_emails)) {
+                wc_add_notice('Please enter at least one valid contact email.', 'error');
+                return false;
+            }
         }
 
-        $report_emails_raw = isset($_POST['report_emails']) ? wp_unslash($_POST['report_emails']) : '';
-        if (!empty($report_emails_raw) && empty($this->sanitize_email_list($report_emails_raw))) {
-            wc_add_notice('Please enter valid report email(s).', 'error');
-            return false;
+        if (isset($field_lookup['report_emails'])) {
+            $report_emails = $this->get_tree_field_value_from_request('report_emails');
+            $report_emails_raw = isset($_POST['report_emails']) ? wp_unslash($_POST['report_emails']) : '';
+            if ($report_emails_raw !== '' && $report_emails === '') {
+                wc_add_notice('Please enter valid report email(s).', 'error');
+                return false;
+            }
         }
 
-        $pay_forward_type = isset($_POST['pay_forward_type']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) : '';
-        $pay_forward_contact = isset($_POST['pay_forward_contact']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_contact'])) : '';
-        if ($pay_forward_type === 'specific' && empty($pay_forward_contact)) {
-            wc_add_notice('Please provide a recipient for the pay-forward tree.', 'error');
-            return false;
+        if (isset($field_lookup['pay_forward_type']) && isset($field_lookup['pay_forward_contact'])) {
+            $pay_forward_type = $this->get_tree_field_value_from_request('pay_forward_type');
+            $pay_forward_contact = $this->get_tree_field_value_from_request('pay_forward_contact');
+            if ($pay_forward_type === 'specific' && $pay_forward_contact === '') {
+                wc_add_notice('Please provide a recipient for the pay-forward tree.', 'error');
+                return false;
+            }
         }
 
-        $postcode = isset($_POST['qr_tree_postcode']) ? strtoupper(sanitize_text_field(wp_unslash($_POST['qr_tree_postcode']))) : '';
-        if (empty($postcode)) {
+        if (isset($field_lookup['qr_tree_postcode']) && $this->get_tree_field_value_from_request('qr_tree_postcode') === '') {
             wc_add_notice('Please enter a postcode.', 'error');
             return false;
         }
 
-        $city = isset($_POST['qr_tree_city']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_city'])) : '';
-        if (empty($city)) {
+        if (isset($field_lookup['qr_tree_city']) && $this->get_tree_field_value_from_request('qr_tree_city') === '') {
             wc_add_notice('Please enter a city.', 'error');
             return false;
         }
 
-        $tree = isset($_POST['qr_tree_tree']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_tree'])) : '';
-        if (empty($tree)) {
+        if (isset($field_lookup['qr_tree_tree']) && $this->get_tree_field_value_from_request('qr_tree_tree') === '') {
             wc_add_notice('Please enter a tree value.', 'error');
             return false;
         }
 
-        $label = isset($_POST['qr_tree_label']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_label'])) : '';
-        if (empty($label)) {
+        if (isset($field_lookup['qr_tree_label']) && $this->get_tree_field_value_from_request('qr_tree_label') === '') {
             wc_add_notice('Please enter a label.', 'error');
             return false;
         }
 
-        $shop_link = isset($_POST['qr_tree_shop_link']) ? esc_url_raw(wp_unslash($_POST['qr_tree_shop_link'])) : '';
-        if (!empty($shop_link) && !filter_var($shop_link, FILTER_VALIDATE_URL)) {
-            wc_add_notice('Please provide a valid shop link URL.', 'error');
-            return false;
+        if (isset($field_lookup['qr_tree_shop_link'])) {
+            $shop_link = $this->get_tree_field_value_from_request('qr_tree_shop_link');
+            if ($shop_link !== '' && !filter_var($shop_link, FILTER_VALIDATE_URL)) {
+                wc_add_notice('Please provide a valid shop link URL.', 'error');
+                return false;
+            }
         }
 
-        $shop_logo = isset($_POST['qr_tree_shop_logo']) ? esc_url_raw(wp_unslash($_POST['qr_tree_shop_logo'])) : '';
-        if (!empty($shop_logo) && !filter_var($shop_logo, FILTER_VALIDATE_URL)) {
-            wc_add_notice('Please provide a valid shop logo URL.', 'error');
-            return false;
+        if (isset($field_lookup['qr_tree_shop_logo'])) {
+            $shop_logo = $this->get_tree_field_value_from_request('qr_tree_shop_logo');
+            if ($shop_logo !== '' && !filter_var($shop_logo, FILTER_VALIDATE_URL)) {
+                wc_add_notice('Please provide a valid shop logo URL.', 'error');
+                return false;
+            }
         }
 
-        return $passed;
+        if (isset($field_lookup['referral_link'])) {
+            $referral_link = $this->get_tree_field_value_from_request('referral_link');
+            if ($referral_link !== '' && !filter_var($referral_link, FILTER_VALIDATE_URL)) {
+                wc_add_notice('Please provide a valid referral link URL.', 'error');
+                return false;
+            }
+        }
+
+        if (isset($field_lookup['delivery_or_collection'])) {
+            $delivery_or_collection = $this->get_tree_field_value_from_request('delivery_or_collection');
+            if (!in_array($delivery_or_collection, ['delivery', 'collection'], true)) {
+                wc_add_notice('Please select either Delivery or Collection.', 'error');
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function add_tree_checkout_fields_to_cart($cart_item_data, $product_id) {
@@ -1427,7 +1848,9 @@ class QRCodeTracker {
             'contact_emails' => isset($_POST['contact_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['contact_emails'])) : '',
             'report_emails' => isset($_POST['report_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['report_emails'])) : '',
             'org_or_individual_name' => isset($_POST['org_or_individual_name']) ? sanitize_text_field(wp_unslash($_POST['org_or_individual_name'])) : '',
-            'referral_code' => isset($_POST['referral_code']) ? sanitize_text_field(wp_unslash($_POST['referral_code'])) : '',
+            'referral_link' => isset($_POST['referral_link']) ? esc_url_raw(wp_unslash($_POST['referral_link'])) : '',
+            'discount_code' => isset($_POST['discount_code']) ? sanitize_text_field(wp_unslash($_POST['discount_code'])) : '',
+            'delivery_or_collection' => isset($_POST['delivery_or_collection']) ? sanitize_text_field(wp_unslash($_POST['delivery_or_collection'])) : '',
             'pay_forward_type' => isset($_POST['pay_forward_type']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) : '',
             'pay_forward_contact' => isset($_POST['pay_forward_contact']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_contact'])) : '',
             'qr_tree_postcode' => isset($_POST['qr_tree_postcode']) ? strtoupper(sanitize_text_field(wp_unslash($_POST['qr_tree_postcode']))) : '',
@@ -1451,32 +1874,17 @@ class QRCodeTracker {
     }
 
     public function display_tree_checkout_fields_in_cart($item_data, $cart_item) {
-        $labels = [
-            'purchaser_type' => 'Purchasing As',
-            'contact_emails' => 'Contact Email(s)',
-            'report_emails' => 'Report Email(s)',
-            'org_or_individual_name' => 'Organization / Individual Name',
-            'referral_code' => 'Referral Code',
-            'pay_forward_type' => 'Pay Forward',
-            'pay_forward_contact' => 'Pay Forward Recipient',
-            'qr_tree_postcode' => 'Postcode',
-            'qr_tree_city' => 'City',
-            'qr_tree_tree' => 'Tree',
-            'qr_tree_label' => 'Label',
-            'qr_tree_message_1' => 'Message 1',
-            'qr_tree_message_2' => 'Message 2',
-            'qr_tree_shop_link' => 'Shop Link',
-            'qr_tree_shop_logo' => 'Shop Logo URL',
-            'qr_tree_show_shop_link' => 'Show Shop Link',
-        ];
-
-        foreach ($labels as $key => $label) {
+        $all_labels = $this->get_tree_checkout_field_choices();
+        foreach ($this->get_tree_field_display_order() as $key) {
+            if (!isset($all_labels[$key])) {
+                continue;
+            }
             if (array_key_exists($key, $cart_item) && $cart_item[$key] !== '') {
                 $display_value = $key === 'qr_tree_show_shop_link'
                     ? (((int) $cart_item[$key]) === 1 ? 'Yes' : 'No')
                     : $cart_item[$key];
                 $item_data[] = [
-                    'key' => $label,
+                    'key' => $all_labels[$key],
                     'value' => wp_kses_post($display_value),
                 ];
             }
@@ -1486,32 +1894,26 @@ class QRCodeTracker {
     }
 
     public function save_tree_checkout_fields_to_order_items($item, $cart_item_key, $values) {
-        $labels = [
-            'purchaser_type' => 'Purchasing As',
-            'contact_emails' => 'Contact Email(s)',
-            'report_emails' => 'Report Email(s)',
-            'org_or_individual_name' => 'Organization / Individual Name',
-            'referral_code' => 'Referral Code',
-            'pay_forward_type' => 'Pay Forward',
-            'pay_forward_contact' => 'Pay Forward Recipient',
-            'qr_tree_postcode' => 'Postcode',
-            'qr_tree_city' => 'City',
-            'qr_tree_tree' => 'Tree',
-            'qr_tree_label' => 'Label',
-            'qr_tree_message_1' => 'Message 1',
-            'qr_tree_message_2' => 'Message 2',
-            'qr_tree_shop_link' => 'Shop Link',
-            'qr_tree_shop_logo' => 'Shop Logo URL',
-            'qr_tree_show_shop_link' => 'Show Shop Link',
-        ];
+        $all_labels = $this->get_tree_checkout_field_choices();
+        $session_checkout_values = $this->get_tree_checkout_session_values();
+        foreach ($this->get_tree_field_display_order() as $field) {
+            if (!isset($all_labels[$field])) {
+                continue;
+            }
 
-        foreach ($labels as $field => $label) {
-            if (array_key_exists($field, $values) && $values[$field] !== '') {
-                $stored_value = $field === 'qr_tree_show_shop_link' ? (int) $values[$field] : $values[$field];
+            if (array_key_exists($field, $values)) {
+                $field_value = $values[$field];
+            } elseif (isset($session_checkout_values[$field])) {
+                $field_value = $session_checkout_values[$field];
+            } else {
+                $field_value = '';
+            }
+            if ($field_value !== '') {
+                $stored_value = $field === 'qr_tree_show_shop_link' ? (int) $field_value : $field_value;
                 $display_value = $field === 'qr_tree_show_shop_link'
                     ? (((int) $stored_value) === 1 ? 'Yes' : 'No')
                     : $stored_value;
-                $item->add_meta_data($label, $display_value);
+                $item->add_meta_data($all_labels[$field], $display_value);
                 $item->add_meta_data('_' . $field, $stored_value);
             }
         }
