@@ -1,0 +1,71 @@
+name: Package WordPress Plugin
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    env:
+      PLUGIN_SLUG: qr-code-tracker
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract plugin version
+        id: plugin_version
+        shell: bash
+        run: |
+          VERSION=$(grep -E '^Version:' qr_code_tracker.php | head -1 | sed 's/^Version:[[:space:]]*//')
+
+          if [ -z "$VERSION" ]; then
+            echo "Could not determine plugin version from qr_code_tracker.php"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Detected plugin version: $VERSION"
+
+      - name: Build plugin directory
+        shell: bash
+        run: |
+          rm -rf dist
+          mkdir -p "dist/${PLUGIN_SLUG}"
+
+          rsync -a ./ "dist/${PLUGIN_SLUG}/" \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude '.vscode/' \
+            --exclude 'dist/' \
+            --exclude 'oldzips/' \
+            --exclude '*.zip' \
+            --exclude '*.log' \
+            --exclude 'node_modules/'
+
+      - name: Create zip archive
+        id: archive
+        shell: bash
+        run: |
+          cd dist
+          ZIP_NAME="${PLUGIN_SLUG}-${{ steps.plugin_version.outputs.version }}.zip"
+          zip -r "$ZIP_NAME" "${PLUGIN_SLUG}"
+          echo "zip_path=dist/$ZIP_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PLUGIN_SLUG }}-${{ steps.plugin_version.outputs.version }}
+          path: ${{ steps.archive.outputs.zip_path }}
+          if-no-files-found: error
+
+      - name: Attach zip to GitHub release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.archive.outputs.zip_path }}
