@@ -948,7 +948,7 @@ class QRCodeTracker_Admin {
                 }
 
                 $label = isset($raw_tree_field_labels[$field_key]) ? sanitize_text_field($raw_tree_field_labels[$field_key]) : '';
-                $description = isset($raw_tree_field_descriptions[$field_key]) ? sanitize_textarea_field($raw_tree_field_descriptions[$field_key]) : '';
+                $description = isset($raw_tree_field_descriptions[$field_key]) ? wp_kses_post($raw_tree_field_descriptions[$field_key]) : '';
 
                 if ($label === '' && $description === '') {
                     continue;
@@ -1117,18 +1117,18 @@ class QRCodeTracker_Admin {
         if (empty($tree_field_choices)) {
             echo '<p class="description">Tree field text override controls are unavailable.</p>';
         } else {
-            echo '<table class="widefat striped" style="max-width: 900px;"><thead><tr><th style="width: 220px;">Field</th><th style="width: 280px;">Visible Label</th><th>Description</th></tr></thead><tbody>';
+            echo '<table class="widefat striped" style="max-width: 900px;"><thead><tr><th style="width: 220px;">Field</th><th style="width: 280px;">Visible Label</th><th>Description (HTML)</th></tr></thead><tbody>';
             foreach ($tree_field_choices as $field_key => $field_label) {
                 $custom_label = isset($tree_field_overrides[$field_key]['label']) ? $tree_field_overrides[$field_key]['label'] : '';
                 $custom_description = isset($tree_field_overrides[$field_key]['description']) ? $tree_field_overrides[$field_key]['description'] : '';
                 echo '<tr>';
                 echo '<td><code>' . esc_html($field_key) . '</code></td>';
                 echo '<td><input type="text" name="qr_tracker_tree_field_label[' . esc_attr($field_key) . ']" value="' . esc_attr($custom_label) . '" placeholder="' . esc_attr($field_label) . '" style="width:100%;"></td>';
-                echo '<td><textarea name="qr_tracker_tree_field_description[' . esc_attr($field_key) . ']" rows="2" style="width:100%;" placeholder="Leave blank to keep existing helper text.">' . esc_textarea($custom_description) . '</textarea></td>';
+                echo '<td><textarea name="qr_tracker_tree_field_description[' . esc_attr($field_key) . ']" rows="3" style="width:100%;" placeholder="Leave blank to keep existing helper text. Supports basic HTML, including images.">' . esc_textarea($custom_description) . '</textarea></td>';
                 echo '</tr>';
             }
             echo '</tbody></table>';
-            echo '<p class="description">Optional overrides for customer-facing labels and helper text shown on product and checkout forms. Leave fields blank to keep built-in text.</p>';
+            echo '<p class="description">Optional overrides for customer-facing labels and helper text shown on product and checkout forms. Leave fields blank to keep built-in text. Description fields support basic HTML.</p>';
         }
         echo '</td></tr>';
         echo '<tr><th scope="row">WooCommerce Built-in Field Context</th><td>';

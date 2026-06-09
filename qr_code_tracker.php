@@ -1257,7 +1257,7 @@ class QRCodeTracker {
             }
 
             $label = isset($overrides[$field_key]['label']) ? sanitize_text_field($overrides[$field_key]['label']) : '';
-            $description = isset($overrides[$field_key]['description']) ? sanitize_textarea_field($overrides[$field_key]['description']) : '';
+            $description = isset($overrides[$field_key]['description']) ? wp_kses_post($overrides[$field_key]['description']) : '';
 
             if ($label === '' && $description === '') {
                 continue;
