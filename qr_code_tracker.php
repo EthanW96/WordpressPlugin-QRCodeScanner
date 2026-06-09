@@ -34,7 +34,8 @@ class QRCodeTracker {
     private const EDIT_TOKEN_MAX_LENGTH = 64;
     private const TREE_FIELD_KEYS = [
         'purchaser_type',
-        'org_or_individual_name',
+        'individual_first_name',
+        'individual_last_name',
         'qr_tree_postcode',
         'qr_tree_city',
         'qr_tree_message_1',
@@ -65,6 +66,7 @@ class QRCodeTracker {
     private $popup;
     private $teams;
     private $tree_checkout_field_overrides_cache = null;
+    private $tree_individual_fields_toggle_script_printed = false;
 
     public function __construct() {
         global $wpdb;
@@ -1209,7 +1211,8 @@ class QRCodeTracker {
     private function get_default_tree_checkout_field_labels() {
         return [
             'purchaser_type' => 'Purchasing As',
-            'org_or_individual_name' => 'Organization / Individual Name',
+            'individual_first_name' => 'First Name',
+            'individual_last_name' => 'Last Name',
             'qr_tree_postcode' => 'Postcode',
             'qr_tree_city' => 'City',
             'qr_tree_message_1' => 'Message 1',
@@ -1231,6 +1234,8 @@ class QRCodeTracker {
 
     private function get_default_tree_checkout_field_descriptions() {
         return [
+            'individual_first_name' => 'Required when Purchasing as is set to Individual.',
+            'individual_last_name' => 'Required when Purchasing as is set to Individual.',
             'qr_tree_message_1' => 'Suggestion: "Merry Christmas from [Name]!"',
             'qr_tree_message_2' => 'Suggestions: Click Here, Read More, Email. To render a button in Message 2, use [qr_message_2_button ...] only when that shortcode is available in your site (check with your site admin/plugin docs).',
             'referral_link' => 'Optional link to connect an individual purchase with an organization.',
@@ -1437,6 +1442,8 @@ class QRCodeTracker {
             '_contact_emails',
             '_report_emails',
             '_org_or_individual_name',
+            '_individual_first_name',
+            '_individual_last_name',
             '_referral_code',
             '_referral_link',
             '_discount_code',
@@ -1492,6 +1499,7 @@ class QRCodeTracker {
             $this->render_tree_checkout_field($field_key);
         }
         echo '</div>';
+        $this->render_tree_individual_fields_toggle_script();
     }
 
     public function render_tree_checkout_fields_on_checkout($checkout) {
@@ -1509,6 +1517,38 @@ class QRCodeTracker {
             $this->render_tree_checkout_field($field_key);
         }
         echo '</div>';
+        $this->render_tree_individual_fields_toggle_script();
+    }
+
+    private function render_tree_individual_fields_toggle_script() {
+        if ($this->tree_individual_fields_toggle_script_printed) {
+            return;
+        }
+
+        $this->tree_individual_fields_toggle_script_printed = true;
+
+        echo '<script>';
+        echo '(function(){';
+        echo 'function updateIndividualNameFieldVisibility(){';
+        echo 'var purchaserTypeField=document.querySelector("select[name=\"purchaser_type\"]");';
+        echo 'var firstNameWrapper=document.getElementById("individual_first_name_field");';
+        echo 'var lastNameWrapper=document.getElementById("individual_last_name_field");';
+        echo 'var firstNameInput=document.querySelector("input[name=\"individual_first_name\"]");';
+        echo 'var lastNameInput=document.querySelector("input[name=\"individual_last_name\"]");';
+        echo 'var showFields=!!(purchaserTypeField&&purchaserTypeField.value==="individual");';
+        echo 'if(firstNameWrapper){firstNameWrapper.style.display=showFields?"":"none";}';
+        echo 'if(lastNameWrapper){lastNameWrapper.style.display=showFields?"":"none";}';
+        echo 'if(firstNameInput){firstNameInput.disabled=!showFields;}';
+        echo 'if(lastNameInput){lastNameInput.disabled=!showFields;}';
+        echo '}';
+        echo 'document.addEventListener("change",function(event){';
+        echo 'if(!event.target){return;}';
+        echo 'if(event.target.name==="purchaser_type"){updateIndividualNameFieldVisibility();}';
+        echo '});';
+        echo 'if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",updateIndividualNameFieldVisibility);}else{updateIndividualNameFieldVisibility();}';
+        echo 'if(window.jQuery&&window.jQuery(document.body)){window.jQuery(document.body).on("updated_checkout",updateIndividualNameFieldVisibility);}';
+        echo '})();';
+        echo '</script>';
     }
 
     private function render_customizable_tree_form_field($field_key, $args, $value = '') {
@@ -1529,19 +1569,26 @@ class QRCodeTracker {
                     'type'    => 'select',
                     'class'   => ['form-row-wide'],
                     'label'   => 'Purchasing as',
-                    'options' => [
-                        'individual' => 'Individual',
-                        'org'        => 'Organization',
-                    ],
+                    'options' => $this->get_purchaser_type_options(),
                 ], $this->get_tree_field_value_from_request('purchaser_type', 'individual'));
                 break;
-            case 'org_or_individual_name':
-                $this->render_customizable_tree_form_field('org_or_individual_name', [
-                    'type'     => 'text',
-                    'class'    => ['form-row-wide'],
-                    'label'    => 'Organization / Individual Name',
-                    'required' => true,
-                ], $this->get_tree_field_value_from_request('org_or_individual_name'));
+            case 'individual_first_name':
+                $this->render_customizable_tree_form_field('individual_first_name', [
+                    'type'        => 'text',
+                    'class'       => ['form-row-first'],
+                    'label'       => 'First Name',
+                    'required'    => true,
+                    'description' => 'Required when Purchasing as is set to Individual.',
+                ], $this->get_tree_field_value_from_request('individual_first_name'));
+                break;
+            case 'individual_last_name':
+                $this->render_customizable_tree_form_field('individual_last_name', [
+                    'type'        => 'text',
+                    'class'       => ['form-row-last'],
+                    'label'       => 'Last Name',
+                    'required'    => true,
+                    'description' => 'Required when Purchasing as is set to Individual.',
+                ], $this->get_tree_field_value_from_request('individual_last_name'));
                 break;
             case 'qr_tree_postcode':
                 $this->render_customizable_tree_form_field('qr_tree_postcode', [
@@ -1685,6 +1732,36 @@ class QRCodeTracker {
         }
     }
 
+    private function get_purchaser_type_options() {
+        $options = [
+            'individual' => 'Individual',
+        ];
+
+        if (!is_object($this->teams) || !method_exists($this->teams, 'get_all_teams')) {
+            return $options;
+        }
+
+        $teams = $this->teams->get_all_teams();
+        if (!is_array($teams)) {
+            return $options;
+        }
+
+        foreach ($teams as $team) {
+            if (!isset($team->name)) {
+                continue;
+            }
+
+            $team_name = sanitize_text_field($team->name);
+            if ($team_name === '') {
+                continue;
+            }
+
+            $options[$team_name] = $team_name;
+        }
+
+        return $options;
+    }
+
     private function get_tree_field_value_from_request($field_key, $default = '') {
         if (!isset($_POST[$field_key])) {
             return $default;
@@ -1695,6 +1772,10 @@ class QRCodeTracker {
 
     private function sanitize_tree_field_value($field_key, $raw_value) {
         switch ($field_key) {
+            case 'purchaser_type':
+                $value = sanitize_text_field($raw_value);
+                $valid_options = $this->get_purchaser_type_options();
+                return isset($valid_options[$value]) ? $value : '';
             case 'qr_tree_postcode':
                 return strtoupper(sanitize_text_field($raw_value));
             case 'referral_link':
@@ -1752,9 +1833,18 @@ class QRCodeTracker {
 
         $field_lookup = array_flip($field_keys);
 
-        if (isset($field_lookup['org_or_individual_name']) && $this->get_tree_field_value_from_request('org_or_individual_name') === '') {
-            wc_add_notice('Please enter an organization or individual name.', 'error');
-            return false;
+        $is_individual_purchase = $this->get_tree_field_value_from_request('purchaser_type') === 'individual';
+
+        if ($is_individual_purchase) {
+            if ($this->get_tree_field_value_from_request('individual_first_name') === '') {
+                wc_add_notice('Please enter a first name for individual purchases.', 'error');
+                return false;
+            }
+
+            if ($this->get_tree_field_value_from_request('individual_last_name') === '') {
+                wc_add_notice('Please enter a last name for individual purchases.', 'error');
+                return false;
+            }
         }
 
         if (isset($field_lookup['contact_emails'])) {
@@ -1844,10 +1934,11 @@ class QRCodeTracker {
         }
 
         $field_values = [
-            'purchaser_type' => isset($_POST['purchaser_type']) ? sanitize_text_field(wp_unslash($_POST['purchaser_type'])) : '',
+            'purchaser_type' => isset($_POST['purchaser_type']) ? $this->sanitize_tree_field_value('purchaser_type', wp_unslash($_POST['purchaser_type'])) : '',
             'contact_emails' => isset($_POST['contact_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['contact_emails'])) : '',
             'report_emails' => isset($_POST['report_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['report_emails'])) : '',
-            'org_or_individual_name' => isset($_POST['org_or_individual_name']) ? sanitize_text_field(wp_unslash($_POST['org_or_individual_name'])) : '',
+            'individual_first_name' => isset($_POST['individual_first_name']) ? sanitize_text_field(wp_unslash($_POST['individual_first_name'])) : '',
+            'individual_last_name' => isset($_POST['individual_last_name']) ? sanitize_text_field(wp_unslash($_POST['individual_last_name'])) : '',
             'referral_link' => isset($_POST['referral_link']) ? esc_url_raw(wp_unslash($_POST['referral_link'])) : '',
             'discount_code' => isset($_POST['discount_code']) ? sanitize_text_field(wp_unslash($_POST['discount_code'])) : '',
             'delivery_or_collection' => isset($_POST['delivery_or_collection']) ? sanitize_text_field(wp_unslash($_POST['delivery_or_collection'])) : '',
