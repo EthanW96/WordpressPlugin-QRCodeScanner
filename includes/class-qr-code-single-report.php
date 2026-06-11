@@ -83,11 +83,13 @@ class QRCodeTracker_SingleReport {
         // Filters Section
         $this->display_filters($qr_id, $date_from, $date_to);
 
+        $scan_where_clause = $where_clause . ' AND ' . QRCodeTracker::get_scan_only_log_condition('l');
+
         // Summary Statistics
-        $this->display_summary_stats($where_clause, $where_params, $qr_code);
+        $this->display_summary_stats($scan_where_clause, $where_params, $qr_code);
 
         // Charts Section
-        $this->display_charts($where_clause, $where_params, $qr_code);
+        $this->display_charts($scan_where_clause, $where_params, $qr_code);
 
         // Detailed Scan Logs
         $this->display_scan_logs($where_clause, $where_params, $qr_code);
@@ -446,7 +448,7 @@ class QRCodeTracker_SingleReport {
         $logs = $wpdb->get_results($wpdb->prepare($sql, $query_params));
 
         echo '<div style="margin: 20px 0;">';
-        echo '<h2>Recent Scan Logs</h2>';
+        echo '<h2>Recent Visit Logs</h2>';
         
         // Export button
         $export_url = admin_url('admin.php?action=qr_tracker_export&export_type=single_qr&qr_id=' . $qr_code->id);
@@ -459,7 +461,7 @@ class QRCodeTracker_SingleReport {
             $this->display_pagination($page, $total_pages, $total_records, $limit, $offset, 'top');
             
             echo '<div class="qr-table-responsive"><table class="widefat">';
-            echo '<thead><tr><th>ID</th><th>Scanned At</th><th>Hour</th><th>Day of Week</th></tr></thead>';
+            echo '<thead><tr><th>ID</th><th>Source</th><th>Scanned At</th><th>Hour</th><th>Day of Week</th></tr></thead>';
             echo '<tbody>';
             
             foreach ($logs as $log) {
@@ -469,6 +471,7 @@ class QRCodeTracker_SingleReport {
                 
                 echo '<tr>';
                 echo '<td>' . esc_html($log->id) . '</td>';
+                echo '<td>' . esc_html($log->scan_source) . '</td>';
                 echo '<td>' . esc_html($log->scanned_at) . '</td>';
                 echo '<td>' . esc_html($hour) . '</td>';
                 echo '<td>' . esc_html($day_of_week) . '</td>';
@@ -480,7 +483,7 @@ class QRCodeTracker_SingleReport {
             // Bottom pagination
             $this->display_pagination($page, $total_pages, $total_records, $limit, $offset, 'bottom');
         } else {
-            echo '<p>No scan logs found for the selected filters.</p>';
+            echo '<p>No visit logs found for the selected filters.</p>';
         }
         
         echo '</div>';
