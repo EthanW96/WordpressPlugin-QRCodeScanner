@@ -1127,7 +1127,7 @@ class QRCodeTracker_Admin {
                 echo '<td><input type="text" name="qr_tracker_tree_field_label[' . esc_attr($field_key) . ']" value="' . esc_attr($custom_label) . '" placeholder="' . esc_attr($field_label) . '" style="width:100%;"></td>';
                 echo '<td>';
                 wp_editor($custom_description, 'qr_tracker_tree_field_description_' . $editor_field_key, [
-                    'textarea_name' => 'qr_tracker_tree_field_description[' . $editor_field_key . ']',
+                    'textarea_name' => 'qr_tracker_tree_field_description[' . $field_key . ']',
                     'textarea_rows' => 4,
                     'media_buttons' => true,
                     'teeny' => true,
