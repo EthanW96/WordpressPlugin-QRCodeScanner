@@ -19,6 +19,7 @@ class QRCodeTracker_ScanLogs {
         $date_to = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '';
         $postcode_filter = isset($_GET['postcode']) ? sanitize_text_field($_GET['postcode']) : '';
         $tree_filter = isset($_GET['tree']) ? sanitize_text_field($_GET['tree']) : '';
+        $source_filter = isset($_GET['source']) ? sanitize_text_field($_GET['source']) : '';
         $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 100;
         $page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
         $offset = ($page - 1) * $limit;
@@ -46,10 +47,16 @@ class QRCodeTracker_ScanLogs {
             $where_clause .= " AND tree = %s";
             $where_params[] = $tree_filter;
         }
-    
-        // Get available postcodes and trees for filters
+
+        if (!empty($source_filter)) {
+            $where_clause .= " AND scan_source = %s";
+            $where_params[] = $source_filter;
+        }
+
+        // Get available postcodes, trees, and sources for filters
         $postcodes = $wpdb->get_col("SELECT DISTINCT postcode FROM {$this->log_table} WHERE postcode IS NOT NULL AND postcode != '' ORDER BY postcode");
         $trees = $wpdb->get_col("SELECT DISTINCT tree FROM {$this->log_table} WHERE tree IS NOT NULL AND tree != '' ORDER BY tree");
+        $sources = $wpdb->get_col("SELECT DISTINCT scan_source FROM {$this->log_table} WHERE scan_source IS NOT NULL AND scan_source != '' ORDER BY scan_source");
     
         // Get total count for pagination
         $count_sql = "SELECT COUNT(*) FROM {$this->log_table} {$where_clause}";
@@ -92,6 +99,11 @@ class QRCodeTracker_ScanLogs {
         echo '<div class="qr-filter-field"><label>Tree:</label><select name="tree"><option value="">All</option>';
         foreach ($trees as $tree) {
             echo '<option value="' . esc_attr($tree) . '"' . ($tree_filter == $tree ? ' selected' : '') . '>' . esc_html($tree) . '</option>';
+        }
+        echo '</select></div>';
+        echo '<div class="qr-filter-field"><label>Source:</label><select name="source"><option value="">All</option>';
+        foreach ($sources as $source) {
+            echo '<option value="' . esc_attr($source) . '"' . ($source_filter == $source ? ' selected' : '') . '>' . esc_html($source) . '</option>';
         }
         echo '</select></div>';
         echo '<input type="submit" class="button button-primary" value="Apply Filters">';
