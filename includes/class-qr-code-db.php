@@ -82,6 +82,10 @@ class QRCodeTracker_DB {
             city VARCHAR(64),
             postcode VARCHAR(32),
             is_private TINYINT(1) DEFAULT 0,
+            prefill_message_1 LONGTEXT,
+            lock_message_1 TINYINT(1) DEFAULT 0,
+            prefill_message_2 LONGTEXT,
+            lock_message_2 TINYINT(1) DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -229,6 +233,24 @@ class QRCodeTracker_DB {
             $wpdb->query("ALTER TABLE {$this->teams_table} ADD COLUMN is_private TINYINT(1) DEFAULT 0 AFTER postcode");
         }
 
+        // Add prefill message columns to teams table
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->teams_table} LIKE 'prefill_message_1'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->teams_table} ADD COLUMN prefill_message_1 LONGTEXT AFTER is_private");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->teams_table} LIKE 'prefill_message_2'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->teams_table} ADD COLUMN prefill_message_2 LONGTEXT AFTER prefill_message_1");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->teams_table} LIKE 'lock_message_1'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->teams_table} ADD COLUMN lock_message_1 TINYINT(1) DEFAULT 0 AFTER prefill_message_1");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->teams_table} LIKE 'lock_message_2'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->teams_table} ADD COLUMN lock_message_2 TINYINT(1) DEFAULT 0 AFTER prefill_message_2");
+        }
+
         // Add performance indexes for existing installations
         $this->add_performance_indexes();
         $this->populate_missing_short_codes();
@@ -247,6 +269,10 @@ class QRCodeTracker_DB {
             city VARCHAR(64),
             postcode VARCHAR(32),
             is_private TINYINT(1) DEFAULT 0,
+            prefill_message_1 LONGTEXT,
+            lock_message_1 TINYINT(1) DEFAULT 0,
+            prefill_message_2 LONGTEXT,
+            lock_message_2 TINYINT(1) DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
