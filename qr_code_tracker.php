@@ -981,6 +981,9 @@ class QRCodeTracker {
             }
         }
 
+        // Enqueue the visual editor scripts before wp_head() fires inside get_header().
+        wp_enqueue_editor();
+
         status_header(200);
         nocache_headers();
         get_header();
@@ -993,11 +996,38 @@ class QRCodeTracker {
         echo wp_kses_post($notice);
         echo '<form method="post">';
         wp_nonce_field('qr_manage_' . $qr_code->id);
-        echo '<table class="form-table">';
+        echo '<table class="form-table" style="width:100%;">';
         echo '<tr><th><label for="qr_label">Label</label></th><td><input type="text" id="qr_label" name="qr_label" value="' . esc_attr($qr_code->label) . '" class="regular-text"></td></tr>';
         echo '<tr><th><label for="qr_reporting_id">Reporting ID</label></th><td><input type="text" id="qr_reporting_id" name="qr_reporting_id" value="' . esc_attr($qr_code->reporting_id) . '" class="regular-text"></td></tr>';
-        echo '<tr><th><label for="qr_message_1">Message 1</label></th><td><textarea id="qr_message_1" name="qr_message_1" rows="6" class="large-text">' . esc_textarea($qr_code->message_1) . '</textarea></td></tr>';
-        echo '<tr><th><label for="qr_message_2">Message 2</label></th><td><textarea id="qr_message_2" name="qr_message_2" rows="6" class="large-text">' . esc_textarea($qr_code->message_2) . '</textarea></td></tr>';
+
+        // Message 1 — visual editor
+        echo '<tr><th style="vertical-align:top;padding-top:10px;"><label>Message 1</label></th><td>';
+        wp_editor(
+            $qr_code->message_1 ?? '',
+            'qr_message_1',
+            [
+                'textarea_name' => 'qr_message_1',
+                'media_buttons' => false,
+                'textarea_rows' => 6,
+                'teeny'         => false,
+            ]
+        );
+        echo '</td></tr>';
+
+        // Message 2 — visual editor
+        echo '<tr><th style="vertical-align:top;padding-top:10px;"><label>Message 2</label></th><td>';
+        wp_editor(
+            $qr_code->message_2 ?? '',
+            'qr_message_2',
+            [
+                'textarea_name' => 'qr_message_2',
+                'media_buttons' => false,
+                'textarea_rows' => 6,
+                'teeny'         => false,
+            ]
+        );
+        echo '</td></tr>';
+
         echo '<tr><th><label for="qr_show_popup">Show Popup</label></th><td><input type="checkbox" id="qr_show_popup" name="qr_show_popup" value="1"' . checked((int) $qr_code->show_popup, 1, false) . '></td></tr>';
         echo '<tr><th><label for="qr_shop_link">Shop Link</label></th><td><input type="url" id="qr_shop_link" name="qr_shop_link" value="' . esc_attr($qr_code->shop_link) . '" class="regular-text"></td></tr>';
         echo '<tr><th><label for="qr_shop_logo">Shop Logo URL</label></th><td><input type="url" id="qr_shop_logo" name="qr_shop_logo" value="' . esc_attr($qr_code->shop_logo) . '" class="regular-text"></td></tr>';
@@ -1246,6 +1276,7 @@ class QRCodeTracker {
         add_filter('woocommerce_get_item_data', [$this, 'display_tree_checkout_fields_in_cart'], 10, 2);
         add_action('woocommerce_checkout_create_order_line_item', [$this, 'save_tree_checkout_fields_to_order_items'], 10, 3);
         add_action('woocommerce_checkout_order_processed', [$this, 'clear_tree_checkout_session_values']);
+        add_action('woocommerce_checkout_order_processed', [$this, 'create_qr_records_for_completed_order'], 20, 1);
         add_action('woocommerce_order_status_completed', [$this, 'create_qr_records_for_completed_order'], 10, 1);
         add_filter('woocommerce_hidden_order_itemmeta', [$this, 'hide_legacy_tree_item_meta_keys']);
     }
@@ -1588,8 +1619,26 @@ class QRCodeTracker {
 
         $this->tree_individual_fields_toggle_script_printed = true;
 
+        // Build a map of team name → prefill + lock values for client-side use.
+        $team_prefills = [];
+        if (is_object($this->teams) && method_exists($this->teams, 'get_public_teams')) {
+            $public_teams = $this->teams->get_public_teams();
+            if (is_array($public_teams)) {
+                foreach ($public_teams as $team) {
+                    $team_prefills[sanitize_text_field($team->name)] = [
+                        'message_1' => isset($team->prefill_message_1) ? $team->prefill_message_1 : '',
+                        'lock_1'    => !empty($team->lock_message_1),
+                        'message_2' => isset($team->prefill_message_2) ? $team->prefill_message_2 : '',
+                        'lock_2'    => !empty($team->lock_message_2),
+                    ];
+                }
+            }
+        }
+        $team_prefills_json = wp_json_encode($team_prefills);
+
         echo '<script>';
         echo '(function(){';
+        echo 'var teamPrefills=' . $team_prefills_json . ';';
         echo 'function updateIndividualNameFieldVisibility(){';
         echo 'var purchaserTypeField=document.querySelector("select[name=\"purchaser_type\"]");';
         echo 'var firstNameWrapper=document.getElementById("individual_first_name_field");';
@@ -1602,12 +1651,34 @@ class QRCodeTracker {
         echo 'if(firstNameInput){firstNameInput.disabled=!showFields;}';
         echo 'if(lastNameInput){lastNameInput.disabled=!showFields;}';
         echo '}';
+        echo 'function applyPrefillToField(textarea,value,locked){';
+        echo 'if(!textarea){return;}';
+        echo 'if(value!==""){textarea.value=value;}else{textarea.value="";}';
+        echo 'textarea.readOnly=!!(value!==""&&locked);';
+        echo 'textarea.style.background=(value!==""&&locked)?"#f0f0f0":"";';
+        echo 'var desc=textarea.closest(".form-row")||textarea.parentNode;';
+        echo 'var hint=desc?desc.querySelector(".description"):null;';
+        echo 'if(hint){';
+        echo 'if(value!==""&&locked){hint.textContent="This message has been set by your organisation and cannot be changed.";}';
+        echo 'else if(value!==""){hint.textContent="Pre-filled by your organisation — you may edit this.";}';
+        echo '}';
+        echo '}';
+        echo 'function updateTeamPrefillFields(){';
+        echo 'var purchaserTypeField=document.querySelector("select[name=\"purchaser_type\"]");';
+        echo 'if(!purchaserTypeField){return;}';
+        echo 'var selectedTeam=purchaserTypeField.value;';
+        echo 'var prefill=teamPrefills[selectedTeam]||null;';
+        echo 'var msg1=document.querySelector("textarea[name=\"qr_tree_message_1\"]");';
+        echo 'var msg2=document.querySelector("textarea[name=\"qr_tree_message_2\"]");';
+        echo 'applyPrefillToField(msg1,prefill?prefill.message_1:"",prefill?prefill.lock_1:false);';
+        echo 'applyPrefillToField(msg2,prefill?prefill.message_2:"",prefill?prefill.lock_2:false);';
+        echo '}';
         echo 'document.addEventListener("change",function(event){';
         echo 'if(!event.target){return;}';
-        echo 'if(event.target.name==="purchaser_type"){updateIndividualNameFieldVisibility();}';
+        echo 'if(event.target.name==="purchaser_type"){updateIndividualNameFieldVisibility();updateTeamPrefillFields();}';
         echo '});';
-        echo 'if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",updateIndividualNameFieldVisibility);}else{updateIndividualNameFieldVisibility();}';
-        echo 'if(window.jQuery&&window.jQuery(document.body)){window.jQuery(document.body).on("updated_checkout",updateIndividualNameFieldVisibility);}';
+        echo 'if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){updateIndividualNameFieldVisibility();updateTeamPrefillFields();});}else{updateIndividualNameFieldVisibility();updateTeamPrefillFields();}';
+        echo 'if(window.jQuery&&window.jQuery(document.body)){window.jQuery(document.body).on("updated_checkout",function(){updateIndividualNameFieldVisibility();updateTeamPrefillFields();});}';
         echo '})();';
         echo '</script>';
     }
@@ -1656,22 +1727,10 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('purchaser_type', 'individual'));
                 break;
             case 'individual_first_name':
-                $this->render_customizable_tree_form_field('individual_first_name', [
-                    'type'        => 'text',
-                    'class'       => ['form-row-first'],
-                    'label'       => 'First Name',
-                    'required'    => true,
-                    'description' => 'Required when Purchasing as is set to Individual.',
-                ], $this->get_tree_field_value_from_request('individual_first_name'));
+                // Pulled from WooCommerce billing address automatically.
                 break;
             case 'individual_last_name':
-                $this->render_customizable_tree_form_field('individual_last_name', [
-                    'type'        => 'text',
-                    'class'       => ['form-row-last'],
-                    'label'       => 'Last Name',
-                    'required'    => true,
-                    'description' => 'Required when Purchasing as is set to Individual.',
-                ], $this->get_tree_field_value_from_request('individual_last_name'));
+                // Pulled from WooCommerce billing address automatically.
                 break;
             case 'qr_tree_postcode':
                 $this->render_customizable_tree_form_field('qr_tree_postcode', [
@@ -1690,45 +1749,67 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('qr_tree_city'));
                 break;
             case 'qr_tree_message_1':
-                $this->render_customizable_tree_form_field('qr_tree_message_1', [
-                    'type'        => 'textarea',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Message 1',
-                    'description' => 'Suggestion: "Merry Christmas from [Name]!"',
-                ], $this->get_tree_field_value_from_request('qr_tree_message_1'));
+                $team_prefill = $this->get_selected_team_prefill();
+                $has_prefill_1 = $team_prefill && isset($team_prefill->prefill_message_1) && $team_prefill->prefill_message_1 !== '';
+                if ($has_prefill_1 && !empty($team_prefill->lock_message_1)) {
+                    $this->render_customizable_tree_form_field('qr_tree_message_1', [
+                        'type'              => 'textarea',
+                        'class'             => ['form-row-wide'],
+                        'label'             => 'Message 1',
+                        'custom_attributes' => ['readonly' => 'readonly'],
+                        'description'       => 'This message has been set by your organisation and cannot be changed.',
+                    ], $team_prefill->prefill_message_1);
+                } elseif ($has_prefill_1) {
+                    $this->render_customizable_tree_form_field('qr_tree_message_1', [
+                        'type'        => 'textarea',
+                        'class'       => ['form-row-wide'],
+                        'label'       => 'Message 1',
+                        'description' => 'Pre-filled by your organisation — you may edit this.',
+                    ], $this->get_tree_field_value_from_request('qr_tree_message_1', $team_prefill->prefill_message_1));
+                } else {
+                    $this->render_customizable_tree_form_field('qr_tree_message_1', [
+                        'type'        => 'textarea',
+                        'class'       => ['form-row-wide'],
+                        'label'       => 'Message 1',
+                        'description' => 'Suggestion: "Merry Christmas from [Name]!"',
+                    ], $this->get_tree_field_value_from_request('qr_tree_message_1'));
+                }
                 break;
             case 'qr_tree_message_2':
-                $this->render_customizable_tree_form_field('qr_tree_message_2', [
-                    'type'        => 'textarea',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Message 2',
-                    'description' => 'Suggestions: Click Here, Read More, Email. To render a button in Message 2, use [qr_message_2_button ...] only when that shortcode is available in your site (check with your site admin/plugin docs).',
-                ], $this->get_tree_field_value_from_request('qr_tree_message_2'));
+                $team_prefill = $this->get_selected_team_prefill();
+                $has_prefill_2 = $team_prefill && isset($team_prefill->prefill_message_2) && $team_prefill->prefill_message_2 !== '';
+                if ($has_prefill_2 && !empty($team_prefill->lock_message_2)) {
+                    $this->render_customizable_tree_form_field('qr_tree_message_2', [
+                        'type'              => 'textarea',
+                        'class'             => ['form-row-wide'],
+                        'label'             => 'Message 2',
+                        'custom_attributes' => ['readonly' => 'readonly'],
+                        'description'       => 'This message has been set by your organisation and cannot be changed.',
+                    ], $team_prefill->prefill_message_2);
+                } elseif ($has_prefill_2) {
+                    $this->render_customizable_tree_form_field('qr_tree_message_2', [
+                        'type'        => 'textarea',
+                        'class'       => ['form-row-wide'],
+                        'label'       => 'Message 2',
+                        'description' => 'Pre-filled by your organisation — you may edit this.',
+                    ], $this->get_tree_field_value_from_request('qr_tree_message_2', $team_prefill->prefill_message_2));
+                } else {
+                    $this->render_customizable_tree_form_field('qr_tree_message_2', [
+                        'type'        => 'textarea',
+                        'class'       => ['form-row-wide'],
+                        'label'       => 'Message 2',
+                        'description' => 'Suggestions: Click Here, Read More, Email. To render a button in Message 2, use [qr_message_2_button ...] only when that shortcode is available in your site (check with your site admin/plugin docs).',
+                    ], $this->get_tree_field_value_from_request('qr_tree_message_2'));
+                }
                 break;
             case 'qr_tree_tree':
-                $this->render_customizable_tree_form_field('qr_tree_tree', [
-                    'type'     => 'text',
-                    'class'    => ['form-row-wide'],
-                    'label'    => 'Tree',
-                    'required' => true,
-                ], $this->get_tree_field_value_from_request('qr_tree_tree'));
+                // Not shown to purchasers — generated automatically.
                 break;
             case 'qr_tree_label':
-                $this->render_customizable_tree_form_field('qr_tree_label', [
-                    'type'     => 'text',
-                    'class'    => ['form-row-wide'],
-                    'label'    => 'Label',
-                    'required' => true,
-                ], $this->get_tree_field_value_from_request('qr_tree_label'));
+                // Not shown to purchasers — generated automatically.
                 break;
             case 'referral_link':
-                $this->render_customizable_tree_form_field('referral_link', [
-                    'type'        => 'url',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Referral Link',
-                    'description' => 'Optional link to connect an individual purchase with an organization.',
-                    'placeholder' => 'https://example.com/referral',
-                ], $this->get_tree_field_value_from_request('referral_link'));
+                // Not collected from purchasers.
                 break;
             case 'discount_code':
                 $this->render_customizable_tree_form_field('discount_code', [
@@ -1752,21 +1833,10 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('delivery_or_collection'));
                 break;
             case 'contact_emails':
-                $this->render_customizable_tree_form_field('contact_emails', [
-                    'type'        => 'text',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Contact email(s)',
-                    'description' => 'Separate multiple emails with commas, spaces, or semicolons.',
-                    'required'    => true,
-                ], $this->get_tree_field_value_from_request('contact_emails'));
+                // Pulled from WooCommerce billing email automatically.
                 break;
             case 'report_emails':
-                $this->render_customizable_tree_form_field('report_emails', [
-                    'type'        => 'text',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Report email(s)',
-                    'description' => 'Weekly report recipient(s), separated by commas, spaces, or semicolons.',
-                ], $this->get_tree_field_value_from_request('report_emails'));
+                // Pulled from WooCommerce billing email automatically.
                 break;
             case 'pay_forward_type':
                 $this->render_customizable_tree_form_field('pay_forward_type', [
@@ -1789,28 +1859,13 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('pay_forward_contact'));
                 break;
             case 'qr_tree_shop_link':
-                $this->render_customizable_tree_form_field('qr_tree_shop_link', [
-                    'type'        => 'url',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Shop Link',
-                    'placeholder' => 'https://example.com/shop',
-                ], $this->get_tree_field_value_from_request('qr_tree_shop_link'));
+                // Not collected from purchasers.
                 break;
             case 'qr_tree_shop_logo':
-                $this->render_customizable_tree_form_field('qr_tree_shop_logo', [
-                    'type'        => 'url',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Shop Logo URL',
-                    'placeholder' => 'https://example.com/logo.png',
-                ], $this->get_tree_field_value_from_request('qr_tree_shop_logo'));
+                // Not collected from purchasers.
                 break;
             case 'qr_tree_show_shop_link':
-                $this->render_customizable_tree_form_field('qr_tree_show_shop_link', [
-                    'type'    => 'checkbox',
-                    'class'   => ['form-row-wide'],
-                    'label'   => 'Display shop logo link for this QR code',
-                    'default' => 1,
-                ], $this->get_tree_field_value_from_request('qr_tree_show_shop_link', 1));
+                // Not collected from purchasers.
                 break;
         }
     }
@@ -1824,7 +1879,7 @@ class QRCodeTracker {
             return $options;
         }
 
-        $teams = $this->teams->get_all_teams();
+        $teams = $this->teams->get_public_teams();
         if (!is_array($teams)) {
             return $options;
         }
@@ -1843,6 +1898,17 @@ class QRCodeTracker {
         }
 
         return $options;
+    }
+
+    private function get_selected_team_prefill() {
+        $purchaser_type = $this->get_tree_field_value_from_request('purchaser_type', '');
+        if ($purchaser_type === '' || $purchaser_type === 'individual') {
+            return null;
+        }
+        if (!is_object($this->teams) || !method_exists($this->teams, 'get_team_by_name')) {
+            return null;
+        }
+        return $this->teams->get_team_by_name($purchaser_type);
     }
 
     private function get_tree_field_value_from_request($field_key, $default = '') {
@@ -1916,37 +1982,6 @@ class QRCodeTracker {
 
         $field_lookup = array_flip($field_keys);
 
-        $is_individual_purchase = $this->get_tree_field_value_from_request('purchaser_type') === 'individual';
-
-        if ($is_individual_purchase) {
-            if ($this->get_tree_field_value_from_request('individual_first_name') === '') {
-                wc_add_notice('Please enter a first name for individual purchases.', 'error');
-                return false;
-            }
-
-            if ($this->get_tree_field_value_from_request('individual_last_name') === '') {
-                wc_add_notice('Please enter a last name for individual purchases.', 'error');
-                return false;
-            }
-        }
-
-        if (isset($field_lookup['contact_emails'])) {
-            $contact_emails = $this->get_tree_field_value_from_request('contact_emails');
-            if (empty($contact_emails)) {
-                wc_add_notice('Please enter at least one valid contact email.', 'error');
-                return false;
-            }
-        }
-
-        if (isset($field_lookup['report_emails'])) {
-            $report_emails = $this->get_tree_field_value_from_request('report_emails');
-            $report_emails_raw = isset($_POST['report_emails']) ? wp_unslash($_POST['report_emails']) : '';
-            if ($report_emails_raw !== '' && $report_emails === '') {
-                wc_add_notice('Please enter valid report email(s).', 'error');
-                return false;
-            }
-        }
-
         if (isset($field_lookup['pay_forward_type']) && isset($field_lookup['pay_forward_contact'])) {
             $pay_forward_type = $this->get_tree_field_value_from_request('pay_forward_type');
             $pay_forward_contact = $this->get_tree_field_value_from_request('pay_forward_contact');
@@ -1963,16 +1998,6 @@ class QRCodeTracker {
 
         if (isset($field_lookup['qr_tree_city']) && $this->get_tree_field_value_from_request('qr_tree_city') === '') {
             wc_add_notice('Please enter a city.', 'error');
-            return false;
-        }
-
-        if (isset($field_lookup['qr_tree_tree']) && $this->get_tree_field_value_from_request('qr_tree_tree') === '') {
-            wc_add_notice('Please enter a tree value.', 'error');
-            return false;
-        }
-
-        if (isset($field_lookup['qr_tree_label']) && $this->get_tree_field_value_from_request('qr_tree_label') === '') {
-            wc_add_notice('Please enter a label.', 'error');
             return false;
         }
 
@@ -2070,6 +2095,17 @@ class QRCodeTracker {
     public function save_tree_checkout_fields_to_order_items($item, $cart_item_key, $values) {
         $all_labels = $this->get_tree_checkout_field_choices();
         $session_checkout_values = $this->get_tree_checkout_session_values();
+
+        // Resolve billing email once for contact/report email fallback.
+        $billing_email = '';
+        $order_id = $item->get_order_id();
+        if ($order_id) {
+            $order_obj = wc_get_order($order_id);
+            if ($order_obj) {
+                $billing_email = sanitize_email($order_obj->get_billing_email());
+            }
+        }
+
         foreach ($this->get_tree_field_display_order() as $field) {
             if (!isset($all_labels[$field])) {
                 continue;
@@ -2081,6 +2117,11 @@ class QRCodeTracker {
                 $field_value = $session_checkout_values[$field];
             } else {
                 $field_value = '';
+            }
+
+            // Fall back to billing email for contact/report email fields.
+            if ($field_value === '' && $billing_email !== '' && in_array($field, ['contact_emails', 'report_emails'], true)) {
+                $field_value = $billing_email;
             }
             if ($field_value !== '') {
                 $stored_value = $field === 'qr_tree_show_shop_link' ? (int) $field_value : $field_value;
@@ -2110,23 +2151,96 @@ class QRCodeTracker {
         $short_code = $this->generate_unique_short_code();
         $url = $this->generate_tracker_url($tree_data['postcode'], $tree_data['city'], $tree_data['tree'], $short_code);
 
-        $wpdb->insert($this->main_table, [
-            'url' => $url,
-            'short_code' => $short_code,
-            'edit_token' => $this->generate_unique_edit_token(),
-            'postcode' => $tree_data['postcode'],
-            'city' => $tree_data['city'],
-            'tree' => $tree_data['tree'],
-            'label' => $tree_data['label'],
-            'message_1' => $tree_data['message_1'],
-            'message_2' => $tree_data['message_2'],
-            'shop_link' => $tree_data['shop_link'],
-            'shop_logo' => $tree_data['shop_logo'],
-            'show_shop_link' => $tree_data['show_shop_link'],
-        ]);
+        $row = [
+            'url'           => $url,
+            'short_code'    => $short_code,
+            'edit_token'    => $this->generate_unique_edit_token(),
+            'postcode'      => $tree_data['postcode'],
+            'city'          => $tree_data['city'],
+            'tree'          => $tree_data['tree'],
+            'label'         => $tree_data['label'],
+            'message_1'     => $tree_data['message_1'],
+            'message_2'     => $tree_data['message_2'],
+            'shop_link'     => $tree_data['shop_link'],
+            'shop_logo'     => $tree_data['shop_logo'],
+            'show_shop_link'=> $tree_data['show_shop_link'],
+        ];
+
+        if (!empty($tree_data['team_id'])) {
+            $row['team_id'] = (int) $tree_data['team_id'];
+        }
+
+        $wpdb->insert($this->main_table, $row);
 
         return $wpdb->insert_id ? (int) $wpdb->insert_id : 0;
     }
+
+    /**
+     * Resolve or create the team for a WooCommerce order item based on purchaser_type.
+     *
+     * - If purchaser_type is 'individual': creates a new private team named
+     *   "{first_name} {last_name}" and returns its ID plus metadata used for emailing.
+     * - Otherwise: treats purchaser_type as a team name, looks it up, and returns its ID.
+     *
+     * @param object $item WC_Order_Item_Product
+     * @return array {
+     *     @type int    $team_id       Team ID, or 0 if unresolvable.
+     *     @type bool   $is_individual True when a new private individual team was created.
+     *     @type string $purchaser_name Full name of the individual purchaser (when is_individual is true).
+     * }
+     */
+    private function resolve_team_id_for_order_item($item, $order = null) {
+        $all_labels  = $this->get_tree_checkout_field_choices();
+        $purchaser_type_label = isset($all_labels['purchaser_type']) ? $all_labels['purchaser_type'] : 'Purchasing As';
+
+        $purchaser_type = sanitize_text_field(
+            $this->get_tree_field_from_order_item($item, 'purchaser_type', $purchaser_type_label)
+        );
+
+        if ($purchaser_type === 'individual') {
+            $first_name_label = isset($all_labels['individual_first_name']) ? $all_labels['individual_first_name'] : 'First Name';
+            $last_name_label  = isset($all_labels['individual_last_name'])  ? $all_labels['individual_last_name']  : 'Last Name';
+
+            $first_name = sanitize_text_field($this->get_tree_field_from_order_item($item, 'individual_first_name', $first_name_label));
+            $last_name  = sanitize_text_field($this->get_tree_field_from_order_item($item, 'individual_last_name',  $last_name_label));
+
+            // Fall back to billing address if not captured on the product form.
+            if ($first_name === '' && $order) {
+                $first_name = sanitize_text_field($order->get_billing_first_name());
+            }
+            if ($last_name === '' && $order) {
+                $last_name = sanitize_text_field($order->get_billing_last_name());
+            }
+
+            $team_name = trim($first_name . ' ' . $last_name);
+            if ($team_name === '') {
+                $team_name = 'Individual';
+            }
+
+            // Create a new private team for this individual purchase.
+            $team_id = $this->teams->create_team($team_name, '', '', 1);
+            return [
+                'team_id'        => $team_id ? (int) $team_id : 0,
+                'is_individual'  => true,
+                'purchaser_name' => $team_name,
+            ];
+        }
+
+        // purchaser_type holds the team name — look it up.
+        if ($purchaser_type !== '') {
+            $team = $this->teams->get_team_by_name($purchaser_type);
+            if ($team) {
+                return [
+                    'team_id'        => (int) $team->id,
+                    'is_individual'  => false,
+                    'purchaser_name' => '',
+                ];
+            }
+        }
+
+        return ['team_id' => 0, 'is_individual' => false, 'purchaser_name' => ''];
+    }
+
 
     public function create_qr_records_for_completed_order($order_id) {
         if (empty($order_id)) {
@@ -2159,28 +2273,38 @@ class QRCodeTracker {
             $show_shop_link_raw = $this->get_tree_field_from_order_item($item, 'qr_tree_show_shop_link', 'Show Shop Link');
             $show_shop_link = in_array(strtolower((string) $show_shop_link_raw), ['1', 'yes', 'true'], true) ? 1 : 0;
 
-            if (empty($postcode) || empty($city) || empty($tree) || empty($label)) {
+            if (empty($postcode) || empty($city)) {
                 continue;
             }
 
+            // Resolve the team this purchase belongs to.
+            $team_info     = $this->resolve_team_id_for_order_item($item, $order);
+            $team_id       = $team_info['team_id'];
+            $is_individual = $team_info['is_individual'];
+            $purchaser_name= $team_info['purchaser_name'];
+
             $quantity = max(1, (int) $item->get_quantity());
+            $item_inserted = 0;
             for ($i = 0; $i < $quantity; $i++) {
                 $record_id = $this->insert_tree_qr_record([
-                    'postcode' => $postcode,
-                    'city' => $city,
-                    'tree' => $tree,
-                    'label' => $quantity > 1 ? $label . ' #' . ($i + 1) : $label,
-                    'message_1' => $message_1,
-                    'message_2' => $message_2,
-                    'shop_link' => $shop_link,
-                    'shop_logo' => $shop_logo,
+                    'postcode'       => $postcode,
+                    'city'           => $city,
+                    'tree'           => $tree,
+                    'label'          => $quantity > 1 ? $label . ' #' . ($i + 1) : $label,
+                    'message_1'      => $message_1,
+                    'message_2'      => $message_2,
+                    'shop_link'      => $shop_link,
+                    'shop_logo'      => $shop_logo,
                     'show_shop_link' => $show_shop_link,
+                    'team_id'        => $team_id,
                 ]);
 
                 if ($record_id > 0) {
                     $inserted_count++;
+                    $item_inserted++;
                 }
             }
+
         }
 
         if ($inserted_count > 0) {

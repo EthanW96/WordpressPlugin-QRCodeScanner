@@ -963,7 +963,7 @@ class QRCodeTracker_Admin {
             return;
         }
         
-        $plugin_version = '0.9995';
+        $plugin_version = '0.9996';
         if (isset($_POST['qr_tracker_settings_submit'])) {
             // Check manage settings permission
             if (!QRCodeTracker_Permissions::can_manage_settings()) {
@@ -2319,9 +2319,10 @@ window.showRollupDayChart = function() {
             $name = sanitize_text_field($_POST['team_name']);
             $description = sanitize_textarea_field($_POST['team_description']);
             $city = sanitize_text_field($_POST['team_city']);
-            
+            $is_private = isset($_POST['team_is_private']) ? 1 : 0;
+
             if (!empty($name)) {
-                $team_id = $this->teams->create_team($name, $description, $city);
+                $team_id = $this->teams->create_team($name, $description, $city, $is_private);
                 if ($team_id) {
                     echo '<div class="updated"><p>Team created successfully.</p></div>';
                 } else {
@@ -2337,9 +2338,14 @@ window.showRollupDayChart = function() {
             $name = sanitize_text_field($_POST['team_name']);
             $description = sanitize_textarea_field($_POST['team_description']);
             $city = sanitize_text_field($_POST['team_city']);
-            
+            $is_private = isset($_POST['team_is_private']) ? 1 : 0;
+            $prefill_message_1 = isset($_POST['team_prefill_message_1']) ? wp_kses_post(wp_unslash($_POST['team_prefill_message_1'])) : '';
+            $lock_message_1    = isset($_POST['team_lock_message_1']) ? 1 : 0;
+            $prefill_message_2 = isset($_POST['team_prefill_message_2']) ? wp_kses_post(wp_unslash($_POST['team_prefill_message_2'])) : '';
+            $lock_message_2    = isset($_POST['team_lock_message_2']) ? 1 : 0;
+
             if (!empty($name) && $this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {
-                $result = $this->teams->update_team($team_id, $name, $description, $city);
+                $result = $this->teams->update_team($team_id, $name, $description, $city, $is_private, $prefill_message_1, $lock_message_1, $prefill_message_2, $lock_message_2);
                 if ($result !== false) {
                     echo '<div class="updated"><p>Team updated successfully.</p></div>';
                 } else {
@@ -2542,6 +2548,7 @@ window.showRollupDayChart = function() {
         echo '<tr><th><label for="team_name">Team Name:</label></th><td><input type="text" name="team_name" id="team_name" required style="width: 100%;"></td></tr>';
         echo '<tr><th><label for="team_description">Description:</label></th><td><textarea name="team_description" id="team_description" rows="3" style="width: 100%;"></textarea></td></tr>';
         echo '<tr><th><label for="team_city">City/Town:</label></th><td><input type="text" name="team_city" id="team_city" style="width: 100%;"></td></tr>';
+        echo '<tr><th><label for="team_is_private">Private Team:</label></th><td><input type="checkbox" name="team_is_private" id="team_is_private" value="1"> <span class="description">Private teams do not appear in the purchaser-type dropdown on the product page.</span></td></tr>';
         echo '</table>';
         echo '<p><input type="submit" name="create_team" class="button button-primary" value="Create Team"></p>';
         echo '</form>';
@@ -2608,16 +2615,87 @@ window.showRollupDayChart = function() {
             $team = $this->teams->get_team($team_id);
             
             if ($team && $this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {
-                echo '<h2>Edit Team: ' . esc_html($team->name) . '</h2>';
-                echo '<form method="post" style="max-width: 600px;">';
-                echo '<input type="hidden" name="team_id" value="' . $team_id . '">';
-                echo '<table class="form-table">';
-                echo '<tr><th><label for="team_name">Team Name:</label></th><td><input type="text" name="team_name" id="team_name" value="' . esc_attr($team->name) . '" required style="width: 100%;"></td></tr>';
-                echo '<tr><th><label for="team_description">Description:</label></th><td><textarea name="team_description" id="team_description" rows="3" style="width: 100%;">' . esc_textarea($team->description) . '</textarea></td></tr>';
-                echo '<tr><th><label for="team_city">City/Town:</label></th><td><input type="text" name="team_city" id="team_city" value="' . esc_attr($team->city) . '" style="width: 100%;"></td></tr>';
-                echo '</table>';
-                echo '<p><input type="submit" name="update_team" class="button button-primary" value="Update Team"></p>';
-                echo '</form>';
+                $private_checked  = !empty($team->is_private)    ? ' checked' : '';
+                $lock1_checked    = !empty($team->lock_message_1) ? ' checked' : '';
+                $lock2_checked    = !empty($team->lock_message_2) ? ' checked' : '';
+                ?>
+                <h2>Edit Team: <?php echo esc_html($team->name); ?></h2>
+                <form method="post" style="max-width: 800px;">
+                    <input type="hidden" name="team_id" value="<?php echo $team_id; ?>">
+                    <table class="form-table">
+                        <tr>
+                            <th><label for="team_name">Team Name:</label></th>
+                            <td><input type="text" name="team_name" id="team_name" value="<?php echo esc_attr($team->name); ?>" required style="width: 100%;"></td>
+                        </tr>
+                        <tr>
+                            <th><label for="team_description">Description:</label></th>
+                            <td><textarea name="team_description" id="team_description" rows="3" style="width: 100%;"><?php echo esc_textarea($team->description); ?></textarea></td>
+                        </tr>
+                        <tr>
+                            <th><label for="team_city">City/Town:</label></th>
+                            <td><input type="text" name="team_city" id="team_city" value="<?php echo esc_attr($team->city); ?>" style="width: 100%;"></td>
+                        </tr>
+                        <tr>
+                            <th><label for="team_is_private">Private Team:</label></th>
+                            <td>
+                                <input type="checkbox" name="team_is_private" id="team_is_private" value="1"<?php echo $private_checked; ?>>
+                                <span class="description">Private teams do not appear in the purchaser-type dropdown on the product page.</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label>Message 1:</label></th>
+                            <td>
+                                <?php
+                                wp_editor(
+                                    $team->prefill_message_1 ?? '',
+                                    'team_prefill_message_1',
+                                    [
+                                        'textarea_name' => 'team_prefill_message_1',
+                                        'textarea_rows' => 6,
+                                        'media_buttons' => false,
+                                        'teeny'         => false,
+                                    ]
+                                );
+                                ?>
+                                <p class="description" style="margin-top: 6px;">
+                                    Leave blank to let the purchaser write their own message.
+                                </p>
+                                <label style="display:block; margin-top: 8px;">
+                                    <input type="checkbox" name="team_lock_message_1" value="1"<?php echo $lock1_checked; ?>>
+                                    <strong>Lock this message</strong> — purchasers will see it but cannot edit it.
+                                    Leave unchecked to prefill it but allow edits.
+                                </label>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label>Message 2:</label></th>
+                            <td>
+                                <?php
+                                wp_editor(
+                                    $team->prefill_message_2 ?? '',
+                                    'team_prefill_message_2',
+                                    [
+                                        'textarea_name' => 'team_prefill_message_2',
+                                        'textarea_rows' => 6,
+                                        'media_buttons' => false,
+                                        'teeny'         => false,
+                                    ]
+                                );
+                                ?>
+                                <p class="description" style="margin-top: 6px;">
+                                    Leave blank to let the purchaser write their own message.
+                                </p>
+                                <label style="display:block; margin-top: 8px;">
+                                    <input type="checkbox" name="team_lock_message_2" value="1"<?php echo $lock2_checked; ?>>
+                                    <strong>Lock this message</strong> — purchasers will see it but cannot edit it.
+                                    Leave unchecked to prefill it but allow edits.
+                                </label>
+                            </td>
+                        </tr>
+                    </table>
+                    <p><input type="submit" name="update_team" class="button button-primary" value="Update Team"></p>
+                </form>
+                <?php
             }
         }
         
