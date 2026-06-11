@@ -13,11 +13,19 @@ class QRCodeTracker_Teams {
     }
 
     /**
-     * Get all teams
+     * Get all teams (including private ones — for admin use)
      */
     public function get_all_teams() {
         global $wpdb;
         return $wpdb->get_results("SELECT * FROM {$this->teams_table} ORDER BY name");
+    }
+
+    /**
+     * Get only public (non-private) teams — used for the purchaser-type dropdown
+     */
+    public function get_public_teams() {
+        global $wpdb;
+        return $wpdb->get_results("SELECT * FROM {$this->teams_table} WHERE is_private = 0 ORDER BY name");
     }
 
     /**
@@ -159,14 +167,21 @@ class QRCodeTracker_Teams {
 
     /**
      * Create a new team
+     *
+     * @param string $name        Team name.
+     * @param string $description Optional description.
+     * @param string $city        Optional city.
+     * @param int    $is_private  1 = private (hidden from purchaser dropdown), 0 = public.
+     * @return int|false New team ID or false on failure.
      */
-    public function create_team($name, $description = '', $city = '') {
+    public function create_team($name, $description = '', $city = '', $is_private = 0) {
         global $wpdb;
-        
+
         $result = $wpdb->insert($this->teams_table, [
-            'name' => sanitize_text_field($name),
-            'description' => sanitize_textarea_field($description),
-            'city' => sanitize_text_field($city)
+            'name'       => sanitize_text_field($name),
+            'description'=> sanitize_textarea_field($description),
+            'city'       => sanitize_text_field($city),
+            'is_private' => (int) (bool) $is_private,
         ]);
         
         if ($result) {
@@ -190,15 +205,37 @@ class QRCodeTracker_Teams {
 
     /**
      * Update team
+     *
+     * @param int    $team_id     Team ID.
+     * @param string $name        Team name.
+     * @param string $description Optional description.
+     * @param string $city        Optional city.
+     * @param int    $is_private  1 = private (hidden from purchaser dropdown), 0 = public.
+     * @return int|false Number of rows updated or false on failure.
      */
-    public function update_team($team_id, $name, $description = '', $city = '') {
+    public function update_team($team_id, $name, $description = '', $city = '', $is_private = 0) {
         global $wpdb;
-        
+
         return $wpdb->update($this->teams_table, [
-            'name' => sanitize_text_field($name),
-            'description' => sanitize_textarea_field($description),
-            'city' => sanitize_text_field($city)
+            'name'       => sanitize_text_field($name),
+            'description'=> sanitize_textarea_field($description),
+            'city'       => sanitize_text_field($city),
+            'is_private' => (int) (bool) $is_private,
         ], ['id' => $team_id]);
+    }
+
+    /**
+     * Find a public team by exact name (case-insensitive).
+     *
+     * @param string $name Team name to look up.
+     * @return object|null Team row or null if not found.
+     */
+    public function get_team_by_name($name) {
+        global $wpdb;
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$this->teams_table} WHERE name = %s LIMIT 1",
+            sanitize_text_field($name)
+        ));
     }
 
     /**

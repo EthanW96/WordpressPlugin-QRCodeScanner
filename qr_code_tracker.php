@@ -981,6 +981,9 @@ class QRCodeTracker {
             }
         }
 
+        // Enqueue the visual editor scripts before wp_head() fires inside get_header().
+        wp_enqueue_editor();
+
         status_header(200);
         nocache_headers();
         get_header();
@@ -993,11 +996,38 @@ class QRCodeTracker {
         echo wp_kses_post($notice);
         echo '<form method="post">';
         wp_nonce_field('qr_manage_' . $qr_code->id);
-        echo '<table class="form-table">';
+        echo '<table class="form-table" style="width:100%;">';
         echo '<tr><th><label for="qr_label">Label</label></th><td><input type="text" id="qr_label" name="qr_label" value="' . esc_attr($qr_code->label) . '" class="regular-text"></td></tr>';
         echo '<tr><th><label for="qr_reporting_id">Reporting ID</label></th><td><input type="text" id="qr_reporting_id" name="qr_reporting_id" value="' . esc_attr($qr_code->reporting_id) . '" class="regular-text"></td></tr>';
-        echo '<tr><th><label for="qr_message_1">Message 1</label></th><td><textarea id="qr_message_1" name="qr_message_1" rows="6" class="large-text">' . esc_textarea($qr_code->message_1) . '</textarea></td></tr>';
-        echo '<tr><th><label for="qr_message_2">Message 2</label></th><td><textarea id="qr_message_2" name="qr_message_2" rows="6" class="large-text">' . esc_textarea($qr_code->message_2) . '</textarea></td></tr>';
+
+        // Message 1 — visual editor
+        echo '<tr><th style="vertical-align:top;padding-top:10px;"><label>Message 1</label></th><td>';
+        wp_editor(
+            $qr_code->message_1 ?? '',
+            'qr_message_1',
+            [
+                'textarea_name' => 'qr_message_1',
+                'media_buttons' => false,
+                'textarea_rows' => 6,
+                'teeny'         => false,
+            ]
+        );
+        echo '</td></tr>';
+
+        // Message 2 — visual editor
+        echo '<tr><th style="vertical-align:top;padding-top:10px;"><label>Message 2</label></th><td>';
+        wp_editor(
+            $qr_code->message_2 ?? '',
+            'qr_message_2',
+            [
+                'textarea_name' => 'qr_message_2',
+                'media_buttons' => false,
+                'textarea_rows' => 6,
+                'teeny'         => false,
+            ]
+        );
+        echo '</td></tr>';
+
         echo '<tr><th><label for="qr_show_popup">Show Popup</label></th><td><input type="checkbox" id="qr_show_popup" name="qr_show_popup" value="1"' . checked((int) $qr_code->show_popup, 1, false) . '></td></tr>';
         echo '<tr><th><label for="qr_shop_link">Shop Link</label></th><td><input type="url" id="qr_shop_link" name="qr_shop_link" value="' . esc_attr($qr_code->shop_link) . '" class="regular-text"></td></tr>';
         echo '<tr><th><label for="qr_shop_logo">Shop Logo URL</label></th><td><input type="url" id="qr_shop_logo" name="qr_shop_logo" value="' . esc_attr($qr_code->shop_logo) . '" class="regular-text"></td></tr>';
@@ -1824,7 +1854,7 @@ class QRCodeTracker {
             return $options;
         }
 
-        $teams = $this->teams->get_all_teams();
+        $teams = $this->teams->get_public_teams();
         if (!is_array($teams)) {
             return $options;
         }
@@ -2110,22 +2140,136 @@ class QRCodeTracker {
         $short_code = $this->generate_unique_short_code();
         $url = $this->generate_tracker_url($tree_data['postcode'], $tree_data['city'], $tree_data['tree'], $short_code);
 
-        $wpdb->insert($this->main_table, [
-            'url' => $url,
-            'short_code' => $short_code,
-            'edit_token' => $this->generate_unique_edit_token(),
-            'postcode' => $tree_data['postcode'],
-            'city' => $tree_data['city'],
-            'tree' => $tree_data['tree'],
-            'label' => $tree_data['label'],
-            'message_1' => $tree_data['message_1'],
-            'message_2' => $tree_data['message_2'],
-            'shop_link' => $tree_data['shop_link'],
-            'shop_logo' => $tree_data['shop_logo'],
-            'show_shop_link' => $tree_data['show_shop_link'],
-        ]);
+        $row = [
+            'url'           => $url,
+            'short_code'    => $short_code,
+            'edit_token'    => $this->generate_unique_edit_token(),
+            'postcode'      => $tree_data['postcode'],
+            'city'          => $tree_data['city'],
+            'tree'          => $tree_data['tree'],
+            'label'         => $tree_data['label'],
+            'message_1'     => $tree_data['message_1'],
+            'message_2'     => $tree_data['message_2'],
+            'shop_link'     => $tree_data['shop_link'],
+            'shop_logo'     => $tree_data['shop_logo'],
+            'show_shop_link'=> $tree_data['show_shop_link'],
+        ];
+
+        if (!empty($tree_data['team_id'])) {
+            $row['team_id'] = (int) $tree_data['team_id'];
+        }
+
+        $wpdb->insert($this->main_table, $row);
 
         return $wpdb->insert_id ? (int) $wpdb->insert_id : 0;
+    }
+
+    /**
+     * Resolve or create the team for a WooCommerce order item based on purchaser_type.
+     *
+     * - If purchaser_type is 'individual': creates a new private team named
+     *   "{first_name} {last_name}" and returns its ID plus metadata used for emailing.
+     * - Otherwise: treats purchaser_type as a team name, looks it up, and returns its ID.
+     *
+     * @param object $item WC_Order_Item_Product
+     * @return array {
+     *     @type int    $team_id       Team ID, or 0 if unresolvable.
+     *     @type bool   $is_individual True when a new private individual team was created.
+     *     @type string $purchaser_name Full name of the individual purchaser (when is_individual is true).
+     * }
+     */
+    private function resolve_team_id_for_order_item($item) {
+        $all_labels  = $this->get_tree_checkout_field_choices();
+        $purchaser_type_label = isset($all_labels['purchaser_type']) ? $all_labels['purchaser_type'] : 'Purchasing As';
+
+        $purchaser_type = sanitize_text_field(
+            $this->get_tree_field_from_order_item($item, 'purchaser_type', $purchaser_type_label)
+        );
+
+        if ($purchaser_type === 'individual') {
+            $first_name_label = isset($all_labels['individual_first_name']) ? $all_labels['individual_first_name'] : 'First Name';
+            $last_name_label  = isset($all_labels['individual_last_name'])  ? $all_labels['individual_last_name']  : 'Last Name';
+
+            $first_name = sanitize_text_field($this->get_tree_field_from_order_item($item, 'individual_first_name', $first_name_label));
+            $last_name  = sanitize_text_field($this->get_tree_field_from_order_item($item, 'individual_last_name',  $last_name_label));
+
+            $team_name = trim($first_name . ' ' . $last_name);
+            if ($team_name === '') {
+                $team_name = 'Individual';
+            }
+
+            // Create a new private team for this individual purchase.
+            $team_id = $this->teams->create_team($team_name, '', '', 1);
+            return [
+                'team_id'        => $team_id ? (int) $team_id : 0,
+                'is_individual'  => true,
+                'purchaser_name' => $team_name,
+            ];
+        }
+
+        // purchaser_type holds the team name — look it up.
+        if ($purchaser_type !== '') {
+            $team = $this->teams->get_team_by_name($purchaser_type);
+            if ($team) {
+                return [
+                    'team_id'        => (int) $team->id,
+                    'is_individual'  => false,
+                    'purchaser_name' => '',
+                ];
+            }
+        }
+
+        return ['team_id' => 0, 'is_individual' => false, 'purchaser_name' => ''];
+    }
+
+    /**
+     * Send the team management link email to an individual purchaser.
+     *
+     * @param int    $team_id        The newly created private team ID.
+     * @param string $contact_emails Comma-separated list of sanitized email addresses.
+     * @param string $purchaser_name The purchaser's full name (used in the greeting).
+     */
+    private function send_individual_purchase_email($team_id, $contact_emails, $purchaser_name) {
+        if (empty($contact_emails) || $team_id <= 0) {
+            return;
+        }
+
+        $recipients = array_filter(
+            array_map('trim', explode(',', $contact_emails)),
+            'is_email'
+        );
+        if (empty($recipients)) {
+            return;
+        }
+
+        $site_name       = wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES);
+        $management_url  = $this->generate_team_management_url($team_id);
+        $register_url    = wp_registration_url();
+        $login_url       = wp_login_url($management_url);
+        $greeting        = $purchaser_name !== '' ? 'Hi ' . $purchaser_name . ',' : 'Hello,';
+
+        $subject = sprintf('[%s] Your QR code is ready — manage it here', $site_name);
+
+        $message  = $greeting . "\n\n";
+        $message .= "Thank you for your purchase! Your QR code has been created and is ready to use.\n\n";
+        $message .= "--- MANAGE YOUR QR CODE ---\n";
+        $message .= "Use the link below to update your personal message, label, and other details:\n\n";
+        $message .= $management_url . "\n\n";
+        $message .= "--- CREATE A WORDPRESS ACCOUNT ---\n";
+        $message .= "To keep your management link safe and make editing easy, we recommend creating a free account on " . $site_name . ".\n";
+        $message .= "Once you have an account you can log in before visiting the link above, which will allow you to save changes without needing to keep the link bookmarked.\n\n";
+
+        if (get_option('users_can_register')) {
+            $message .= "Create an account: " . $register_url . "\n";
+            $message .= "Or log in:          " . $login_url . "\n\n";
+        } else {
+            $message .= "Log in: " . $login_url . "\n\n";
+        }
+
+        $message .= "If you have any questions, please reply to this email or contact " . $site_name . " directly.\n\n";
+        $message .= "Thanks,\n" . $site_name;
+
+        wp_mail(array_values($recipients), $subject, $message);
     }
 
     public function create_qr_records_for_completed_order($order_id) {
@@ -2163,23 +2307,43 @@ class QRCodeTracker {
                 continue;
             }
 
+            // Resolve the team this purchase belongs to.
+            $team_info     = $this->resolve_team_id_for_order_item($item);
+            $team_id       = $team_info['team_id'];
+            $is_individual = $team_info['is_individual'];
+            $purchaser_name= $team_info['purchaser_name'];
+
             $quantity = max(1, (int) $item->get_quantity());
+            $item_inserted = 0;
             for ($i = 0; $i < $quantity; $i++) {
                 $record_id = $this->insert_tree_qr_record([
-                    'postcode' => $postcode,
-                    'city' => $city,
-                    'tree' => $tree,
-                    'label' => $quantity > 1 ? $label . ' #' . ($i + 1) : $label,
-                    'message_1' => $message_1,
-                    'message_2' => $message_2,
-                    'shop_link' => $shop_link,
-                    'shop_logo' => $shop_logo,
+                    'postcode'       => $postcode,
+                    'city'           => $city,
+                    'tree'           => $tree,
+                    'label'          => $quantity > 1 ? $label . ' #' . ($i + 1) : $label,
+                    'message_1'      => $message_1,
+                    'message_2'      => $message_2,
+                    'shop_link'      => $shop_link,
+                    'shop_logo'      => $shop_logo,
                     'show_shop_link' => $show_shop_link,
+                    'team_id'        => $team_id,
                 ]);
 
                 if ($record_id > 0) {
                     $inserted_count++;
+                    $item_inserted++;
                 }
+            }
+
+            // For individual purchases, email the purchaser their team management link
+            // once per line item (not once per quantity unit).
+            if ($is_individual && $item_inserted > 0 && $team_id > 0) {
+                $all_labels     = $this->get_tree_checkout_field_choices();
+                $contact_label  = isset($all_labels['contact_emails']) ? $all_labels['contact_emails'] : 'Contact Email(s)';
+                $contact_emails = sanitize_text_field(
+                    $this->get_tree_field_from_order_item($item, 'contact_emails', $contact_label)
+                );
+                $this->send_individual_purchase_email($team_id, $contact_emails, $purchaser_name);
             }
         }
 

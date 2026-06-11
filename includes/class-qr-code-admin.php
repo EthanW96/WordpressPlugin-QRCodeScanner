@@ -2319,9 +2319,10 @@ window.showRollupDayChart = function() {
             $name = sanitize_text_field($_POST['team_name']);
             $description = sanitize_textarea_field($_POST['team_description']);
             $city = sanitize_text_field($_POST['team_city']);
-            
+            $is_private = isset($_POST['team_is_private']) ? 1 : 0;
+
             if (!empty($name)) {
-                $team_id = $this->teams->create_team($name, $description, $city);
+                $team_id = $this->teams->create_team($name, $description, $city, $is_private);
                 if ($team_id) {
                     echo '<div class="updated"><p>Team created successfully.</p></div>';
                 } else {
@@ -2337,9 +2338,10 @@ window.showRollupDayChart = function() {
             $name = sanitize_text_field($_POST['team_name']);
             $description = sanitize_textarea_field($_POST['team_description']);
             $city = sanitize_text_field($_POST['team_city']);
-            
+            $is_private = isset($_POST['team_is_private']) ? 1 : 0;
+
             if (!empty($name) && $this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {
-                $result = $this->teams->update_team($team_id, $name, $description, $city);
+                $result = $this->teams->update_team($team_id, $name, $description, $city, $is_private);
                 if ($result !== false) {
                     echo '<div class="updated"><p>Team updated successfully.</p></div>';
                 } else {
@@ -2542,6 +2544,7 @@ window.showRollupDayChart = function() {
         echo '<tr><th><label for="team_name">Team Name:</label></th><td><input type="text" name="team_name" id="team_name" required style="width: 100%;"></td></tr>';
         echo '<tr><th><label for="team_description">Description:</label></th><td><textarea name="team_description" id="team_description" rows="3" style="width: 100%;"></textarea></td></tr>';
         echo '<tr><th><label for="team_city">City/Town:</label></th><td><input type="text" name="team_city" id="team_city" style="width: 100%;"></td></tr>';
+        echo '<tr><th><label for="team_is_private">Private Team:</label></th><td><input type="checkbox" name="team_is_private" id="team_is_private" value="1"> <span class="description">Private teams do not appear in the purchaser-type dropdown on the product page.</span></td></tr>';
         echo '</table>';
         echo '<p><input type="submit" name="create_team" class="button button-primary" value="Create Team"></p>';
         echo '</form>';
@@ -2615,6 +2618,8 @@ window.showRollupDayChart = function() {
                 echo '<tr><th><label for="team_name">Team Name:</label></th><td><input type="text" name="team_name" id="team_name" value="' . esc_attr($team->name) . '" required style="width: 100%;"></td></tr>';
                 echo '<tr><th><label for="team_description">Description:</label></th><td><textarea name="team_description" id="team_description" rows="3" style="width: 100%;">' . esc_textarea($team->description) . '</textarea></td></tr>';
                 echo '<tr><th><label for="team_city">City/Town:</label></th><td><input type="text" name="team_city" id="team_city" value="' . esc_attr($team->city) . '" style="width: 100%;"></td></tr>';
+                $private_checked = !empty($team->is_private) ? ' checked' : '';
+                echo '<tr><th><label for="team_is_private">Private Team:</label></th><td><input type="checkbox" name="team_is_private" id="team_is_private" value="1"' . $private_checked . '> <span class="description">Private teams do not appear in the purchaser-type dropdown on the product page.</span></td></tr>';
                 echo '</table>';
                 echo '<p><input type="submit" name="update_team" class="button button-primary" value="Update Team"></p>';
                 echo '</form>';
