@@ -50,10 +50,6 @@ class QRCodeTracker_ReportsDisplay {
         return [" AND t.team_id IN ($placeholders)", $team_ids];
     }
 
-    private function build_scan_only_where_clause($where_clause) {
-        return $where_clause . " AND (l.scan_source IS NULL OR LEFT(l.scan_source, 7) != 'social_')";
-    }
-
     /**
      * Display the reports page
      */
@@ -203,7 +199,7 @@ class QRCodeTracker_ReportsDisplay {
         // Only display data if there are active filters or show_all is requested
         $has_active_filters = !empty($postcode_filter) || !empty($tree_filter) || !empty($city_filter) || !empty($reporting_id_filter) || !empty($date_from) || !empty($date_to) || !empty($search_terms) || $show_all;
         
-        $scan_where_clause = $this->build_scan_only_where_clause($where_clause);
+        $scan_where_clause = $where_clause . ' AND ' . QRCodeTracker::get_scan_only_log_condition('l');
 
         if ($has_active_filters) {
             // Check if there are any results

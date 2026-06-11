@@ -83,7 +83,7 @@ class QRCodeTracker_SingleReport {
         // Filters Section
         $this->display_filters($qr_id, $date_from, $date_to);
 
-        $scan_where_clause = $this->build_scan_only_where_clause($where_clause);
+        $scan_where_clause = $where_clause . ' AND ' . QRCodeTracker::get_scan_only_log_condition('l');
 
         // Summary Statistics
         $this->display_summary_stats($scan_where_clause, $where_params, $qr_code);
@@ -136,10 +136,6 @@ class QRCodeTracker_SingleReport {
         echo '</div>';
         echo '</form>';
         echo '</div>';
-    }
-
-    private function build_scan_only_where_clause($where_clause) {
-        return $where_clause . " AND (l.scan_source IS NULL OR LEFT(l.scan_source, 7) != 'social_')";
     }
 
     /**
