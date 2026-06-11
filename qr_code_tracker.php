@@ -1560,7 +1560,20 @@ class QRCodeTracker {
         }
 
         $this->tree_field_description_visibility_style_printed = true;
-        echo '<style>.advent-tree-fields .woocommerce-input-wrapper .description,#qr-tracker-checkout-fields .woocommerce-input-wrapper .description{display:block!important;visibility:visible!important;opacity:1!important;}</style>';
+        $css = '.advent-tree-fields .woocommerce-input-wrapper .description,#qr-tracker-checkout-fields .woocommerce-input-wrapper .description{display:block!important;visibility:visible!important;opacity:1!important;}';
+        $style_handle = 'qr-tracker-tree-field-description-visibility';
+
+        if (function_exists('wp_register_style') && function_exists('wp_enqueue_style') && function_exists('wp_add_inline_style') && function_exists('wp_print_styles')) {
+            if (!wp_style_is($style_handle, 'registered')) {
+                wp_register_style($style_handle, false, [], null);
+            }
+            wp_enqueue_style($style_handle);
+            wp_add_inline_style($style_handle, $css);
+            wp_print_styles($style_handle);
+            return;
+        }
+
+        echo '<style>' . $css . '</style>';
     }
 
     private function render_customizable_tree_form_field($field_key, $args, $value = '') {
