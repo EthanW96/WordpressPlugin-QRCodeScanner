@@ -67,6 +67,7 @@ class QRCodeTracker {
     private $teams;
     private $tree_checkout_field_overrides_cache = null;
     private $tree_individual_fields_toggle_script_printed = false;
+    private $tree_field_description_visibility_style_printed = false;
 
     public function __construct() {
         global $wpdb;
@@ -1257,7 +1258,7 @@ class QRCodeTracker {
             }
 
             $label = isset($overrides[$field_key]['label']) ? sanitize_text_field($overrides[$field_key]['label']) : '';
-            $description = isset($overrides[$field_key]['description']) ? sanitize_textarea_field($overrides[$field_key]['description']) : '';
+            $description = isset($overrides[$field_key]['description']) ? wp_kses_post($overrides[$field_key]['description']) : '';
 
             if ($label === '' && $description === '') {
                 continue;
@@ -1494,6 +1495,7 @@ class QRCodeTracker {
             return;
         }
 
+        $this->render_tree_field_description_visibility_style();
         echo '<div class="advent-tree-fields">';
         foreach ($product_field_keys as $field_key) {
             $this->render_tree_checkout_field($field_key);
@@ -1512,6 +1514,7 @@ class QRCodeTracker {
             return;
         }
 
+        $this->render_tree_field_description_visibility_style();
         echo '<div id="qr-tracker-checkout-fields"><h3>Tree Product Details</h3>';
         foreach ($checkout_field_keys as $field_key) {
             $this->render_tree_checkout_field($field_key);
@@ -1549,6 +1552,28 @@ class QRCodeTracker {
         echo 'if(window.jQuery&&window.jQuery(document.body)){window.jQuery(document.body).on("updated_checkout",updateIndividualNameFieldVisibility);}';
         echo '})();';
         echo '</script>';
+    }
+
+    private function render_tree_field_description_visibility_style() {
+        if ($this->tree_field_description_visibility_style_printed) {
+            return;
+        }
+
+        $this->tree_field_description_visibility_style_printed = true;
+        $css = '.advent-tree-fields .woocommerce-input-wrapper .description,#qr-tracker-checkout-fields .woocommerce-input-wrapper .description{display:block!important;visibility:visible!important;opacity:1!important;}';
+        $style_handle = 'qr-tracker-tree-field-description-visibility';
+
+        if (function_exists('wp_register_style') && function_exists('wp_enqueue_style') && function_exists('wp_add_inline_style') && function_exists('wp_print_styles')) {
+            if (!wp_style_is($style_handle, 'registered')) {
+                wp_register_style($style_handle, false, [], null);
+            }
+            wp_enqueue_style($style_handle);
+            wp_add_inline_style($style_handle, $css);
+            wp_print_styles($style_handle);
+            return;
+        }
+
+        echo '<style>' . $css . '</style>';
     }
 
     private function render_customizable_tree_form_field($field_key, $args, $value = '') {
