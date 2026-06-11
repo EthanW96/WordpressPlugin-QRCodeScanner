@@ -604,11 +604,15 @@ class QRCodeTracker {
         $sub_parts      = array_filter([trim((string) $city), trim((string) $tree)]);
         $sub_label      = implode(' | ', $sub_parts);
 
-        $font_file   = $this->find_font_file();
-        $padding     = max(10, (int) ($qr_width * 0.025));
+        $font_file = $this->find_font_file();
+        // Padding: 2.5 % of image width (minimum 10 px) keeps proportions consistent across scales.
+        $padding = max(10, (int) ($qr_width * 0.025));
 
         if ($font_file) {
-            // TrueType path: choose font sizes proportional to the QR image width.
+            // TrueType path: font sizes are proportional to the QR image width so the label
+            // remains legible regardless of the download scale setting.
+            // Main postcode: ~5 % of width (minimum 20 px for very small images).
+            // Sub line (city/tree): ~3.3 % of width (minimum 14 px).
             $main_font_size = max(20, (int) ($qr_width * 0.05));
             $sub_font_size  = max(14, (int) ($qr_width * 0.033));
 
@@ -642,9 +646,11 @@ class QRCodeTracker {
                 imagettftext($new_image, $sub_font_size, 0, $sub_x, $sub_y, $black, $font_file, $sub_label);
             }
         } else {
-            // Fallback: GD built-in bitmap font (font 5 = 9×15 px per character).
-            $gdfonts         = [5 => [9, 15], 4 => [8, 13], 3 => [7, 13]];
-            $selected_font   = 5;
+            // Fallback: GD built-in bitmap font (no TTF file required).
+            // Structure: [ font_id => [ char_width_px, char_height_px ] ]
+            // Font IDs 3-5 are the three largest built-in GD fonts.
+            $gdfonts       = [5 => [9, 15], 4 => [8, 13], 3 => [7, 13]];
+            $selected_font = 5;
             $char_w          = $gdfonts[$selected_font][0];
             $char_h          = $gdfonts[$selected_font][1];
 
