@@ -390,7 +390,7 @@ class QRCodeTracker {
     }
 
     private function is_social_share_request() {
-        $qr_source = isset($_GET['qr_source']) ? sanitize_key(wp_unslash($_GET['qr_source'])) : '';
+        $qr_source = isset($_GET['qr_source']) ? sanitize_text_field(wp_unslash($_GET['qr_source'])) : '';
         return $qr_source === 'social';
     }
 

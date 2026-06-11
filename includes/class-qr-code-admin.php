@@ -491,10 +491,14 @@ class QRCodeTracker_Admin {
             echo '<h2>Edit QR Code</h2>';
             $has_recorded_hits = ((int) $edit_data->scan_count > 0 || (int) $edit_data->social_share_count > 0);
             if ($has_recorded_hits) {
-                $traffic_summary = number_format((int) $edit_data->scan_count) . ' scan(s)';
-                if ((int) $edit_data->social_share_count > 0) {
-                    $traffic_summary .= ' and ' . number_format((int) $edit_data->social_share_count) . ' social share hit(s)';
+                $traffic_summary_parts = [];
+                if ((int) $edit_data->scan_count > 0) {
+                    $traffic_summary_parts[] = number_format((int) $edit_data->scan_count) . ' scan(s)';
                 }
+                if ((int) $edit_data->social_share_count > 0) {
+                    $traffic_summary_parts[] = number_format((int) $edit_data->social_share_count) . ' social share hit(s)';
+                }
+                $traffic_summary = implode(' and ', $traffic_summary_parts);
                 echo '<div class="notice notice-warning"><p><strong>Note:</strong> This QR code has ' . esc_html($traffic_summary) . '. The URL is auto-generated and locked to preserve tracking data. <br>Because the URL is based on postcode, city, and tree, <strong>these fields cannot be edited</strong> once visits exist. You can still edit other fields or use the merge function to redistribute visits.</p></div>';
             } else {
                 echo '<div class="notice notice-info"><p><strong>Important:</strong> Postcode, City, and Tree fields cannot contain spaces or special characters. Only letters, numbers, and hyphens are allowed.</p></div>';
