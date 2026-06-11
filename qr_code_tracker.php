@@ -750,6 +750,9 @@ class QRCodeTracker {
         }
 
         if ($this->is_social_share_request()) {
+            // Preserve the social-share marker when redirecting legacy internal
+            // query links to the canonical short link so the visit stays
+            // classified as a social-share hit after the redirect.
             $target_url = add_query_arg('qr_source', 'social', $target_url);
         }
 

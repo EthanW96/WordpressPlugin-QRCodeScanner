@@ -349,11 +349,13 @@ class QRCodeTracker_Admin {
                         if ($source_social_share_count > 0) {
                             if ($source_scan_count === 0) {
                                 $social_allocation = $allocation;
-                            } elseif ($processed_allocations === $allocation_count) {
+                            } elseif ($source_scan_count > 0 && $processed_allocations === $allocation_count) {
                                 $social_allocation = $remaining_social_shares;
-                            } else {
+                            } elseif ($source_scan_count > 0) {
                                 $social_allocation = (int) floor(($allocation / $source_scan_count) * $source_social_share_count);
                                 $remaining_social_shares -= $social_allocation;
+                            } else {
+                                $social_allocation = 0;
                             }
 
                             if ($social_allocation > 0) {
@@ -868,9 +870,7 @@ class QRCodeTracker_Admin {
                 echo "<a href=\"$delete_url\" onclick=\"return confirm('Are you sure you want to delete this QR code?')\" class=\"button button-secondary\">Delete</a>";
             } else {
                 echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a>";
-                if ((int) $row->scan_count > 0 || (int) $row->social_share_count > 0) {
-                    echo "<a href=\"$merge_url\" class=\"button button-secondary\">Merge</a>";
-                }
+                echo "<a href=\"$merge_url\" class=\"button button-secondary\">Merge</a>";
             }
             echo "<a href='$download_url' class='button' target='_blank'>Download QR Image</a>";
             if ((int) $row->scan_count > 0) {
