@@ -106,6 +106,21 @@ class QRCodeTracker {
         $this->init_woocommerce_tree_fields();
     }
 
+    public static function get_social_scan_source_prefix() {
+        return 'social_';
+    }
+
+    public static function get_scan_only_log_condition($table_alias = 'l') {
+        $column = !empty($table_alias) ? $table_alias . '.scan_source' : 'scan_source';
+
+        return sprintf(
+            "(%s IS NULL OR LEFT(%s, 7) != '%s')",
+            $column,
+            $column,
+            self::get_social_scan_source_prefix()
+        );
+    }
+
 
     // private function handle_export($export_type, $group_type) {
     //     global $wpdb;

@@ -10,10 +10,6 @@ class QRCodeTracker_Export {
         $this->log_table = $wpdb->prefix . 'qr_tracker_logs';
     }
 
-    private function build_scan_only_where_clause($where_clause) {
-        return $where_clause . " AND (l.scan_source IS NULL OR LEFT(l.scan_source, 7) != 'social_')";
-    }
-
     public function handle_csv_export() {
         // Check permissions
         if (!QRCodeTracker_Permissions::can_export_data()) {
@@ -86,7 +82,7 @@ class QRCodeTracker_Export {
         fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
         
         if (in_array($export_type, ['breakdown', 'rollup'], true)) {
-            $where_clause = $this->build_scan_only_where_clause($where_clause);
+            $where_clause .= ' AND ' . QRCodeTracker::get_scan_only_log_condition('l');
         }
 
         if ($export_type == 'breakdown') {
