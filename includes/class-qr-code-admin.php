@@ -319,6 +319,8 @@ class QRCodeTracker_Admin {
             $source = $wpdb->get_row($wpdb->prepare("SELECT scan_count, social_share_count FROM {$this->main_table} WHERE id = %d", $source_id));
             
             if ($source && $source->scan_count > 0 && $total_allocated == $source->scan_count) {
+                $source_scan_count = (int) $source->scan_count;
+                $source_social_share_count = (int) $source->social_share_count;
                 $remaining_social_shares = (int) $source->social_share_count;
                 $processed_allocations = 0;
                 $allocation_count = count(array_filter($target_allocations, function($allocation) {
@@ -338,11 +340,11 @@ class QRCodeTracker_Admin {
                             $allocation, $target_id
                         ));
 
-                        if ((int) $source->social_share_count > 0) {
+                        if ($source_social_share_count > 0) {
                             if ($processed_allocations === $allocation_count) {
                                 $social_allocation = $remaining_social_shares;
                             } else {
-                                $social_allocation = (int) floor(($allocation / $source->scan_count) * $source->social_share_count);
+                                $social_allocation = (int) floor(($allocation / $source_scan_count) * $source_social_share_count);
                                 $remaining_social_shares -= $social_allocation;
                             }
 
@@ -374,13 +376,13 @@ class QRCodeTracker_Admin {
                 // Delete the source entry
                 $wpdb->delete($this->main_table, ['id' => $source_id]);
                 
-                $merge_message = 'QR Code merged successfully. ' . $source->scan_count . ' scans distributed across ' . count(array_filter($target_allocations)) . ' target QR codes.';
-                if ((int) $source->social_share_count > 0) {
-                    $merge_message .= ' ' . $source->social_share_count . ' social share hits were distributed proportionally.';
+                $merge_message = 'QR Code merged successfully. ' . $source_scan_count . ' scans distributed across ' . count(array_filter($target_allocations)) . ' target QR codes.';
+                if ($source_social_share_count > 0) {
+                    $merge_message .= ' ' . $source_social_share_count . ' social share hits were distributed proportionally.';
                 }
                 echo '<div class="updated"><p>' . esc_html($merge_message) . '</p></div>';
             } else {
-                echo '<div class="error"><p>Merge failed. Please ensure total allocation equals source scan count (' . ($source ? $source->scan_count : 0) . ').</p></div>';
+                echo '<div class="error"><p>Merge failed. Please ensure total allocation equals source scan count (' . ($source ? (int) $source->scan_count : 0) . ').</p></div>';
             }
         }
 
@@ -842,12 +844,14 @@ class QRCodeTracker_Admin {
             
             echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td>{$url_display}</td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>" . number_format((int) $row->social_share_count) . "</td><td>{$row->last_scanned}</td>";
             echo "<td>";
-            if ($row->scan_count == 0) {
+            if ((int) $row->scan_count === 0 && (int) $row->social_share_count === 0) {
                 echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a>";
                 echo "<a href=\"$delete_url\" onclick=\"return confirm('Are you sure you want to delete this QR code?')\" class=\"button button-secondary\">Delete</a>";
             } else {
                 echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a>";
-                echo "<a href=\"$merge_url\" class=\"button button-secondary\">Merge</a>";
+                if ((int) $row->scan_count > 0) {
+                    echo "<a href=\"$merge_url\" class=\"button button-secondary\">Merge</a>";
+                }
             }
             echo "<a href='$download_url' class='button' target='_blank'>Download QR Image</a>";
             if ($row->scan_count > 0) {
@@ -862,9 +866,7 @@ class QRCodeTracker_Admin {
         $accessible_teams = $this->teams->get_accessible_teams();
         $total_qr_codes = count($entries);
         $total_scans = array_sum(array_column($entries, 'scan_count'));
-        $total_social_shares = array_sum(array_map(function($entry) {
-            return isset($entry->social_share_count) ? (int) $entry->social_share_count : 0;
-        }, $entries));
+        $total_social_shares = array_sum(array_column($entries, 'social_share_count'));
         $active_qr_codes = count(array_filter($entries, function($entry) { return $entry->scan_count > 0; }));
         $recent_scans = $wpdb->get_var("SELECT COUNT(*) FROM {$this->log_table} WHERE scanned_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
         
