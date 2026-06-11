@@ -10,6 +10,10 @@ class QRCodeTracker_Export {
         $this->log_table = $wpdb->prefix . 'qr_tracker_logs';
     }
 
+    private function build_scan_only_where_clause($where_clause) {
+        return $where_clause . " AND (l.scan_source IS NULL OR LEFT(l.scan_source, 7) != 'social_')";
+    }
+
     public function handle_csv_export() {
         // Check permissions
         if (!QRCodeTracker_Permissions::can_export_data()) {
@@ -81,6 +85,10 @@ class QRCodeTracker_Export {
         // Add BOM for UTF-8
         fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
         
+        if (in_array($export_type, ['breakdown', 'rollup'], true)) {
+            $where_clause = $this->build_scan_only_where_clause($where_clause);
+        }
+
         if ($export_type == 'breakdown') {
             $this->export_breakdown_csv($output, $where_clause, $where_params, $group_type);
         } elseif ($export_type == 'rollup') {
@@ -200,7 +208,9 @@ class QRCodeTracker_Export {
         // Fix the WHERE clause to use correct table name instead of alias
         $where_clause = str_replace('l.scanned_at', 'scanned_at', $where_clause);
         $where_clause = str_replace('l.postcode', 'postcode', $where_clause);
+        $where_clause = str_replace('l.city', 'city', $where_clause);
         $where_clause = str_replace('l.tree', 'tree', $where_clause);
+        $where_clause = str_replace('l.scan_source', 'scan_source', $where_clause);
         
         $sql = "SELECT * FROM {$this->log_table} {$where_clause} ORDER BY scanned_at DESC LIMIT %d";
         $where_params[] = $limit;
@@ -212,7 +222,7 @@ class QRCodeTracker_Export {
         }
         
         // Write header
-        fputcsv($output, ['ID', 'Tracker ID', 'Postcode', 'City', 'Tree', 'Scanned At']);
+        fputcsv($output, ['ID', 'Tracker ID', 'Postcode', 'City', 'Tree', 'Source', 'Scanned At']);
         
         // Write data
         foreach ($results as $row) {
@@ -222,6 +232,7 @@ class QRCodeTracker_Export {
                 $row->postcode,
                 $row->city,
                 $row->tree,
+                $row->scan_source,
                 $row->scanned_at
             ]);
         }
@@ -268,6 +279,7 @@ class QRCodeTracker_Export {
             // Get scan logs for this QR code
             $sql = "SELECT 
                         l.id,
+                        l.scan_source,
                         l.scanned_at,
                         HOUR(l.scanned_at) as scan_hour,
                         DAYOFWEEK(l.scanned_at) as day_of_week,
@@ -287,6 +299,7 @@ class QRCodeTracker_Export {
                 'Label',
                 'Reporting ID',
                 'Scan ID',
+                'Source',
                 'Scanned At',
                 'Scan Date',
                 'Scan Hour',
@@ -306,6 +319,7 @@ class QRCodeTracker_Export {
                     $qr_code->label,
                     $qr_code->reporting_id,
                     $row->id,
+                    $row->scan_source,
                     $row->scanned_at,
                     $row->scan_date,
                     $row->scan_hour,
@@ -345,6 +359,7 @@ class QRCodeTracker_Export {
         // Get scan logs for this city
         $sql = "SELECT 
                     l.id,
+                    l.scan_source,
                     l.scanned_at,
                     t.postcode,
                     t.tree,
@@ -368,6 +383,7 @@ class QRCodeTracker_Export {
             'Label',
             'Reporting ID',
             'Scan ID',
+            'Source',
             'Scanned At',
             'Scan Date',
             'Scan Hour',
@@ -386,6 +402,7 @@ class QRCodeTracker_Export {
                 $row->label,
                 $row->reporting_id,
                 $row->id,
+                $row->scan_source,
                 $row->scanned_at,
                 $row->scan_date,
                 $row->scan_hour,
@@ -425,6 +442,7 @@ class QRCodeTracker_Export {
         // Get scan logs for this reporting ID
         $sql = "SELECT 
                     l.id,
+                    l.scan_source,
                     l.scanned_at,
                     t.postcode,
                     t.city,
@@ -448,6 +466,7 @@ class QRCodeTracker_Export {
             'Tree',
             'Label',
             'Scan ID',
+            'Source',
             'Scanned At',
             'Scan Date',
             'Scan Hour',
@@ -466,6 +485,7 @@ class QRCodeTracker_Export {
                 $row->tree,
                 $row->label,
                 $row->id,
+                $row->scan_source,
                 $row->scanned_at,
                 $row->scan_date,
                 $row->scan_hour,

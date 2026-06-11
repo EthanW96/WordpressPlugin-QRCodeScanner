@@ -93,11 +93,13 @@ class QRCodeTracker_CityReport {
         // Filters Section
         $this->display_filters($city, $date_from, $date_to);
 
+        $scan_where_clause = $this->build_scan_only_where_clause($where_clause);
+
         // Summary Statistics
-        $this->display_summary_stats($where_clause, $where_params, $city);
+        $this->display_summary_stats($scan_where_clause, $where_params, $city);
 
         // Charts Section
-        $this->display_charts($where_clause, $where_params, $city);
+        $this->display_charts($scan_where_clause, $where_params, $city);
 
         // QR Codes in this City
         $this->display_city_qr_codes($where_clause, $where_params, $city);
@@ -160,6 +162,10 @@ class QRCodeTracker_CityReport {
         echo '</div>';
         echo '</form>';
         echo '</div>';
+    }
+
+    private function build_scan_only_where_clause($where_clause) {
+        return $where_clause . " AND (l.scan_source IS NULL OR LEFT(l.scan_source, 7) != 'social_')";
     }
 
     /**
@@ -525,7 +531,7 @@ class QRCodeTracker_CityReport {
         $logs = $wpdb->get_results($wpdb->prepare($sql, $query_params));
 
         echo '<div style="margin: 20px 0;">';
-        echo '<h2>Recent Scan Logs for ' . esc_html($city) . '</h2>';
+        echo '<h2>Recent Visit Logs for ' . esc_html($city) . '</h2>';
         
         // Export button
         $export_url = admin_url('admin.php?action=qr_tracker_export&export_type=city&city=' . urlencode($city));
@@ -538,7 +544,7 @@ class QRCodeTracker_CityReport {
             $this->display_pagination($page, $total_pages, $total_records, $limit, $offset, 'top');
             
             echo '<div class="qr-table-responsive"><table class="widefat">';
-            echo '<thead><tr><th>ID</th><th>Postcode</th><th>Tree</th><th>Scanned At</th><th>Hour</th><th>Day of Week</th></tr></thead>';
+            echo '<thead><tr><th>ID</th><th>Postcode</th><th>Tree</th><th>Source</th><th>Scanned At</th><th>Hour</th><th>Day of Week</th></tr></thead>';
             echo '<tbody>';
             
             foreach ($logs as $log) {
@@ -550,6 +556,7 @@ class QRCodeTracker_CityReport {
                 echo '<td>' . esc_html($log->id) . '</td>';
                 echo '<td>' . esc_html($log->postcode) . '</td>';
                 echo '<td>' . esc_html($log->tree) . '</td>';
+                echo '<td>' . esc_html($log->scan_source) . '</td>';
                 echo '<td>' . esc_html($log->scanned_at) . '</td>';
                 echo '<td>' . esc_html($hour) . '</td>';
                 echo '<td>' . esc_html($day_of_week) . '</td>';
@@ -561,7 +568,7 @@ class QRCodeTracker_CityReport {
             // Bottom pagination
             $this->display_pagination($page, $total_pages, $total_records, $limit, $offset, 'bottom');
         } else {
-            echo '<p>No scan logs found for the selected filters.</p>';
+            echo '<p>No visit logs found for the selected filters.</p>';
         }
         
         echo '</div>';

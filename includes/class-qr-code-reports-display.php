@@ -50,6 +50,10 @@ class QRCodeTracker_ReportsDisplay {
         return [" AND t.team_id IN ($placeholders)", $team_ids];
     }
 
+    private function build_scan_only_where_clause($where_clause) {
+        return $where_clause . " AND (l.scan_source IS NULL OR LEFT(l.scan_source, 7) != 'social_')";
+    }
+
     /**
      * Display the reports page
      */
@@ -199,9 +203,11 @@ class QRCodeTracker_ReportsDisplay {
         // Only display data if there are active filters or show_all is requested
         $has_active_filters = !empty($postcode_filter) || !empty($tree_filter) || !empty($city_filter) || !empty($reporting_id_filter) || !empty($date_from) || !empty($date_to) || !empty($search_terms) || $show_all;
         
+        $scan_where_clause = $this->build_scan_only_where_clause($where_clause);
+
         if ($has_active_filters) {
             // Check if there are any results
-            $result_count = $this->get_result_count($where_clause, $where_params);
+            $result_count = $this->get_result_count($scan_where_clause, $where_params);
             
             if ($result_count > 0) {
                 // Show search context if search terms were used or show all is requested
@@ -216,12 +222,12 @@ class QRCodeTracker_ReportsDisplay {
                 }
                 
                 // Display summary statistics
-                $this->display_summary_stats($where_clause, $where_params);
+                $this->display_summary_stats($scan_where_clause, $where_params);
             
                 if ($view_type == 'breakdown') {
-                    $this->display_breakdown_report($where_clause, $where_params);
+                    $this->display_breakdown_report($scan_where_clause, $where_params);
                 } else {
-                    $this->display_rollup_report($where_clause, $where_params);
+                    $this->display_rollup_report($scan_where_clause, $where_params);
                 }
             } else {
                 // Show no results message

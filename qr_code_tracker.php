@@ -250,6 +250,8 @@ class QRCodeTracker {
             $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '';
             $visitor_hash = hash('sha256', $remote_addr . '|' . $user_agent);
 
+            $logged_at = current_time('mysql', 1);
+
             if ($is_social_share) {
                 $update_result = $wpdb->update(
                     $this->main_table,
@@ -258,30 +260,29 @@ class QRCodeTracker {
                     ],
                     ['id' => $row->id]
                 );
-                $recorded = ($update_result !== false);
             } else {
                 $update_result = $wpdb->update(
                     $this->main_table,
                     [
                         'scan_count' => $row->scan_count + 1,
-                        'last_scanned' => current_time('mysql', 1)
+                        'last_scanned' => $logged_at
                     ],
                     ['id' => $row->id]
                 );
-
-                $insert_result = $wpdb->insert($this->log_table, [
-                    'tracker_id' => $row->id,
-                    'postcode' => $row->postcode,
-                    'city' => $row->city,
-                    'tree' => $row->tree,
-                    'scanned_at' => current_time('mysql', 1),
-                    'scan_source' => $scan_source,
-                    'request_uri' => $request_uri,
-                    'visitor_hash' => $visitor_hash
-                ]);
-
-                $recorded = ($update_result !== false && $insert_result !== false);
             }
+
+            $insert_result = $wpdb->insert($this->log_table, [
+                'tracker_id' => $row->id,
+                'postcode' => $row->postcode,
+                'city' => $row->city,
+                'tree' => $row->tree,
+                'scanned_at' => $logged_at,
+                'scan_source' => $scan_source,
+                'request_uri' => $request_uri,
+                'visitor_hash' => $visitor_hash
+            ]);
+
+            $recorded = ($update_result !== false && $insert_result !== false);
             if ($recorded) {
                 $message = $is_social_share
                     ? 'Social share visit recorded successfully.'
