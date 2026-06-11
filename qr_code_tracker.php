@@ -1727,22 +1727,10 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('purchaser_type', 'individual'));
                 break;
             case 'individual_first_name':
-                $this->render_customizable_tree_form_field('individual_first_name', [
-                    'type'        => 'text',
-                    'class'       => ['form-row-first'],
-                    'label'       => 'First Name',
-                    'required'    => true,
-                    'description' => 'Required when Purchasing as is set to Individual.',
-                ], $this->get_tree_field_value_from_request('individual_first_name'));
+                // Pulled from WooCommerce billing address automatically.
                 break;
             case 'individual_last_name':
-                $this->render_customizable_tree_form_field('individual_last_name', [
-                    'type'        => 'text',
-                    'class'       => ['form-row-last'],
-                    'label'       => 'Last Name',
-                    'required'    => true,
-                    'description' => 'Required when Purchasing as is set to Individual.',
-                ], $this->get_tree_field_value_from_request('individual_last_name'));
+                // Pulled from WooCommerce billing address automatically.
                 break;
             case 'qr_tree_postcode':
                 $this->render_customizable_tree_form_field('qr_tree_postcode', [
@@ -1821,13 +1809,7 @@ class QRCodeTracker {
                 // Not shown to purchasers — generated automatically.
                 break;
             case 'referral_link':
-                $this->render_customizable_tree_form_field('referral_link', [
-                    'type'        => 'url',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Referral Link',
-                    'description' => 'Optional link to connect an individual purchase with an organization.',
-                    'placeholder' => 'https://example.com/referral',
-                ], $this->get_tree_field_value_from_request('referral_link'));
+                // Not collected from purchasers.
                 break;
             case 'discount_code':
                 $this->render_customizable_tree_form_field('discount_code', [
@@ -1851,21 +1833,10 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('delivery_or_collection'));
                 break;
             case 'contact_emails':
-                $this->render_customizable_tree_form_field('contact_emails', [
-                    'type'        => 'text',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Contact email(s)',
-                    'description' => 'Separate multiple emails with commas, spaces, or semicolons.',
-                    'required'    => true,
-                ], $this->get_tree_field_value_from_request('contact_emails'));
+                // Pulled from WooCommerce billing email automatically.
                 break;
             case 'report_emails':
-                $this->render_customizable_tree_form_field('report_emails', [
-                    'type'        => 'text',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Report email(s)',
-                    'description' => 'Weekly report recipient(s), separated by commas, spaces, or semicolons.',
-                ], $this->get_tree_field_value_from_request('report_emails'));
+                // Pulled from WooCommerce billing email automatically.
                 break;
             case 'pay_forward_type':
                 $this->render_customizable_tree_form_field('pay_forward_type', [
@@ -1888,28 +1859,13 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('pay_forward_contact'));
                 break;
             case 'qr_tree_shop_link':
-                $this->render_customizable_tree_form_field('qr_tree_shop_link', [
-                    'type'        => 'url',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Shop Link',
-                    'placeholder' => 'https://example.com/shop',
-                ], $this->get_tree_field_value_from_request('qr_tree_shop_link'));
+                // Not collected from purchasers.
                 break;
             case 'qr_tree_shop_logo':
-                $this->render_customizable_tree_form_field('qr_tree_shop_logo', [
-                    'type'        => 'url',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Shop Logo URL',
-                    'placeholder' => 'https://example.com/logo.png',
-                ], $this->get_tree_field_value_from_request('qr_tree_shop_logo'));
+                // Not collected from purchasers.
                 break;
             case 'qr_tree_show_shop_link':
-                $this->render_customizable_tree_form_field('qr_tree_show_shop_link', [
-                    'type'    => 'checkbox',
-                    'class'   => ['form-row-wide'],
-                    'label'   => 'Display shop logo link for this QR code',
-                    'default' => 1,
-                ], $this->get_tree_field_value_from_request('qr_tree_show_shop_link', 1));
+                // Not collected from purchasers.
                 break;
         }
     }
@@ -2026,37 +1982,6 @@ class QRCodeTracker {
 
         $field_lookup = array_flip($field_keys);
 
-        $is_individual_purchase = $this->get_tree_field_value_from_request('purchaser_type') === 'individual';
-
-        if ($is_individual_purchase) {
-            if ($this->get_tree_field_value_from_request('individual_first_name') === '') {
-                wc_add_notice('Please enter a first name for individual purchases.', 'error');
-                return false;
-            }
-
-            if ($this->get_tree_field_value_from_request('individual_last_name') === '') {
-                wc_add_notice('Please enter a last name for individual purchases.', 'error');
-                return false;
-            }
-        }
-
-        if (isset($field_lookup['contact_emails'])) {
-            $contact_emails = $this->get_tree_field_value_from_request('contact_emails');
-            if (empty($contact_emails)) {
-                wc_add_notice('Please enter at least one valid contact email.', 'error');
-                return false;
-            }
-        }
-
-        if (isset($field_lookup['report_emails'])) {
-            $report_emails = $this->get_tree_field_value_from_request('report_emails');
-            $report_emails_raw = isset($_POST['report_emails']) ? wp_unslash($_POST['report_emails']) : '';
-            if ($report_emails_raw !== '' && $report_emails === '') {
-                wc_add_notice('Please enter valid report email(s).', 'error');
-                return false;
-            }
-        }
-
         if (isset($field_lookup['pay_forward_type']) && isset($field_lookup['pay_forward_contact'])) {
             $pay_forward_type = $this->get_tree_field_value_from_request('pay_forward_type');
             $pay_forward_contact = $this->get_tree_field_value_from_request('pay_forward_contact');
@@ -2170,6 +2095,17 @@ class QRCodeTracker {
     public function save_tree_checkout_fields_to_order_items($item, $cart_item_key, $values) {
         $all_labels = $this->get_tree_checkout_field_choices();
         $session_checkout_values = $this->get_tree_checkout_session_values();
+
+        // Resolve billing email once for contact/report email fallback.
+        $billing_email = '';
+        $order_id = $item->get_order_id();
+        if ($order_id) {
+            $order_obj = wc_get_order($order_id);
+            if ($order_obj) {
+                $billing_email = sanitize_email($order_obj->get_billing_email());
+            }
+        }
+
         foreach ($this->get_tree_field_display_order() as $field) {
             if (!isset($all_labels[$field])) {
                 continue;
@@ -2181,6 +2117,11 @@ class QRCodeTracker {
                 $field_value = $session_checkout_values[$field];
             } else {
                 $field_value = '';
+            }
+
+            // Fall back to billing email for contact/report email fields.
+            if ($field_value === '' && $billing_email !== '' && in_array($field, ['contact_emails', 'report_emails'], true)) {
+                $field_value = $billing_email;
             }
             if ($field_value !== '') {
                 $stored_value = $field === 'qr_tree_show_shop_link' ? (int) $field_value : $field_value;
@@ -2248,7 +2189,7 @@ class QRCodeTracker {
      *     @type string $purchaser_name Full name of the individual purchaser (when is_individual is true).
      * }
      */
-    private function resolve_team_id_for_order_item($item) {
+    private function resolve_team_id_for_order_item($item, $order = null) {
         $all_labels  = $this->get_tree_checkout_field_choices();
         $purchaser_type_label = isset($all_labels['purchaser_type']) ? $all_labels['purchaser_type'] : 'Purchasing As';
 
@@ -2262,6 +2203,14 @@ class QRCodeTracker {
 
             $first_name = sanitize_text_field($this->get_tree_field_from_order_item($item, 'individual_first_name', $first_name_label));
             $last_name  = sanitize_text_field($this->get_tree_field_from_order_item($item, 'individual_last_name',  $last_name_label));
+
+            // Fall back to billing address if not captured on the product form.
+            if ($first_name === '' && $order) {
+                $first_name = sanitize_text_field($order->get_billing_first_name());
+            }
+            if ($last_name === '' && $order) {
+                $last_name = sanitize_text_field($order->get_billing_last_name());
+            }
 
             $team_name = trim($first_name . ' ' . $last_name);
             if ($team_name === '') {
@@ -2292,55 +2241,6 @@ class QRCodeTracker {
         return ['team_id' => 0, 'is_individual' => false, 'purchaser_name' => ''];
     }
 
-    /**
-     * Send the team management link email to an individual purchaser.
-     *
-     * @param int    $team_id        The newly created private team ID.
-     * @param string $contact_emails Comma-separated list of sanitized email addresses.
-     * @param string $purchaser_name The purchaser's full name (used in the greeting).
-     */
-    private function send_individual_purchase_email($team_id, $contact_emails, $purchaser_name) {
-        if (empty($contact_emails) || $team_id <= 0) {
-            return;
-        }
-
-        $recipients = array_filter(
-            array_map('trim', explode(',', $contact_emails)),
-            'is_email'
-        );
-        if (empty($recipients)) {
-            return;
-        }
-
-        $site_name       = wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES);
-        $management_url  = $this->generate_team_management_url($team_id);
-        $register_url    = wp_registration_url();
-        $login_url       = wp_login_url($management_url);
-        $greeting        = $purchaser_name !== '' ? 'Hi ' . $purchaser_name . ',' : 'Hello,';
-
-        $subject = sprintf('[%s] Your QR code is ready — manage it here', $site_name);
-
-        $message  = $greeting . "\n\n";
-        $message .= "Thank you for your purchase! Your QR code has been created and is ready to use.\n\n";
-        $message .= "--- MANAGE YOUR QR CODE ---\n";
-        $message .= "Use the link below to update your personal message, label, and other details:\n\n";
-        $message .= $management_url . "\n\n";
-        $message .= "--- CREATE A WORDPRESS ACCOUNT ---\n";
-        $message .= "To keep your management link safe and make editing easy, we recommend creating a free account on " . $site_name . ".\n";
-        $message .= "Once you have an account you can log in before visiting the link above, which will allow you to save changes without needing to keep the link bookmarked.\n\n";
-
-        if (get_option('users_can_register')) {
-            $message .= "Create an account: " . $register_url . "\n";
-            $message .= "Or log in:          " . $login_url . "\n\n";
-        } else {
-            $message .= "Log in: " . $login_url . "\n\n";
-        }
-
-        $message .= "If you have any questions, please reply to this email or contact " . $site_name . " directly.\n\n";
-        $message .= "Thanks,\n" . $site_name;
-
-        wp_mail(array_values($recipients), $subject, $message);
-    }
 
     public function create_qr_records_for_completed_order($order_id) {
         if (empty($order_id)) {
@@ -2378,7 +2278,7 @@ class QRCodeTracker {
             }
 
             // Resolve the team this purchase belongs to.
-            $team_info     = $this->resolve_team_id_for_order_item($item);
+            $team_info     = $this->resolve_team_id_for_order_item($item, $order);
             $team_id       = $team_info['team_id'];
             $is_individual = $team_info['is_individual'];
             $purchaser_name= $team_info['purchaser_name'];
@@ -2405,16 +2305,6 @@ class QRCodeTracker {
                 }
             }
 
-            // For individual purchases, email the purchaser their team management link
-            // once per line item (not once per quantity unit).
-            if ($is_individual && $item_inserted > 0 && $team_id > 0) {
-                $all_labels     = $this->get_tree_checkout_field_choices();
-                $contact_label  = isset($all_labels['contact_emails']) ? $all_labels['contact_emails'] : 'Contact Email(s)';
-                $contact_emails = sanitize_text_field(
-                    $this->get_tree_field_from_order_item($item, 'contact_emails', $contact_label)
-                );
-                $this->send_individual_purchase_email($team_id, $contact_emails, $purchaser_name);
-            }
         }
 
         if ($inserted_count > 0) {
