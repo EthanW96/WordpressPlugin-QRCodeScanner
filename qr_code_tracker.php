@@ -164,6 +164,7 @@ class QRCodeTracker {
         global $wpdb;
         $visit_start = microtime(true);
         $scan_source = 'unknown';
+        $is_social_share = $this->is_social_share_request();
 
         if (isset($_GET['_qr_redirect']) && $_GET['_qr_redirect'] === '1') {
             $scan_source = 'legacy_redirect';
@@ -179,7 +180,7 @@ class QRCodeTracker {
         // Preferred matching by unique short code.
         $short_code = isset($_GET['qr']) ? sanitize_text_field($_GET['qr']) : '';
         if (!empty($short_code)) {
-            $scan_source = 'query_short_code';
+            $scan_source = $is_social_share ? 'social_query_short_code' : 'query_short_code';
             $row = $wpdb->get_row($wpdb->prepare(
                 "SELECT * FROM {$this->main_table} WHERE short_code = %s",
                 $short_code
@@ -196,7 +197,7 @@ class QRCodeTracker {
                     $path_short_code
                 ));
                 if ($row) {
-                    $scan_source = 'legacy_path_short_code';
+                    $scan_source = $is_social_share ? 'social_legacy_path_short_code' : 'legacy_path_short_code';
                 }
             }
         }
@@ -212,7 +213,7 @@ class QRCodeTracker {
                 $postcode, $city, $tree
             ));
             if ($row) {
-                $scan_source = 'postcode_city_tree';
+                $scan_source = $is_social_share ? 'social_postcode_city_tree' : 'postcode_city_tree';
             }
         }
         
@@ -235,7 +236,7 @@ class QRCodeTracker {
                 $current_url, $request_uri, $current_url_no_slash, $request_uri_no_slash, $current_url_alt, $request_uri_alt
             ));
             if ($row) {
-                $scan_source = 'legacy_url_match';
+                $scan_source = $is_social_share ? 'social_legacy_url_match' : 'legacy_url_match';
             }
         }
 
@@ -248,29 +249,43 @@ class QRCodeTracker {
             $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '';
             $visitor_hash = hash('sha256', $remote_addr . '|' . $user_agent);
 
-            $update_result = $wpdb->update(
-                $this->main_table,
-                [
-                    'scan_count' => $row->scan_count + 1,
-                    'last_scanned' => current_time('mysql', 1)
-                ],
-                ['id' => $row->id]
-            );
+            if ($is_social_share) {
+                $update_result = $wpdb->update(
+                    $this->main_table,
+                    [
+                        'social_share_count' => ((int) $row->social_share_count) + 1
+                    ],
+                    ['id' => $row->id]
+                );
+                $recorded = ($update_result !== false);
+            } else {
+                $update_result = $wpdb->update(
+                    $this->main_table,
+                    [
+                        'scan_count' => $row->scan_count + 1,
+                        'last_scanned' => current_time('mysql', 1)
+                    ],
+                    ['id' => $row->id]
+                );
 
-            $insert_result = $wpdb->insert($this->log_table, [
-                'tracker_id' => $row->id,
-                'postcode' => $row->postcode,
-                'city' => $row->city,
-                'tree' => $row->tree,
-                'scanned_at' => current_time('mysql', 1),
-                'scan_source' => $scan_source,
-                'request_uri' => $request_uri,
-                'visitor_hash' => $visitor_hash
-            ]);
+                $insert_result = $wpdb->insert($this->log_table, [
+                    'tracker_id' => $row->id,
+                    'postcode' => $row->postcode,
+                    'city' => $row->city,
+                    'tree' => $row->tree,
+                    'scanned_at' => current_time('mysql', 1),
+                    'scan_source' => $scan_source,
+                    'request_uri' => $request_uri,
+                    'visitor_hash' => $visitor_hash
+                ]);
 
-            $recorded = ($update_result !== false && $insert_result !== false);
+                $recorded = ($update_result !== false && $insert_result !== false);
+            }
             if ($recorded) {
-                $this->set_visit_debug(true, 'Visit recorded successfully.', $scan_source, $visit_start);
+                $message = $is_social_share
+                    ? 'Social share visit recorded successfully.'
+                    : 'Visit recorded successfully.';
+                $this->set_visit_debug(true, $message, $scan_source, $visit_start);
             } else {
                 $error_message = !empty($wpdb->last_error) ? $wpdb->last_error : 'Unknown database error.';
                 $this->set_visit_debug(false, 'Visit recording failed: ' . $error_message, $scan_source, $visit_start);
@@ -372,6 +387,11 @@ class QRCodeTracker {
             'duration_ms' => round($duration_ms, 2),
             'scan_source' => (string) $scan_source,
         ];
+    }
+
+    private function is_social_share_request() {
+        $qr_source = isset($_GET['qr_source']) ? sanitize_key(wp_unslash($_GET['qr_source'])) : '';
+        return $qr_source === 'social';
     }
 
     public function render_visit_debug_message() {
@@ -589,6 +609,21 @@ class QRCodeTracker {
         return home_url('/' . rawurlencode($short_code));
     }
 
+    public function generate_social_share_url($short_code) {
+        $short_code = strtolower(sanitize_text_field((string) $short_code));
+        if (empty($short_code)) {
+            return '';
+        }
+
+        return add_query_arg(
+            [
+                'qr' => $short_code,
+                'qr_source' => 'social',
+            ],
+            home_url('/')
+        );
+    }
+
     public function generate_team_management_url($team_id) {
         $team_id = (int) $team_id;
         if ($team_id <= 0) {
@@ -712,6 +747,10 @@ class QRCodeTracker {
 
         if (empty($target_url)) {
             return;
+        }
+
+        if ($this->is_social_share_request()) {
+            $target_url = add_query_arg('qr_source', 'social', $target_url);
         }
 
         $current_url = home_url(add_query_arg([]));
