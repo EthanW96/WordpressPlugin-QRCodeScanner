@@ -1328,6 +1328,7 @@ class QRCodeTracker_Admin {
             '[postcode]'          => 'Tree postcode',
             '[social_share_link]' => 'Social share URL (first tree)',
             '[qr_codes]'          => 'Block showing every QR code image + download button + share link',
+            '[management_link]'   => 'Team management link + account creation reminder (non-individual purchases only; renders nothing for individual buyers)',
         ];
         foreach ($email_shortcodes as $code => $desc) {
             echo '<tr><td><code>' . esc_html($code) . '</code></td><td>' . esc_html($desc) . '</td></tr>';

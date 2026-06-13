@@ -16,10 +16,11 @@ class QRCodeTracker_Email {
      * Send the welcome-to-the-network email to the buyer.
      *
      * @param WC_Order $order
-     * @param array    $qr_records  Array of stdObjects from wp_qr_tracker (each having url, short_code, city, postcode, tree, label, etc.)
+     * @param array    $qr_records    stdObjects from wp_qr_tracker (id, url, short_code, postcode, city, tree, label, team_id).
      * @param string   $purchaser_name
+     * @param bool     $is_individual  True when purchaser_type was "individual".
      */
-    public function send_welcome_email($order, array $qr_records, $purchaser_name) {
+    public function send_welcome_email($order, array $qr_records, $purchaser_name, $is_individual = false) {
         if (!get_option('qr_tracker_welcome_email_enabled', 1)) {
             return;
         }
@@ -29,13 +30,13 @@ class QRCodeTracker_Email {
             return;
         }
 
-        $subject = get_option('qr_tracker_welcome_email_subject', 'Welcome to the Advent Tree Network!');
+        $subject  = get_option('qr_tracker_welcome_email_subject', 'Welcome to the Advent Tree Network!');
         $template = get_option('qr_tracker_welcome_email_body', '');
         if (empty($template)) {
             $template = $this->get_default_template();
         }
 
-        $body = $this->process_shortcodes($template, $order, $qr_records, $purchaser_name);
+        $body = $this->process_shortcodes($template, $order, $qr_records, $purchaser_name, $is_individual);
         $body = $this->wrap_in_email_shell($body);
 
         $headers = ['Content-Type: text/html; charset=UTF-8'];
@@ -45,7 +46,7 @@ class QRCodeTracker_Email {
     /**
      * Replace email shortcodes with real values.
      */
-    public function process_shortcodes($template, $order, array $qr_records, $purchaser_name) {
+    public function process_shortcodes($template, $order, array $qr_records, $purchaser_name, $is_individual = false) {
         $first = !empty($qr_records) ? $qr_records[0] : null;
 
         $social_share_link = '';
@@ -54,13 +55,14 @@ class QRCodeTracker_Email {
         }
 
         $map = [
-            '[buyer_name]'       => esc_html($purchaser_name),
-            '[order_number]'     => esc_html($order->get_order_number()),
-            '[site_name]'        => esc_html(get_bloginfo('name')),
-            '[city]'             => $first ? esc_html($first->city) : '',
-            '[postcode]'         => $first ? esc_html($first->postcode) : '',
+            '[buyer_name]'        => esc_html($purchaser_name),
+            '[order_number]'      => esc_html($order->get_order_number()),
+            '[site_name]'         => esc_html(get_bloginfo('name')),
+            '[city]'              => $first ? esc_html($first->city) : '',
+            '[postcode]'          => $first ? esc_html($first->postcode) : '',
             '[social_share_link]' => esc_url($social_share_link),
-            '[qr_codes]'         => $this->render_qr_codes_block($qr_records),
+            '[qr_codes]'          => $this->render_qr_codes_block($qr_records),
+            '[management_link]'   => $is_individual ? '' : $this->render_management_link_block($qr_records),
         ];
 
         return str_replace(array_keys($map), array_values($map), $template);
@@ -101,6 +103,49 @@ class QRCodeTracker_Email {
         }
 
         $html .= '</table>';
+        return $html;
+    }
+
+    /**
+     * Render the team management link block for non-individual purchasers.
+     * All QR codes in one purchase belong to the same team, so one link covers them all.
+     * Returns empty string when no team_id is found (safety fallback).
+     */
+    private function render_management_link_block(array $records) {
+        $team_id = 0;
+        foreach ($records as $record) {
+            if (!empty($record->team_id)) {
+                $team_id = (int) $record->team_id;
+                break;
+            }
+        }
+
+        if ($team_id <= 0 || !$this->tracker) {
+            return '';
+        }
+
+        $management_url  = esc_url($this->tracker->generate_team_management_url($team_id));
+        $register_url    = esc_url(wp_registration_url());
+        $can_register    = (bool) get_option('users_can_register');
+
+        $html  = '<div style="margin: 24px 0; padding: 20px; background: #f0f7ee; border-left: 4px solid #2d5a27; border-radius: 0 4px 4px 0;">';
+        $html .= '<h3 style="margin: 0 0 10px; color: #2d5a27; font-size: 17px;">Manage Your QR Code</h3>';
+        $html .= '<p style="margin: 0 0 12px;">You can request management access to your tree\'s QR code through the link below. From there you can update messages and view scan activity.</p>';
+        $html .= '<p style="margin: 0 0 12px; text-align: center;">';
+        $html .= '<a href="' . $management_url . '" style="display: inline-block; background: #2d5a27; color: #fff; padding: 10px 24px; border-radius: 4px; text-decoration: none; font-size: 15px; font-weight: bold;">Go to Team Management</a>';
+        $html .= '</p>';
+        $html .= '<p style="margin: 0; font-size: 13px; color: #555;">';
+        $html .= '<strong>Don\'t have an account?</strong> You\'ll need to log in to request management access. ';
+
+        if ($can_register) {
+            $html .= 'If you don\'t already have one, <a href="' . $register_url . '" style="color: #2d5a27;">create a free account here</a> first, then return to the management link above.';
+        } else {
+            $html .= 'Please contact us to set up an account, then return to the management link above.';
+        }
+
+        $html .= '</p>';
+        $html .= '</div>';
+
         return $html;
     }
 
@@ -148,6 +193,8 @@ class QRCodeTracker_Email {
 <p>Below you will find your personal QR code. You can download it and display it on your tree so visitors can scan it and connect with the network.</p>
 
 [qr_codes]
+
+[management_link]
 
 <h2 style="color:#2d5a27;">Share the Network</h2>
 <p>Help us grow the Advent Tree Network! Use your personal share link below to spread the word on social media. Every share helps connect more people to the joy of Advent.</p>

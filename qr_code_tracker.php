@@ -2212,6 +2212,7 @@ class QRCodeTracker {
         $inserted_count  = 0;
         $inserted_ids    = [];
         $purchaser_name  = '';
+        $is_individual   = false;
 
         foreach ($order->get_items('line_item') as $item_id => $item) {
             $variation_id = (int) $item->get_variation_id();
@@ -2233,7 +2234,9 @@ class QRCodeTracker {
             // Resolve the team this purchase belongs to.
             $team_info      = $this->resolve_team_id_for_order_item($item, $order);
             $team_id        = $team_info['team_id'];
-            $is_individual  = $team_info['is_individual'];
+            if ($team_info['is_individual']) {
+                $is_individual = true;
+            }
             if ($purchaser_name === '' && $team_info['purchaser_name'] !== '') {
                 $purchaser_name = $team_info['purchaser_name'];
             }
@@ -2276,14 +2279,14 @@ class QRCodeTracker {
                 $qr_records = $wpdb->get_results(
                     // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
                     $wpdb->prepare(
-                        "SELECT id, url, short_code, postcode, city, tree, label FROM {$this->main_table} WHERE id IN ($placeholders)",
+                        "SELECT id, url, short_code, postcode, city, tree, label, team_id FROM {$this->main_table} WHERE id IN ($placeholders)",
                         ...$inserted_ids
                     )
                 );
                 if ($purchaser_name === '') {
                     $purchaser_name = trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name());
                 }
-                $this->email->send_welcome_email($order, $qr_records ?: [], $purchaser_name);
+                $this->email->send_welcome_email($order, $qr_records ?: [], $purchaser_name, $is_individual);
             }
         }
     }
