@@ -21,6 +21,7 @@ require_once __DIR__ . '/includes/class-qr-code-single-report.php';
 require_once __DIR__ . '/includes/class-qr-code-city-report.php';
 require_once __DIR__ . '/includes/class-qr-code-popup.php';
 require_once __DIR__ . '/includes/class-qr-code-permissions.php';
+require_once __DIR__ . '/includes/class-qr-code-email.php';
 
 // 1. Add QR code library import at the top (after class QRCodeTracker {)
 use chillerlan\QRCode\QRCode;
@@ -55,6 +56,7 @@ class QRCodeTracker {
     private $export;
     private $popup;
     private $teams;
+    private $email;
     private $tree_checkout_field_overrides_cache = null;
     private $tree_individual_fields_toggle_script_printed = false;
     private $tree_field_description_visibility_style_printed = false;
@@ -71,6 +73,7 @@ class QRCodeTracker {
         add_action('plugins_loaded', [$this->db, 'maybe_upgrade_schema']);
 
         $this->teams = new QRCodeTracker_Teams();
+        $this->email = new QRCodeTracker_Email($this);
         $this->admin = new QRCodeTracker_Admin($this, $this->teams);
         add_action('admin_menu', [$this->admin, 'admin_menu']);
 
@@ -93,7 +96,12 @@ class QRCodeTracker {
         add_shortcode('qr_tracker_message_2', [$this, 'shortcode_message_2']);
         add_shortcode('qr_tracker_shop_link', [$this, 'shortcode_shop_link']);
         add_action('admin_action_qr_tracker_download_qr', [$this, 'handle_download_qr']);
+        add_action('init', [$this, 'handle_public_qr_image_request'], 1);
         $this->init_woocommerce_tree_fields();
+    }
+
+    public function get_email_handler() {
+        return $this->email;
     }
 
     public static function get_social_scan_source_prefix() {
@@ -598,6 +606,55 @@ class QRCodeTracker {
         header('Content-Type: image/png');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         header('Content-Length: ' . strlen($imageData));
+        echo $imageData;
+        exit;
+    }
+
+    /**
+     * Public endpoint: /?qr_img=SHORT_CODE serves the QR PNG inline.
+     * /?qr_img=SHORT_CODE&qr_dl=1 serves it as a download attachment.
+     * No authentication required — the short_code is already public (embedded in the QR URL).
+     */
+    public function handle_public_qr_image_request() {
+        if (empty($_GET['qr_img'])) {
+            return;
+        }
+        global $wpdb;
+        $short_code = strtolower(sanitize_text_field(wp_unslash($_GET['qr_img'])));
+        if (empty($short_code)) {
+            return;
+        }
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, url, postcode, city, tree FROM {$this->main_table} WHERE short_code = %s LIMIT 1",
+            $short_code
+        ));
+        if (!$row) {
+            status_header(404);
+            exit;
+        }
+        $is_download = !empty($_GET['qr_dl']);
+        $scale       = $is_download ? 20 : 5;
+        $options     = new QROptions([
+            'outputType'  => QRCode::OUTPUT_IMAGE_PNG,
+            'eccLevel'    => QRCode::ECC_H,
+            'scale'       => $scale,
+            'imageBase64' => false,
+        ]);
+        $qrcode    = new QRCode($options);
+        $imageData = $qrcode->render($row->url);
+
+        header('Content-Type: image/png');
+        header('Content-Length: ' . strlen($imageData));
+        if ($is_download) {
+            $postcode = preg_replace('/[^a-zA-Z0-9_-]/', '', $row->postcode);
+            $city     = preg_replace('/[^a-zA-Z0-9_-]/', '', $row->city);
+            $tree     = preg_replace('/[^a-zA-Z0-9_-]/', '', $row->tree);
+            $filename = ($postcode ?: 'qr') . ($city ? '-' . $city : '') . ($tree ? '-' . $tree : '') . '.png';
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+        } else {
+            header('Content-Disposition: inline; filename="qr-' . $short_code . '.png"');
+            header('Cache-Control: public, max-age=86400');
+        }
         echo $imageData;
         exit;
     }
@@ -2152,7 +2209,10 @@ class QRCodeTracker {
             return;
         }
 
-        $inserted_count = 0;
+        $inserted_count  = 0;
+        $inserted_ids    = [];
+        $purchaser_name  = '';
+        $is_individual   = false;
 
         foreach ($order->get_items('line_item') as $item_id => $item) {
             $variation_id = (int) $item->get_variation_id();
@@ -2174,8 +2234,12 @@ class QRCodeTracker {
             // Resolve the team this purchase belongs to.
             $team_info      = $this->resolve_team_id_for_order_item($item, $order);
             $team_id        = $team_info['team_id'];
-            $is_individual  = $team_info['is_individual'];
-            $purchaser_name = $team_info['purchaser_name'];
+            if ($team_info['is_individual']) {
+                $is_individual = true;
+            }
+            if ($purchaser_name === '' && $team_info['purchaser_name'] !== '') {
+                $purchaser_name = $team_info['purchaser_name'];
+            }
 
             $quantity       = max(1, (int) $item->get_quantity());
             $existing_count = $this->count_trees_for_postcode($postcode);
@@ -2198,14 +2262,32 @@ class QRCodeTracker {
                 if ($record_id > 0) {
                     $inserted_count++;
                     $item_inserted++;
+                    $inserted_ids[] = $record_id;
                 }
             }
-
         }
 
         if ($inserted_count > 0) {
             $order->update_meta_data('_qr_tracker_rows_created', 1);
             $order->save();
+
+            // Send the buyer their welcome email with QR codes.
+            if (!empty($inserted_ids)) {
+                global $wpdb;
+                $placeholders = implode(',', array_fill(0, count($inserted_ids), '%d'));
+                // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+                $qr_records = $wpdb->get_results(
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                    $wpdb->prepare(
+                        "SELECT id, url, short_code, postcode, city, tree, label, team_id FROM {$this->main_table} WHERE id IN ($placeholders)",
+                        ...$inserted_ids
+                    )
+                );
+                if ($purchaser_name === '') {
+                    $purchaser_name = trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name());
+                }
+                $this->email->send_welcome_email($order, $qr_records ?: [], $purchaser_name, $is_individual);
+            }
         }
     }
 }
