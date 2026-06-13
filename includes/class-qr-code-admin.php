@@ -1070,7 +1070,14 @@ class QRCodeTracker_Admin {
             if (is_object($this->tracker) && method_exists($this->tracker, 'reset_tree_checkout_field_override_cache')) {
                 $this->tracker->reset_tree_checkout_field_override_cache();
             }
-            
+
+            // Welcome email settings
+            update_option('qr_tracker_welcome_email_enabled', isset($_POST['qr_tracker_welcome_email_enabled']) ? 1 : 0);
+            $email_subject = isset($_POST['qr_tracker_welcome_email_subject']) ? sanitize_text_field(wp_unslash($_POST['qr_tracker_welcome_email_subject'])) : '';
+            update_option('qr_tracker_welcome_email_subject', $email_subject);
+            $email_body = isset($_POST['qr_tracker_welcome_email_body']) ? wp_kses_post(wp_unslash($_POST['qr_tracker_welcome_email_body'])) : '';
+            update_option('qr_tracker_welcome_email_body', $email_body);
+
             echo '<div class="updated"><p>Settings saved.</p></div>';
         }
         $delete_on_uninstall = get_option('qr_tracker_delete_on_uninstall', 0);
@@ -1276,6 +1283,69 @@ class QRCodeTracker_Admin {
         echo '<p class="description">These are native WooCommerce product option fields displayed through product setup or theme configuration and are not managed by QR Tracker field layout.</p>';
         echo '</td></tr>';
         echo '</table>';
+
+        // ── Welcome Email Settings ──────────────────────────────────────────────
+        $welcome_email_enabled = (int) get_option('qr_tracker_welcome_email_enabled', 1);
+        $welcome_email_subject = get_option('qr_tracker_welcome_email_subject', 'Welcome to the Advent Tree Network!');
+        $welcome_email_body    = get_option('qr_tracker_welcome_email_body', '');
+        $default_email_obj     = is_object($this->tracker) && method_exists($this->tracker, 'get_email_handler') ? $this->tracker->get_email_handler() : null;
+        if ($welcome_email_body === '' && $default_email_obj && method_exists($default_email_obj, 'get_default_template')) {
+            $welcome_email_body = $default_email_obj->get_default_template();
+        } elseif ($welcome_email_body === '') {
+            // Fallback if email class not yet available (e.g. fresh install, settings page load).
+            $email_class_path = dirname(__FILE__) . '/class-qr-code-email.php';
+            if (file_exists($email_class_path) && !class_exists('QRCodeTracker_Email')) {
+                require_once $email_class_path;
+            }
+            if (class_exists('QRCodeTracker_Email')) {
+                $tmp = new QRCodeTracker_Email(null);
+                $welcome_email_body = $tmp->get_default_template();
+            }
+        }
+
+        echo '<h2 style="margin-top:30px;">Welcome Email (Tree Purchase)</h2>';
+        echo '<p>This email is sent automatically to the buyer when a Tree Product order completes and QR codes are generated.</p>';
+        echo '<table class="form-table">';
+
+        echo '<tr><th scope="row">Enable Welcome Email</th><td>';
+        echo '<label><input type="checkbox" name="qr_tracker_welcome_email_enabled" value="1"' . checked($welcome_email_enabled, 1, false) . '> Send a welcome email to the buyer after a successful tree purchase</label>';
+        echo '</td></tr>';
+
+        echo '<tr><th scope="row">Email Subject</th><td>';
+        echo '<input type="text" name="qr_tracker_welcome_email_subject" value="' . esc_attr($welcome_email_subject) . '" style="width:100%;max-width:600px;">';
+        echo '</td></tr>';
+
+        echo '<tr><th scope="row" style="vertical-align:top;padding-top:12px;">Email Body</th><td>';
+        echo '<div style="max-width:800px;">';
+        echo '<p class="description" style="margin-bottom:10px;">Use the shortcodes below to insert dynamic content. Basic HTML and inline styles are supported.</p>';
+        echo '<table class="widefat" style="max-width:780px;margin-bottom:14px;">';
+        echo '<thead><tr><th>Shortcode</th><th>Replaced with</th></tr></thead><tbody>';
+        $email_shortcodes = [
+            '[buyer_name]'        => 'Purchaser\'s full name',
+            '[order_number]'      => 'WooCommerce order number',
+            '[site_name]'         => 'WordPress site name',
+            '[city]'              => 'Tree city',
+            '[postcode]'          => 'Tree postcode',
+            '[social_share_link]' => 'Social share URL (first tree)',
+            '[qr_codes]'          => 'Block showing every QR code image + download button + share link',
+        ];
+        foreach ($email_shortcodes as $code => $desc) {
+            echo '<tr><td><code>' . esc_html($code) . '</code></td><td>' . esc_html($desc) . '</td></tr>';
+        }
+        echo '</tbody></table>';
+        wp_editor($welcome_email_body, 'qr_tracker_welcome_email_body', [
+            'textarea_name' => 'qr_tracker_welcome_email_body',
+            'textarea_rows' => 20,
+            'media_buttons' => true,
+            'teeny'         => false,
+            'quicktags'     => true,
+        ]);
+        echo '</div>';
+        echo '</td></tr>';
+
+        echo '</table>';
+        // ── End Welcome Email Settings ──────────────────────────────────────────
+
         echo '<p><input type="submit" name="qr_tracker_settings_submit" class="button button-primary" value="Save Settings"></p>';
         echo '</form>';
 
