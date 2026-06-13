@@ -590,6 +590,8 @@ class QRCodeTracker {
         ]);
         $qrcode = new QRCode($options);
         $imageData = $qrcode->render($url);
+        // Add human-readable postcode label below the QR code image
+        $imageData = $this->add_label_to_qr_image($imageData, $row->postcode, $row->city, $row->tree);
         // Sanitize filename parts
         $postcode = preg_replace('/[^a-zA-Z0-9_-]/', '', $row->postcode);
         $city = preg_replace('/[^a-zA-Z0-9_-]/', '', $row->city);
@@ -600,6 +602,143 @@ class QRCodeTracker {
         header('Content-Length: ' . strlen($imageData));
         echo $imageData;
         exit;
+    }
+
+    /**
+     * Stamps human-readable postcode (and optionally city/tree) text below a QR code PNG.
+     *
+     * Uses imagettftext when a TrueType font can be located on the server; falls back
+     * to PHP GD's built-in bitmap font so the label always renders.
+     *
+     * @param string $image_data Raw PNG bytes of the QR code.
+     * @param string $postcode   Postcode to display prominently.
+     * @param string $city       Optional city name.
+     * @param string $tree       Optional tree/product identifier.
+     * @return string Raw PNG bytes of the labelled image (original data on failure).
+     */
+    private function add_label_to_qr_image($image_data, $postcode, $city = '', $tree = '') {
+        if (!function_exists('imagecreatefromstring') || !function_exists('imagepng')) {
+            return $image_data;
+        }
+
+        $qr_image = imagecreatefromstring($image_data);
+        if ($qr_image === false) {
+            return $image_data;
+        }
+
+        $qr_width  = imagesx($qr_image);
+        $qr_height = imagesy($qr_image);
+
+        // Build label lines: postcode on the first (larger) line, city/tree underneath.
+        $postcode_label = strtoupper(trim((string) $postcode));
+        $sub_parts      = array_filter([trim((string) $city), trim((string) $tree)]);
+        $sub_label      = implode(' | ', $sub_parts);
+
+        $font_file = $this->find_font_file();
+        // Padding: 2.5 % of image width (minimum 10 px) keeps proportions consistent across scales.
+        $padding = max(10, (int) ($qr_width * 0.025));
+
+        if ($font_file) {
+            // TrueType path: font sizes are proportional to the QR image width so the label
+            // remains legible regardless of the download scale setting.
+            // Main postcode: ~5 % of width (minimum 20 px for very small images).
+            // Sub line (city/tree): ~3.3 % of width (minimum 14 px).
+            $main_font_size = max(20, (int) ($qr_width * 0.05));
+            $sub_font_size  = max(14, (int) ($qr_width * 0.033));
+
+            $main_bbox  = imagettfbbox($main_font_size, 0, $font_file, $postcode_label);
+            $main_w     = abs($main_bbox[4] - $main_bbox[0]);
+            $main_h     = abs($main_bbox[5] - $main_bbox[1]);
+
+            $label_area_height = $main_h + ($padding * 3);
+            if ($sub_label !== '') {
+                $sub_bbox           = imagettfbbox($sub_font_size, 0, $font_file, $sub_label);
+                $sub_h              = abs($sub_bbox[5] - $sub_bbox[1]);
+                $label_area_height += $sub_h + $padding;
+            }
+
+            $new_image = imagecreatetruecolor($qr_width, $qr_height + $label_area_height);
+            $white     = imagecolorallocate($new_image, 255, 255, 255);
+            $black     = imagecolorallocate($new_image, 0, 0, 0);
+            imagefilledrectangle($new_image, 0, 0, $qr_width - 1, $qr_height + $label_area_height - 1, $white);
+            imagecopy($new_image, $qr_image, 0, 0, 0, 0, $qr_width, $qr_height);
+            imagedestroy($qr_image);
+
+            $main_x = (int) max(0, ($qr_width - $main_w) / 2);
+            $main_y = $qr_height + $padding + $main_h;
+            imagettftext($new_image, $main_font_size, 0, $main_x, $main_y, $black, $font_file, $postcode_label);
+
+            if ($sub_label !== '') {
+                $sub_bbox = imagettfbbox($sub_font_size, 0, $font_file, $sub_label);
+                $sub_w    = abs($sub_bbox[4] - $sub_bbox[0]);
+                $sub_x    = (int) max(0, ($qr_width - $sub_w) / 2);
+                $sub_y    = $main_y + $padding + abs($sub_bbox[5] - $sub_bbox[1]);
+                imagettftext($new_image, $sub_font_size, 0, $sub_x, $sub_y, $black, $font_file, $sub_label);
+            }
+        } else {
+            // Fallback: GD built-in bitmap font (no TTF file required).
+            // Structure: [ font_id => [ char_width_px, char_height_px ] ]
+            // Font IDs 3-5 are the three largest built-in GD fonts.
+            $gdfonts       = [5 => [9, 15], 4 => [8, 13], 3 => [7, 13]];
+            $selected_font = 5;
+            $char_w          = $gdfonts[$selected_font][0];
+            $char_h          = $gdfonts[$selected_font][1];
+
+            $main_text_w     = strlen($postcode_label) * $char_w;
+            $sub_text_w      = strlen($sub_label) * $char_w;
+            $label_area_height = $char_h + ($padding * 3);
+            if ($sub_label !== '') {
+                $label_area_height += $char_h + $padding;
+            }
+
+            $new_image = imagecreatetruecolor($qr_width, $qr_height + $label_area_height);
+            $white     = imagecolorallocate($new_image, 255, 255, 255);
+            $black     = imagecolorallocate($new_image, 0, 0, 0);
+            imagefilledrectangle($new_image, 0, 0, $qr_width - 1, $qr_height + $label_area_height - 1, $white);
+            imagecopy($new_image, $qr_image, 0, 0, 0, 0, $qr_width, $qr_height);
+            imagedestroy($qr_image);
+
+            $main_x = (int) max(0, ($qr_width - $main_text_w) / 2);
+            imagestring($new_image, $selected_font, $main_x, $qr_height + $padding, $postcode_label, $black);
+
+            if ($sub_label !== '') {
+                $sub_x = (int) max(0, ($qr_width - $sub_text_w) / 2);
+                imagestring($new_image, $selected_font, $sub_x, $qr_height + $padding * 2 + $char_h, $sub_label, $black);
+            }
+        }
+
+        ob_start();
+        imagepng($new_image);
+        $new_data = ob_get_clean();
+        imagedestroy($new_image);
+
+        return ($new_data !== false && $new_data !== '') ? $new_data : $image_data;
+    }
+
+    /**
+     * Attempts to locate a TrueType font file on the server.
+     * Returns the first readable path found, or null if none available.
+     *
+     * @return string|null Absolute path to a .ttf font file, or null.
+     */
+    private function find_font_file() {
+        $candidates = [
+            __DIR__ . '/assets/fonts/LiberationSans-Bold.ttf',
+            '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+            '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf',
+            '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf',
+            '/usr/share/fonts/truetype/lato/Lato-Bold.ttf',
+            'C:/Windows/Fonts/arialbd.ttf',
+            'C:/Windows/Fonts/arial.ttf',
+            '/System/Library/Fonts/Helvetica.ttc',
+        ];
+        foreach ($candidates as $path) {
+            if (file_exists($path) && is_readable($path)) {
+                return $path;
+            }
+        }
+        return null;
     }
 
     public function generate_tracker_url($postcode, $city, $tree, $short_code = '') {
