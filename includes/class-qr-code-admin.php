@@ -1017,6 +1017,9 @@ class QRCodeTracker_Admin {
                 : [];
             update_option('qr_tracker_tree_product_ids', $tree_product_ids);
 
+            $pay_forward_product_id = isset($_POST['qr_tracker_pay_forward_product_id']) ? (int) $_POST['qr_tracker_pay_forward_product_id'] : 0;
+            update_option('qr_tracker_pay_forward_product_id', $pay_forward_product_id);
+
             $product_field_keys_csv = isset($_POST['qr_tracker_tree_field_layout_product']) ? sanitize_text_field(wp_unslash($_POST['qr_tracker_tree_field_layout_product'])) : '';
             $checkout_field_keys_csv = isset($_POST['qr_tracker_tree_field_layout_checkout']) ? sanitize_text_field(wp_unslash($_POST['qr_tracker_tree_field_layout_checkout'])) : '';
             $tree_field_layout = [
@@ -1078,6 +1081,7 @@ class QRCodeTracker_Admin {
         if (!is_array($tree_product_ids)) {
             $tree_product_ids = [];
         }
+        $pay_forward_product_id = (int) get_option('qr_tracker_pay_forward_product_id', 0);
         $tree_field_choices = is_object($this->tracker) && method_exists($this->tracker, 'get_tree_checkout_field_choices')
             ? $this->tracker->get_tree_checkout_field_choices()
             : [];
@@ -1176,6 +1180,27 @@ class QRCodeTracker_Admin {
             }
             echo '</select>';
             echo '<p class="description">Select zero, one, or many WooCommerce products that should show the Advent Tree purchase fields. Hold Ctrl (Windows) or Command (Mac) to select multiple products.</p>';
+        }
+        echo '</td></tr>';
+        echo '<tr><th scope="row">Pay a Tree Forward Product</th><td>';
+        if (!post_type_exists('product')) {
+            echo '<p class="description">WooCommerce products are unavailable. Activate WooCommerce to configure this setting.</p>';
+        } elseif (empty($available_tree_products)) {
+            echo '<p class="description">No WooCommerce products found.</p>';
+        } else {
+            echo '<select name="qr_tracker_pay_forward_product_id" style="width: 100%; max-width: 600px;">';
+            echo '<option value="0">— None selected —</option>';
+            foreach ($available_tree_products as $product_id) {
+                $title = get_the_title($product_id);
+                if ($title === '') {
+                    $title = '(no title)';
+                }
+                echo '<option value="' . esc_attr($product_id) . '"' . selected((int) $product_id === $pay_forward_product_id, true, false) . '>';
+                echo esc_html($title . ' (ID: ' . $product_id . ')');
+                echo '</option>';
+            }
+            echo '</select>';
+            echo '<p class="description">Select the product whose price will be added as a fee when a customer chooses "Pay a Tree Forward" at checkout.</p>';
         }
         echo '</td></tr>';
         echo '<tr><th scope="row">Tree Field Layout</th><td>';

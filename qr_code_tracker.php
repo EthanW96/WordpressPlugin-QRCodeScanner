@@ -40,18 +40,8 @@ class QRCodeTracker {
         'qr_tree_city',
         'qr_tree_message_1',
         'qr_tree_message_2',
-        'qr_tree_tree',
-        'qr_tree_label',
-        'referral_link',
-        'discount_code',
-        'delivery_or_collection',
-        'contact_emails',
-        'report_emails',
         'pay_forward_type',
         'pay_forward_contact',
-        'qr_tree_shop_link',
-        'qr_tree_shop_logo',
-        'qr_tree_show_shop_link',
     ];
 
     private $main_table;
@@ -1276,6 +1266,7 @@ class QRCodeTracker {
         add_action('woocommerce_checkout_order_processed', [$this, 'create_qr_records_for_completed_order'], 20, 1);
         add_action('woocommerce_order_status_completed', [$this, 'create_qr_records_for_completed_order'], 10, 1);
         add_filter('woocommerce_hidden_order_itemmeta', [$this, 'hide_legacy_tree_item_meta_keys']);
+        add_action('woocommerce_cart_calculate_fees', [$this, 'add_pay_forward_cart_fee']);
     }
 
     public function get_tree_checkout_field_choices() {
@@ -1297,38 +1288,24 @@ class QRCodeTracker {
 
     private function get_default_tree_checkout_field_labels() {
         return [
-            'purchaser_type' => 'Purchasing As',
+            'purchaser_type'        => 'Purchasing As',
             'individual_first_name' => 'First Name',
-            'individual_last_name' => 'Last Name',
-            'qr_tree_postcode' => 'Postcode',
-            'qr_tree_city' => 'City',
-            'qr_tree_message_1' => 'Message 1',
-            'qr_tree_message_2' => 'Message 2',
-            'qr_tree_tree' => 'Tree',
-            'qr_tree_label' => 'Label',
-            'referral_link' => 'Referral Link',
-            'discount_code' => 'Discount Code',
-            'delivery_or_collection' => 'Delivery or Collection',
-            'contact_emails' => 'Contact Email(s)',
-            'report_emails' => 'Report Email(s)',
-            'pay_forward_type' => 'Pay Forward',
-            'pay_forward_contact' => 'Pay Forward Recipient',
-            'qr_tree_shop_link' => 'Shop Link',
-            'qr_tree_shop_logo' => 'Shop Logo URL',
-            'qr_tree_show_shop_link' => 'Show Shop Link',
+            'individual_last_name'  => 'Last Name',
+            'qr_tree_postcode'      => 'Postcode',
+            'qr_tree_city'          => 'City',
+            'qr_tree_message_1'     => 'Message 1',
+            'qr_tree_message_2'     => 'Message 2',
+            'pay_forward_type'      => 'Pay a Tree Forward?',
+            'pay_forward_contact'   => 'Pay Forward Recipient',
         ];
     }
 
     private function get_default_tree_checkout_field_descriptions() {
         return [
             'individual_first_name' => 'Required when Purchasing as is set to Individual.',
-            'individual_last_name' => 'Required when Purchasing as is set to Individual.',
-            'qr_tree_message_1' => 'Suggestion: "Merry Christmas from [Name]!"',
-            'qr_tree_message_2' => 'Suggestions: Click Here, Read More, Email. To render a button in Message 2, use [qr_message_2_button ...] only when that shortcode is available in your site (check with your site admin/plugin docs).',
-            'referral_link' => 'Optional link to connect an individual purchase with an organization.',
-            'discount_code' => 'Optional coupon or discount reference.',
-            'contact_emails' => 'Separate multiple emails with commas, spaces, or semicolons.',
-            'report_emails' => 'Weekly report recipient(s), separated by commas, spaces, or semicolons.',
+            'individual_last_name'  => 'Required when Purchasing as is set to Individual.',
+            'qr_tree_message_1'     => 'Suggestion: "Merry Christmas from [Name]!"',
+            'qr_tree_message_2'     => 'Suggestions: Click Here, Read More, Email. To render a button in Message 2, use [qr_message_2_button ...] only when that shortcode is available in your site (check with your site admin/plugin docs).',
         ];
     }
 
@@ -1799,42 +1776,6 @@ class QRCodeTracker {
                     ], $this->get_tree_field_value_from_request('qr_tree_message_2'));
                 }
                 break;
-            case 'qr_tree_tree':
-                // Not shown to purchasers — generated automatically.
-                break;
-            case 'qr_tree_label':
-                // Not shown to purchasers — generated automatically.
-                break;
-            case 'referral_link':
-                // Not collected from purchasers.
-                break;
-            case 'discount_code':
-                $this->render_customizable_tree_form_field('discount_code', [
-                    'type'        => 'text',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Discount Code',
-                    'description' => 'Optional coupon or discount reference.',
-                ], $this->get_tree_field_value_from_request('discount_code'));
-                break;
-            case 'delivery_or_collection':
-                $this->render_customizable_tree_form_field('delivery_or_collection', [
-                    'type'     => 'select',
-                    'class'    => ['form-row-wide'],
-                    'label'    => 'Delivery or Collection',
-                    'required' => true,
-                    'options'  => [
-                        ''           => 'Select an option',
-                        'delivery'   => 'Delivery',
-                        'collection' => 'Collection',
-                    ],
-                ], $this->get_tree_field_value_from_request('delivery_or_collection'));
-                break;
-            case 'contact_emails':
-                // Pulled from WooCommerce billing email automatically.
-                break;
-            case 'report_emails':
-                // Pulled from WooCommerce billing email automatically.
-                break;
             case 'pay_forward_type':
                 $this->render_customizable_tree_form_field('pay_forward_type', [
                     'type'    => 'select',
@@ -1854,15 +1795,6 @@ class QRCodeTracker {
                     'label'       => 'Pay Forward Recipient (email or name)',
                     'placeholder' => 'Leave blank if general',
                 ], $this->get_tree_field_value_from_request('pay_forward_contact'));
-                break;
-            case 'qr_tree_shop_link':
-                // Not collected from purchasers.
-                break;
-            case 'qr_tree_shop_logo':
-                // Not collected from purchasers.
-                break;
-            case 'qr_tree_show_shop_link':
-                // Not collected from purchasers.
                 break;
         }
     }
@@ -1924,34 +1856,15 @@ class QRCodeTracker {
                 return isset($valid_options[$value]) ? $value : '';
             case 'qr_tree_postcode':
                 return strtoupper(sanitize_text_field($raw_value));
-            case 'referral_link':
-            case 'qr_tree_shop_link':
-            case 'qr_tree_shop_logo':
-                return esc_url_raw($raw_value);
             case 'qr_tree_message_1':
             case 'qr_tree_message_2':
                 return wp_kses_post($raw_value);
-            case 'contact_emails':
-            case 'report_emails':
-                return $this->sanitize_email_list($raw_value);
-            case 'qr_tree_show_shop_link':
-                return (int) !empty($raw_value);
             default:
                 return sanitize_text_field($raw_value);
         }
     }
 
-    private function sanitize_email_list($raw_value) {
-        $emails = preg_split('/[\s,;]+/', (string) $raw_value, -1, PREG_SPLIT_NO_EMPTY);
-        $sanitized = [];
-        foreach ($emails as $email) {
-            $clean = sanitize_email($email);
-            if (!empty($clean) && is_email($clean)) {
-                $sanitized[] = $clean;
-            }
-        }
-        return implode(', ', array_unique($sanitized));
-    }
+
 
     public function validate_tree_checkout_fields($passed, $product_id) {
         if (!$this->is_tree_product($product_id)) {
@@ -1998,38 +1911,6 @@ class QRCodeTracker {
             return false;
         }
 
-        if (isset($field_lookup['qr_tree_shop_link'])) {
-            $shop_link = $this->get_tree_field_value_from_request('qr_tree_shop_link');
-            if ($shop_link !== '' && !filter_var($shop_link, FILTER_VALIDATE_URL)) {
-                wc_add_notice('Please provide a valid shop link URL.', 'error');
-                return false;
-            }
-        }
-
-        if (isset($field_lookup['qr_tree_shop_logo'])) {
-            $shop_logo = $this->get_tree_field_value_from_request('qr_tree_shop_logo');
-            if ($shop_logo !== '' && !filter_var($shop_logo, FILTER_VALIDATE_URL)) {
-                wc_add_notice('Please provide a valid shop logo URL.', 'error');
-                return false;
-            }
-        }
-
-        if (isset($field_lookup['referral_link'])) {
-            $referral_link = $this->get_tree_field_value_from_request('referral_link');
-            if ($referral_link !== '' && !filter_var($referral_link, FILTER_VALIDATE_URL)) {
-                wc_add_notice('Please provide a valid referral link URL.', 'error');
-                return false;
-            }
-        }
-
-        if (isset($field_lookup['delivery_or_collection'])) {
-            $delivery_or_collection = $this->get_tree_field_value_from_request('delivery_or_collection');
-            if (!in_array($delivery_or_collection, ['delivery', 'collection'], true)) {
-                wc_add_notice('Please select either Delivery or Collection.', 'error');
-                return false;
-            }
-        }
-
         return true;
     }
 
@@ -2039,29 +1920,19 @@ class QRCodeTracker {
         }
 
         $field_values = [
-            'purchaser_type' => isset($_POST['purchaser_type']) ? $this->sanitize_tree_field_value('purchaser_type', wp_unslash($_POST['purchaser_type'])) : '',
-            'contact_emails' => isset($_POST['contact_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['contact_emails'])) : '',
-            'report_emails' => isset($_POST['report_emails']) ? $this->sanitize_email_list(wp_unslash($_POST['report_emails'])) : '',
+            'purchaser_type'        => isset($_POST['purchaser_type']) ? $this->sanitize_tree_field_value('purchaser_type', wp_unslash($_POST['purchaser_type'])) : '',
             'individual_first_name' => isset($_POST['individual_first_name']) ? sanitize_text_field(wp_unslash($_POST['individual_first_name'])) : '',
-            'individual_last_name' => isset($_POST['individual_last_name']) ? sanitize_text_field(wp_unslash($_POST['individual_last_name'])) : '',
-            'referral_link' => isset($_POST['referral_link']) ? esc_url_raw(wp_unslash($_POST['referral_link'])) : '',
-            'discount_code' => isset($_POST['discount_code']) ? sanitize_text_field(wp_unslash($_POST['discount_code'])) : '',
-            'delivery_or_collection' => isset($_POST['delivery_or_collection']) ? sanitize_text_field(wp_unslash($_POST['delivery_or_collection'])) : '',
-            'pay_forward_type' => isset($_POST['pay_forward_type']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) : '',
-            'pay_forward_contact' => isset($_POST['pay_forward_contact']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_contact'])) : '',
-            'qr_tree_postcode' => isset($_POST['qr_tree_postcode']) ? strtoupper(sanitize_text_field(wp_unslash($_POST['qr_tree_postcode']))) : '',
-            'qr_tree_city' => isset($_POST['qr_tree_city']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_city'])) : '',
-            'qr_tree_tree' => isset($_POST['qr_tree_tree']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_tree'])) : '',
-            'qr_tree_label' => isset($_POST['qr_tree_label']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_label'])) : '',
-            'qr_tree_message_1' => isset($_POST['qr_tree_message_1']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_1'])) : '',
-            'qr_tree_message_2' => isset($_POST['qr_tree_message_2']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_2'])) : '',
-            'qr_tree_shop_link' => isset($_POST['qr_tree_shop_link']) ? esc_url_raw(wp_unslash($_POST['qr_tree_shop_link'])) : '',
-            'qr_tree_shop_logo' => isset($_POST['qr_tree_shop_logo']) ? esc_url_raw(wp_unslash($_POST['qr_tree_shop_logo'])) : '',
-            'qr_tree_show_shop_link' => isset($_POST['qr_tree_show_shop_link']) ? 1 : 0,
+            'individual_last_name'  => isset($_POST['individual_last_name']) ? sanitize_text_field(wp_unslash($_POST['individual_last_name'])) : '',
+            'pay_forward_type'      => isset($_POST['pay_forward_type']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) : '',
+            'pay_forward_contact'   => isset($_POST['pay_forward_contact']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_contact'])) : '',
+            'qr_tree_postcode'      => isset($_POST['qr_tree_postcode']) ? strtoupper(sanitize_text_field(wp_unslash($_POST['qr_tree_postcode']))) : '',
+            'qr_tree_city'          => isset($_POST['qr_tree_city']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_city'])) : '',
+            'qr_tree_message_1'     => isset($_POST['qr_tree_message_1']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_1'])) : '',
+            'qr_tree_message_2'     => isset($_POST['qr_tree_message_2']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_2'])) : '',
         ];
 
         foreach ($field_values as $key => $value) {
-            if ($value !== '' || $key === 'qr_tree_show_shop_link') {
+            if ($value !== '') {
                 $cart_item_data[$key] = $value;
             }
         }
@@ -2093,16 +1964,6 @@ class QRCodeTracker {
         $all_labels = $this->get_tree_checkout_field_choices();
         $session_checkout_values = $this->get_tree_checkout_session_values();
 
-        // Resolve billing email once for contact/report email fallback.
-        $billing_email = '';
-        $order_id = $item->get_order_id();
-        if ($order_id) {
-            $order_obj = wc_get_order($order_id);
-            if ($order_obj) {
-                $billing_email = sanitize_email($order_obj->get_billing_email());
-            }
-        }
-
         foreach ($this->get_tree_field_display_order() as $field) {
             if (!isset($all_labels[$field])) {
                 continue;
@@ -2116,17 +1977,9 @@ class QRCodeTracker {
                 $field_value = '';
             }
 
-            // Fall back to billing email for contact/report email fields.
-            if ($field_value === '' && $billing_email !== '' && in_array($field, ['contact_emails', 'report_emails'], true)) {
-                $field_value = $billing_email;
-            }
             if ($field_value !== '') {
-                $stored_value = $field === 'qr_tree_show_shop_link' ? (int) $field_value : $field_value;
-                $display_value = $field === 'qr_tree_show_shop_link'
-                    ? (((int) $stored_value) === 1 ? 'Yes' : 'No')
-                    : $stored_value;
-                $item->add_meta_data($all_labels[$field], $display_value);
-                $item->add_meta_data('_' . $field, $stored_value);
+                $item->add_meta_data($all_labels[$field], $field_value);
+                $item->add_meta_data('_' . $field, $field_value);
             }
         }
     }
@@ -2149,18 +2002,15 @@ class QRCodeTracker {
         $url = $this->generate_tracker_url($tree_data['postcode'], $tree_data['city'], $tree_data['tree'], $short_code);
 
         $row = [
-            'url'           => $url,
-            'short_code'    => $short_code,
-            'edit_token'    => $this->generate_unique_edit_token(),
-            'postcode'      => $tree_data['postcode'],
-            'city'          => $tree_data['city'],
-            'tree'          => $tree_data['tree'],
-            'label'         => $tree_data['label'],
-            'message_1'     => $tree_data['message_1'],
-            'message_2'     => $tree_data['message_2'],
-            'shop_link'     => $tree_data['shop_link'],
-            'shop_logo'     => $tree_data['shop_logo'],
-            'show_shop_link'=> $tree_data['show_shop_link'],
+            'url'        => $url,
+            'short_code' => $short_code,
+            'edit_token' => $this->generate_unique_edit_token(),
+            'postcode'   => $tree_data['postcode'],
+            'city'       => $tree_data['city'],
+            'tree'       => $tree_data['tree'],
+            'label'      => $tree_data['label'],
+            'message_1'  => $tree_data['message_1'],
+            'message_2'  => $tree_data['message_2'],
         ];
 
         if (!empty($tree_data['team_id'])) {
@@ -2170,6 +2020,59 @@ class QRCodeTracker {
         $wpdb->insert($this->main_table, $row);
 
         return $wpdb->insert_id ? (int) $wpdb->insert_id : 0;
+    }
+
+    private function count_trees_for_postcode($postcode) {
+        global $wpdb;
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$this->main_table} WHERE postcode = %s",
+            $postcode
+        ));
+    }
+
+    public function add_pay_forward_cart_fee($cart) {
+        if (is_admin() && !defined('DOING_AJAX')) {
+            return;
+        }
+
+        $pay_forward_product_id = (int) get_option('qr_tracker_pay_forward_product_id', 0);
+        if ($pay_forward_product_id <= 0) {
+            return;
+        }
+
+        $product = wc_get_product($pay_forward_product_id);
+        if (!$product) {
+            return;
+        }
+
+        $price = (float) $product->get_price();
+        if ($price <= 0) {
+            return;
+        }
+
+        // Check whether any tree item in the cart has pay-forward selected.
+        // pay_forward_type is stored in cart item data (product-page field) or session (checkout field).
+        $has_pay_forward = false;
+        foreach ($cart->get_cart() as $cart_item) {
+            if (!empty($cart_item['pay_forward_type'])) {
+                $has_pay_forward = true;
+                break;
+            }
+        }
+
+        // Also check the session for checkout-page placement.
+        if (!$has_pay_forward) {
+            $session_values = $this->get_tree_checkout_session_values();
+            if (!empty($session_values['pay_forward_type'])) {
+                $has_pay_forward = true;
+            }
+        }
+
+        if (!$has_pay_forward) {
+            return;
+        }
+
+        $cart->add_fee('Pay a Tree Forward', $price, true);
     }
 
     /**
@@ -2259,41 +2162,37 @@ class QRCodeTracker {
                 continue;
             }
 
-            $postcode = strtoupper(sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_postcode', 'Postcode')));
-            $city = sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_city', 'City'));
-            $tree = sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_tree', 'Tree'));
-            $label = sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_label', 'Label'));
+            $postcode  = strtoupper(sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_postcode', 'Postcode')));
+            $city      = sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_city', 'City'));
             $message_1 = wp_kses_post($this->get_tree_field_from_order_item($item, 'qr_tree_message_1', 'Message 1'));
             $message_2 = wp_kses_post($this->get_tree_field_from_order_item($item, 'qr_tree_message_2', 'Message 2'));
-            $shop_link = esc_url_raw($this->get_tree_field_from_order_item($item, 'qr_tree_shop_link', 'Shop Link'));
-            $shop_logo = esc_url_raw($this->get_tree_field_from_order_item($item, 'qr_tree_shop_logo', 'Shop Logo URL'));
-            $show_shop_link_raw = $this->get_tree_field_from_order_item($item, 'qr_tree_show_shop_link', 'Show Shop Link');
-            $show_shop_link = in_array(strtolower((string) $show_shop_link_raw), ['1', 'yes', 'true'], true) ? 1 : 0;
 
             if (empty($postcode) || empty($city)) {
                 continue;
             }
 
             // Resolve the team this purchase belongs to.
-            $team_info     = $this->resolve_team_id_for_order_item($item, $order);
-            $team_id       = $team_info['team_id'];
-            $is_individual = $team_info['is_individual'];
-            $purchaser_name= $team_info['purchaser_name'];
+            $team_info      = $this->resolve_team_id_for_order_item($item, $order);
+            $team_id        = $team_info['team_id'];
+            $is_individual  = $team_info['is_individual'];
+            $purchaser_name = $team_info['purchaser_name'];
 
-            $quantity = max(1, (int) $item->get_quantity());
-            $item_inserted = 0;
+            $quantity       = max(1, (int) $item->get_quantity());
+            $existing_count = $this->count_trees_for_postcode($postcode);
+            $item_inserted  = 0;
+
             for ($i = 0; $i < $quantity; $i++) {
+                $tree_number = $existing_count + $item_inserted + 1;
+                $tree_label  = 'Tree ' . $tree_number;
+
                 $record_id = $this->insert_tree_qr_record([
-                    'postcode'       => $postcode,
-                    'city'           => $city,
-                    'tree'           => $tree,
-                    'label'          => $quantity > 1 ? $label . ' #' . ($i + 1) : $label,
-                    'message_1'      => $message_1,
-                    'message_2'      => $message_2,
-                    'shop_link'      => $shop_link,
-                    'shop_logo'      => $shop_logo,
-                    'show_shop_link' => $show_shop_link,
-                    'team_id'        => $team_id,
+                    'postcode'  => $postcode,
+                    'city'      => $city,
+                    'tree'      => $tree_label,
+                    'label'     => $tree_label,
+                    'message_1' => $message_1,
+                    'message_2' => $message_2,
+                    'team_id'   => $team_id,
                 ]);
 
                 if ($record_id > 0) {
