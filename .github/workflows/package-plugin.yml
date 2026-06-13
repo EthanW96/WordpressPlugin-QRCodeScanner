@@ -52,9 +52,9 @@ jobs:
         id: archive
         shell: bash
         run: |
-          cd dist
+          cd "dist/${PLUGIN_SLUG}"
           ZIP_NAME="${PLUGIN_SLUG}.zip"
-          zip -r "$ZIP_NAME" "${PLUGIN_SLUG}"
+          zip -r "../$ZIP_NAME" .
           echo "zip_path=dist/$ZIP_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Upload plugin artifact
