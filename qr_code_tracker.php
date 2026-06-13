@@ -213,7 +213,9 @@ class QRCodeTracker {
                     $path_short_code
                 ));
                 if ($row) {
-                    $scan_source = $is_social_share ? 'social_legacy_path_short_code' : 'legacy_path_short_code';
+                    // Path-based short codes are the social link — always count as social share.
+                    $is_social_share = true;
+                    $scan_source = 'social_link';
                 }
             }
         }
@@ -271,7 +273,8 @@ class QRCodeTracker {
                 $update_result = $wpdb->update(
                     $this->main_table,
                     [
-                        'social_share_count' => ((int) $row->social_share_count) + 1
+                        'social_share_count' => ((int) $row->social_share_count) + 1,
+                        'last_social_shared' => $logged_at,
                     ],
                     ['id' => $row->id]
                 );
@@ -758,19 +761,13 @@ class QRCodeTracker {
             return;
         }
 
-        $target_url = $this->is_anonymous_short_code($short_code)
-            ? $this->generate_anonymous_tracker_url($short_code)
-            : add_query_arg(['qr' => $short_code], home_url('/'));
+        // Always redirect legacy postcode/city/tree links to the ?qr= URL so the
+        // visit is tracked as a QR scan, not a social share. The path-based short
+        // link (/{shortcode}) is reserved for the social link.
+        $target_url = add_query_arg(['qr' => $short_code], home_url('/'));
 
         if (empty($target_url)) {
             return;
-        }
-
-        if ($this->is_social_share_request()) {
-            // Preserve the social-share marker when redirecting legacy internal
-            // query links to the canonical short link so the visit stays
-            // classified as a social-share hit after the redirect.
-            $target_url = add_query_arg('qr_source', 'social', $target_url);
         }
 
         $current_url = home_url(add_query_arg([]));

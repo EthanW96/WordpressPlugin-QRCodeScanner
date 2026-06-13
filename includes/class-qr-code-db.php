@@ -34,6 +34,7 @@ class QRCodeTracker_DB {
             scan_count BIGINT UNSIGNED DEFAULT 0,
             social_share_count BIGINT UNSIGNED DEFAULT 0,
             last_scanned DATETIME DEFAULT NULL,
+            last_social_shared DATETIME DEFAULT NULL,
             message_1 LONGTEXT,
             message_2 LONGTEXT,
             show_popup TINYINT(1) DEFAULT 1,
@@ -187,6 +188,10 @@ class QRCodeTracker_DB {
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'social_share_count'");
         if (empty($columns)) {
             $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN social_share_count BIGINT UNSIGNED DEFAULT 0 AFTER scan_count");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'last_social_shared'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN last_social_shared DATETIME DEFAULT NULL AFTER last_scanned");
         }
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->log_table} LIKE 'postcode'");
         if (empty($columns)) {
