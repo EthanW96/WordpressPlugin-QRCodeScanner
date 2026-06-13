@@ -48,7 +48,51 @@
             }
         });
 
-        // ── 3. Tree field layout drag-and-drop (settings page) ───────────────────────
+        // ── 3. Copy buttons for QR code links ────────────────────────────────────────
+        function copyTextToClipboard(text, btn) {
+            function onSuccess() {
+                var original = btn.textContent;
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(function () {
+                    btn.textContent = original;
+                    btn.classList.remove('copied');
+                }, 1500);
+            }
+
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(onSuccess);
+            } else {
+                // Fallback for HTTP / non-secure contexts
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;';
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                try {
+                    document.execCommand('copy');
+                    onSuccess();
+                } catch (err) {
+                    // Silent fail — nothing we can do without user interaction
+                }
+                document.body.removeChild(ta);
+            }
+        }
+
+        document.body.addEventListener('click', function (e) {
+            var btn = e.target.closest('.qr-copy-btn');
+            if (!btn) {
+                return;
+            }
+            var url = btn.getAttribute('data-url');
+            if (!url) {
+                return;
+            }
+            copyTextToClipboard(url, btn);
+        });
+
+        // ── 4. Tree field layout drag-and-drop (settings page) ───────────────────────
         var treeFieldLayout = document.querySelector('.qr-tree-field-layout');
         if (treeFieldLayout) {
             var draggedItem = null;

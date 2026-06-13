@@ -829,7 +829,7 @@ class QRCodeTracker_Admin {
 
         // Now display the Tracked QR Codes table
         $entries = $this->teams->get_accessible_qr_codes();
-        echo '<h2>Tracked QR Codes</h2><div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>Popup</th><th>Shop Link</th><th>Team</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Social Shares</th><th>Last Scanned</th><th>Actions</th></tr></thead><tbody>';
+        echo '<h2>Tracked QR Codes</h2><div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>Popup</th><th>Shop Link</th><th>Team</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Social Shares</th><th>Last Scanned</th><th>Last Social Shared</th><th>Actions</th></tr></thead><tbody>';
         foreach ($entries as $row) {
             $delete_url = esc_url(add_query_arg(['delete_id' => $row->id]));
             $edit_url = esc_url(add_query_arg(['edit_id' => $row->id]));
@@ -847,23 +847,54 @@ class QRCodeTracker_Admin {
                 }
             }
 
-            $url_display = '<code>' . esc_html($row->url) . '</code>';
             $anonymous_url = !empty($row->short_code) ? $this->tracker->generate_anonymous_tracker_url($row->short_code) : '';
-            if (!empty($anonymous_url) && untrailingslashit($anonymous_url) !== untrailingslashit($row->url)) {
-                $url_display .= '<br><code>' . esc_html($anonymous_url) . '</code><br><span class="description">Anonymous link</span>';
-            }
-            $social_share_url = !empty($row->short_code) ? $this->tracker->generate_social_share_url($row->short_code) : '';
-            if (!empty($social_share_url)) {
-                $url_display .= '<br><code>' . esc_html($social_share_url) . '</code><br><span class="description">Social share link</span>';
-            }
             $management_url = $row->team_id
                 ? $this->tracker->generate_team_management_url((int) $row->team_id)
                 : '';
+
+            $url_display = '';
+
+            if (!empty($anonymous_url) && untrailingslashit($anonymous_url) !== untrailingslashit($row->url)) {
+                $url_display .= '<div class="qr-link-entry">'
+                    . '<span class="qr-link-label">Social Link</span>'
+                    . '<div class="qr-link-row">'
+                    . '<code class="qr-link-url">' . esc_html($anonymous_url) . '</code>'
+                    . '<button class="qr-copy-btn" data-url="' . esc_attr($anonymous_url) . '">Copy</button>'
+                    . '</div></div>';
+            }
+
+            if (!empty($row->url)) {
+                $url_display .= '<div class="qr-link-entry">'
+                    . '<span class="qr-link-label">QR Link</span>'
+                    . '<div class="qr-link-row">'
+                    . '<code class="qr-link-url">' . esc_html($row->url) . '</code>'
+                    . '<button class="qr-copy-btn" data-url="' . esc_attr($row->url) . '">Copy</button>'
+                    . '</div></div>';
+            }
+
+            $legacy_url = add_query_arg([
+                'postcode' => $row->postcode,
+                'city'     => $row->city,
+                'tree'     => $row->tree,
+            ], home_url('/'));
+            $url_display .= '<div class="qr-link-entry">'
+                . '<span class="qr-link-label">Legacy Link</span>'
+                . '<div class="qr-link-row">'
+                . '<code class="qr-link-url">' . esc_html($legacy_url) . '</code>'
+                . '<button class="qr-copy-btn" data-url="' . esc_attr($legacy_url) . '">Copy</button>'
+                . '</div></div>';
+
             if (!empty($management_url)) {
-                $url_display .= '<br><code>' . esc_html($management_url) . '</code><br><span class="description">Team management link</span>';
+                $url_display .= '<div class="qr-link-entry">'
+                    . '<span class="qr-link-label">Team Management Link</span>'
+                    . '<div class="qr-link-row">'
+                    . '<code class="qr-link-url">' . esc_html($management_url) . '</code>'
+                    . '<button class="qr-copy-btn" data-url="' . esc_attr($management_url) . '">Copy</button>'
+                    . '</div></div>';
             }
             
-            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td>{$url_display}</td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>" . number_format((int) $row->social_share_count) . "</td><td>{$row->last_scanned}</td>";
+            $last_social_shared = !empty($row->last_social_shared) ? esc_html($row->last_social_shared) : 'Never';
+            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td>{$url_display}</td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>" . number_format((int) $row->social_share_count) . "</td><td>{$row->last_scanned}</td><td>{$last_social_shared}</td>";
             echo "<td>";
             if ((int) $row->scan_count === 0 && (int) $row->social_share_count === 0) {
                 echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a>";
