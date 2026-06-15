@@ -610,3 +610,125 @@
     border-color: #00a32a;
     color: #fff;
 }
+
+/* =========================================================
+   Section Drawers / Accordions — mobile-first
+   ========================================================= */
+
+.qr-drawer {
+    margin: 0 0 6px;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    background: #fff;
+}
+
+/* First drawer after the page heading gets extra top breathing room */
+.wrap > .qr-drawer:first-child,
+h1 + .qr-drawer,
+h1 + * + .qr-drawer {
+    margin-top: 16px;
+}
+
+/* form-table inside a drawer: remove the default top margin WordPress adds */
+.qr-drawer-pad > .form-table:first-child {
+    margin-top: 0;
+}
+
+.qr-drawer-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 14px 16px;
+    background: #f6f7f7;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1d2327;
+    line-height: 1.4;
+    box-sizing: border-box;
+    transition: background-color 0.15s ease;
+}
+
+.qr-drawer-toggle:hover {
+    background: #edeff0;
+}
+
+.qr-drawer-toggle:focus-visible {
+    outline: 2px solid #007cba;
+    outline-offset: -2px;
+    border-radius: 4px;
+}
+
+/* When open, square off the bottom corners of the toggle */
+.qr-drawer:not(.qr-drawer-closed) > .qr-drawer-toggle {
+    border-radius: 4px 4px 0 0;
+    border-bottom: 1px solid #ccd0d4;
+}
+
+.qr-drawer-title {
+    flex: 1;
+    min-width: 0;
+}
+
+.qr-drawer-chevron {
+    flex-shrink: 0;
+    margin-left: 10px;
+    font-size: 18px;
+    line-height: 1;
+    transition: transform 0.25s ease;
+    color: #50575e;
+}
+
+/* Closed: rotate chevron to point right */
+.qr-drawer.qr-drawer-closed > .qr-drawer-toggle .qr-drawer-chevron {
+    transform: rotate(-90deg);
+}
+
+/* CSS grid trick for smooth height animation */
+.qr-drawer-body {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.25s ease;
+}
+
+.qr-drawer.qr-drawer-closed > .qr-drawer-body {
+    grid-template-rows: 0fr;
+}
+
+.qr-drawer-inner {
+    overflow: hidden;
+    min-height: 0;
+}
+
+/* Provides padding without breaking the grid animation */
+.qr-drawer-pad {
+    padding: 16px;
+}
+
+/* Tighten up headings and spacing already handled by WP admin inside drawers */
+.qr-drawer-pad > h2:first-child,
+.qr-drawer-pad > h3:first-child {
+    margin-top: 0;
+}
+
+/* ── Drawer responsive ── */
+@media screen and (max-width: 782px) {
+    .qr-drawer-toggle {
+        padding: 12px 14px;
+        font-size: 13px;
+    }
+
+    .qr-drawer-pad {
+        padding: 12px;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    .qr-drawer-toggle {
+        padding: 11px 12px;
+    }
+}
