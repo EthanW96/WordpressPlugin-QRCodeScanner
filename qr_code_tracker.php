@@ -1547,6 +1547,9 @@ class QRCodeTracker {
         foreach ($field_keys as $field_key) {
             $stored_values[$field_key] = $this->get_tree_field_value_from_request($field_key);
         }
+        if (isset($stored_values['pay_forward_contact']) && (empty($stored_values['pay_forward_type']) || $stored_values['pay_forward_type'] !== 'specific')) {
+            $stored_values['pay_forward_contact'] = '';
+        }
         WC()->session->set('qr_tracker_checkout_tree_fields', $stored_values);
     }
 
@@ -1704,12 +1707,21 @@ class QRCodeTracker {
         echo 'applyPrefillToField(msg1,prefill?prefill.message_1:"",prefill?prefill.lock_1:false);';
         echo 'applyPrefillToField(msg2,prefill?prefill.message_2:"",prefill?prefill.lock_2:false);';
         echo '}';
+        echo 'function updatePayForwardContactVisibility(){';
+        echo 'var payForwardTypeField=document.querySelector("select[name=\"pay_forward_type\"]");';
+        echo 'var contactWrapper=document.getElementById("pay_forward_contact_field");';
+        echo 'var contactInput=document.querySelector("input[name=\"pay_forward_contact\"]");';
+        echo 'var showContact=!!(payForwardTypeField&&payForwardTypeField.value==="specific");';
+        echo 'if(contactWrapper){contactWrapper.style.display=showContact?"":"none";}';
+        echo 'if(contactInput){contactInput.disabled=!showContact;if(!showContact){contactInput.value="";}}';
+        echo '}';
         echo 'document.addEventListener("change",function(event){';
         echo 'if(!event.target){return;}';
         echo 'if(event.target.name==="purchaser_type"){updateIndividualNameFieldVisibility();updateTeamPrefillFields();}';
+        echo 'if(event.target.name==="pay_forward_type"){updatePayForwardContactVisibility();}';
         echo '});';
-        echo 'if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){updateIndividualNameFieldVisibility();updateTeamPrefillFields();});}else{updateIndividualNameFieldVisibility();updateTeamPrefillFields();}';
-        echo 'if(window.jQuery&&window.jQuery(document.body)){window.jQuery(document.body).on("updated_checkout",function(){updateIndividualNameFieldVisibility();updateTeamPrefillFields();});}';
+        echo 'if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){updateIndividualNameFieldVisibility();updateTeamPrefillFields();updatePayForwardContactVisibility();});}else{updateIndividualNameFieldVisibility();updateTeamPrefillFields();updatePayForwardContactVisibility();}';
+        echo 'if(window.jQuery&&window.jQuery(document.body)){window.jQuery(document.body).on("updated_checkout",function(){updateIndividualNameFieldVisibility();updateTeamPrefillFields();updatePayForwardContactVisibility();});}';
         echo '})();';
         echo '</script>';
     }
@@ -1847,10 +1859,11 @@ class QRCodeTracker {
                 break;
             case 'pay_forward_contact':
                 $this->render_customizable_tree_form_field('pay_forward_contact', [
-                    'type'        => 'text',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Pay Forward Recipient (email or name)',
-                    'placeholder' => 'Leave blank if general',
+                    'type'              => 'text',
+                    'class'             => ['form-row-wide'],
+                    'label'             => 'Pay Forward Recipient (email or name)',
+                    'placeholder'       => 'Enter their email or name',
+                    'custom_attributes' => ['autocomplete' => 'off'],
                 ], $this->get_tree_field_value_from_request('pay_forward_contact'));
                 break;
         }
@@ -1981,7 +1994,7 @@ class QRCodeTracker {
             'individual_first_name' => isset($_POST['individual_first_name']) ? sanitize_text_field(wp_unslash($_POST['individual_first_name'])) : '',
             'individual_last_name'  => isset($_POST['individual_last_name']) ? sanitize_text_field(wp_unslash($_POST['individual_last_name'])) : '',
             'pay_forward_type'      => isset($_POST['pay_forward_type']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) : '',
-            'pay_forward_contact'   => isset($_POST['pay_forward_contact']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_contact'])) : '',
+            'pay_forward_contact'   => (isset($_POST['pay_forward_type']) && sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) === 'specific') ? (isset($_POST['pay_forward_contact']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_contact'])) : '') : '',
             'qr_tree_postcode'      => isset($_POST['qr_tree_postcode']) ? strtoupper(sanitize_text_field(wp_unslash($_POST['qr_tree_postcode']))) : '',
             'qr_tree_city'          => isset($_POST['qr_tree_city']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_city'])) : '',
             'qr_tree_message_1'     => isset($_POST['qr_tree_message_1']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_1'])) : '',
