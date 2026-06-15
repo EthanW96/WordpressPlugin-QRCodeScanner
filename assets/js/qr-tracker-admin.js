@@ -30,7 +30,24 @@
             }
         });
 
-        // ── 2. Full-featured DataTables (search, sort, paginate, responsive) ────────
+        // ── 2a. Tracked QR Codes table — state-saving + default sort by Created desc ──
+        var trackedTable = document.getElementById('qr-table-tracked');
+        if (trackedTable && !DataTable.isDataTable(trackedTable)) {
+            new DataTable(trackedTable, {
+                responsive:  true,
+                autoWidth:   false,
+                pageLength:  25,
+                lengthMenu:  [[10, 25, 50, -1], [10, 25, 50, 'All']],
+                order:       [[14, 'desc']],
+                stateSave:   true,
+                language: {
+                    search:     'Filter:',
+                    lengthMenu: 'Show _MENU_ entries'
+                }
+            });
+        }
+
+        // ── 2b. Full-featured DataTables (search, sort, paginate, responsive) ────────
         document.querySelectorAll(
             '.qr-table-responsive table.widefat:not(.qr-dt-no-controls)'
         ).forEach(function (table) {
@@ -168,6 +185,49 @@
             }
             syncFieldLayoutInputs();
         }
+
+        // ── 5. Section drawers / accordions ──────────────────────────────────────────
+        var DRAWER_KEY = 'qr-drawer-';
+        document.querySelectorAll('.qr-drawer').forEach(function (drawer) {
+            var id = drawer.id;
+            var toggle = drawer.querySelector(':scope > .qr-drawer-toggle');
+            if (!toggle) { return; }
+
+            // Apply saved localStorage state (overrides PHP default class)
+            if (id) {
+                var saved = localStorage.getItem(DRAWER_KEY + id);
+                if (saved === 'open') {
+                    drawer.classList.remove('qr-drawer-closed');
+                } else if (saved === 'closed') {
+                    drawer.classList.add('qr-drawer-closed');
+                }
+            }
+
+            // Sync aria-expanded with live state
+            toggle.setAttribute('aria-expanded', drawer.classList.contains('qr-drawer-closed') ? 'false' : 'true');
+
+            toggle.addEventListener('click', function () {
+                var closing = !drawer.classList.contains('qr-drawer-closed');
+                drawer.classList.toggle('qr-drawer-closed', closing);
+                toggle.setAttribute('aria-expanded', closing ? 'false' : 'true');
+                if (id) {
+                    localStorage.setItem(DRAWER_KEY + id, closing ? 'closed' : 'open');
+                }
+                // After opening, let DataTables recalculate responsive widths
+                if (!closing) {
+                    var tables = drawer.querySelectorAll('table');
+                    if (tables.length && window.DataTable) {
+                        tables.forEach(function (t) {
+                            if (DataTable.isDataTable(t)) {
+                                var dt = new DataTable(t);
+                                dt.columns.adjust();
+                                if (dt.responsive) { dt.responsive.recalc(); }
+                            }
+                        });
+                    }
+                }
+            });
+        });
 
     });
 }());

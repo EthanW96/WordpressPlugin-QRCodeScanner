@@ -2100,6 +2100,14 @@ class QRCodeTracker {
         ));
     }
 
+    private function tree_combination_exists($postcode, $city, $tree) {
+        global $wpdb;
+        return (bool) $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$this->main_table} WHERE LOWER(postcode) = LOWER(%s) AND LOWER(city) = LOWER(%s) AND LOWER(tree) = LOWER(%s) LIMIT 1",
+            $postcode, $city, $tree
+        ));
+    }
+
     public function add_pay_forward_cart_fee($cart) {
         if (is_admin() && !defined('DOING_AJAX')) {
             return;
@@ -2236,7 +2244,7 @@ class QRCodeTracker {
             }
 
             $postcode  = strtoupper(sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_postcode', 'Postcode')));
-            $city      = sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_city', 'City'));
+            $city      = strtolower(sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_city', 'City')));
             $message_1 = wp_kses_post($this->get_tree_field_from_order_item($item, 'qr_tree_message_1', 'Message 1'));
             $message_2 = wp_kses_post($this->get_tree_field_from_order_item($item, 'qr_tree_message_2', 'Message 2'));
 
@@ -2260,7 +2268,13 @@ class QRCodeTracker {
 
             for ($i = 0; $i < $quantity; $i++) {
                 $tree_number = $existing_count + $item_inserted + 1;
-                $tree_label  = 'Tree ' . $tree_number;
+                $tree_label  = 'Tree' . $tree_number;
+
+                // Guard against race-condition collisions: skip numbers already taken.
+                while ($this->tree_combination_exists($postcode, $city, $tree_label)) {
+                    $tree_number++;
+                    $tree_label = 'Tree' . $tree_number;
+                }
 
                 $record_id = $this->insert_tree_qr_record([
                     'postcode'  => $postcode,

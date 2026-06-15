@@ -123,6 +123,29 @@ class QRCodeTracker_Admin {
         );
     }
 
+    /**
+     * Output the opening markup for a collapsible section drawer.
+     *
+     * @param string $id           HTML id for the drawer element (used as localStorage key).
+     * @param string $title        Human-readable section title shown in the toggle button.
+     * @param bool   $default_open Whether the drawer starts open when no localStorage state exists.
+     */
+    private function drawer_open( $id, $title, $default_open = false ) {
+        $closed_class = $default_open ? '' : ' qr-drawer-closed';
+        $expanded     = $default_open ? 'true' : 'false';
+        echo '<div class="qr-drawer' . esc_attr( $closed_class ) . '" id="' . esc_attr( $id ) . '">';
+        echo '<button type="button" class="qr-drawer-toggle" aria-expanded="' . $expanded . '">';
+        echo '<span class="qr-drawer-title">' . esc_html( $title ) . '</span>';
+        echo '<span class="dashicons dashicons-arrow-down-alt2 qr-drawer-chevron" aria-hidden="true"></span>';
+        echo '</button>';
+        echo '<div class="qr-drawer-body"><div class="qr-drawer-inner"><div class="qr-drawer-pad">';
+    }
+
+    /** Output the closing markup for a collapsible section drawer. */
+    private function drawer_close() {
+        echo '</div></div></div></div>'; // .qr-drawer-pad / .qr-drawer-inner / .qr-drawer-body / .qr-drawer
+    }
+
     public function admin_page() {
         // Check permissions
         if (!QRCodeTracker_Permissions::can_view_qr_codes()) {
@@ -141,7 +164,7 @@ class QRCodeTracker_Admin {
                 return;
             }
             $postcode = strtoupper(sanitize_text_field($_POST['qr_postcode']));
-            $city = sanitize_text_field($_POST['qr_city']);
+            $city = strtolower(sanitize_text_field($_POST['qr_city']));
             $tree = sanitize_text_field($_POST['qr_tree']);
             $label = sanitize_text_field($_POST['qr_label']);
             $reporting_id = sanitize_text_field($_POST['qr_reporting_id']);
@@ -184,17 +207,26 @@ class QRCodeTracker_Admin {
                 }
                 echo '</ul></div>';
             } else {
-                $short_code = $this->tracker->generate_unique_short_code();
-                $edit_token = $this->tracker->generate_unique_edit_token();
-                $url = $this->tracker->generate_tracker_url($postcode, $city, $tree, $short_code);
-                
-                // Check for duplicate URL/short code
-                $existing = $wpdb->get_row($wpdb->prepare("SELECT id, postcode, tree FROM {$this->main_table} WHERE url = %s OR short_code = %s", $url, $short_code));
-                if ($existing) {
-                    echo '<div class="error"><p>Error: A QR code with this URL or short code already exists (ID: ' . $existing->id . ', Postcode: ' . $existing->postcode . ', Tree: ' . $existing->tree . '). Please try again.</p></div>';
+                // Check for duplicate postcode + city + tree combination
+                $duplicate_combo = $wpdb->get_var($wpdb->prepare(
+                    "SELECT id FROM {$this->main_table} WHERE LOWER(postcode) = LOWER(%s) AND LOWER(city) = LOWER(%s) AND LOWER(tree) = LOWER(%s)",
+                    $postcode, $city, $tree
+                ));
+                if ($duplicate_combo) {
+                    echo '<div class="error"><p>Error: A QR code with this postcode, city, and tree combination already exists (ID: ' . (int) $duplicate_combo . '). Please use a different tree identifier.</p></div>';
                 } else {
-                    $wpdb->insert($this->main_table, compact('url', 'short_code', 'edit_token', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id'));
-                    echo '<div class="updated"><p>QR Code entry saved.</p></div>';
+                    $short_code = $this->tracker->generate_unique_short_code();
+                    $edit_token = $this->tracker->generate_unique_edit_token();
+                    $url = $this->tracker->generate_tracker_url($postcode, $city, $tree, $short_code);
+
+                    // Check for duplicate URL/short code
+                    $existing = $wpdb->get_row($wpdb->prepare("SELECT id, postcode, tree FROM {$this->main_table} WHERE url = %s OR short_code = %s", $url, $short_code));
+                    if ($existing) {
+                        echo '<div class="error"><p>Error: A QR code with this URL or short code already exists (ID: ' . $existing->id . ', Postcode: ' . $existing->postcode . ', Tree: ' . $existing->tree . '). Please try again.</p></div>';
+                    } else {
+                        $wpdb->insert($this->main_table, compact('url', 'short_code', 'edit_token', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id'));
+                        echo '<div class="updated"><p>QR Code entry saved.</p></div>';
+                    }
                 }
             }
         }
@@ -210,7 +242,7 @@ class QRCodeTracker_Admin {
             $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count, social_share_count, url, short_code, edit_token FROM {$this->main_table} WHERE id = %d", $edit_id));
             
             if ($row) {
-                $city = sanitize_text_field($_POST['qr_city']);
+                $city = strtolower(sanitize_text_field($_POST['qr_city']));
                 $tree = sanitize_text_field($_POST['qr_tree']);
                 $label = sanitize_text_field($_POST['qr_label']);
                 $reporting_id = sanitize_text_field($_POST['qr_reporting_id']);
@@ -684,9 +716,9 @@ class QRCodeTracker_Admin {
                 </script>';
             }
         } else {
-            echo '<h2>Add QR Code</h2>
-            <div class="notice notice-info"><p><strong>Important:</strong> Postcode, City, and Tree fields cannot contain spaces or special characters. Only letters, numbers, and hyphens are allowed.</p></div>
-            <form method="post" id="qr-form">
+            $this->drawer_open( 'qr-drawer-add-qr-code', 'Add QR Code' );
+            echo '<div class="notice notice-info"><p><strong>Important:</strong> Postcode, City, and Tree fields cannot contain spaces or special characters. Only letters, numbers, and hyphens are allowed.</p></div>';
+            echo '<form method="post" id="qr-form">
                 <table class="form-table">
                     <tr><th><label for="qr_postcode">Postcode:</label></th>
                         <td><input type="text" name="qr_postcode" id="qr_postcode" required pattern="[A-Za-z0-9]+" title="Only letters and numbers allowed">
@@ -825,11 +857,13 @@ class QRCodeTracker_Admin {
                 }
             });
             </script>';
+            $this->drawer_close(); // Add QR Code drawer
         }
 
         // Now display the Tracked QR Codes table
         $entries = $this->teams->get_accessible_qr_codes();
-        echo '<h2>Tracked QR Codes</h2><div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>Popup</th><th>Shop Link</th><th>Team</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Social Shares</th><th>Last Scanned</th><th>Last Social Shared</th><th>Actions</th></tr></thead><tbody>';
+        $this->drawer_open( 'qr-drawer-tracked-qr-codes', 'Tracked QR Codes', true );
+        echo '<div class="qr-table-responsive"><table id="qr-table-tracked" class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>Popup</th><th>Shop Link</th><th>Team</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Social Shares</th><th>Last Scanned</th><th>Last Social Shared</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
         foreach ($entries as $row) {
             $delete_url = esc_url(add_query_arg(['delete_id' => $row->id]));
             $edit_url = esc_url(add_query_arg(['edit_id' => $row->id]));
@@ -894,7 +928,8 @@ class QRCodeTracker_Admin {
             }
             
             $last_social_shared = !empty($row->last_social_shared) ? esc_html($row->last_social_shared) : 'Never';
-            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td>{$url_display}</td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>" . number_format((int) $row->social_share_count) . "</td><td>{$row->last_scanned}</td><td>{$last_social_shared}</td>";
+            $created_at = !empty($row->created_at) ? esc_html($row->created_at) : '';
+            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td>{$url_display}</td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>" . number_format((int) $row->social_share_count) . "</td><td>{$row->last_scanned}</td><td>{$last_social_shared}</td><td data-order=\"{$created_at}\">{$created_at}</td>";
             echo "<td>";
             if ((int) $row->scan_count === 0 && (int) $row->social_share_count === 0) {
                 echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a>";
@@ -911,6 +946,7 @@ class QRCodeTracker_Admin {
             echo "</div></td></tr>";
         }
         echo '</tbody></table></div>';
+        $this->drawer_close(); // Tracked QR Codes drawer
 
         // Display quick summary
         $accessible_teams = $this->teams->get_accessible_teams();
@@ -1210,7 +1246,8 @@ class QRCodeTracker_Admin {
             echo '<p class="description">Select the product whose price will be added as a fee when a customer chooses "Pay a Tree Forward" at checkout.</p>';
         }
         echo '</td></tr>';
-        echo '<tr><th scope="row">Tree Field Layout</th><td>';
+        echo '</table>'; // Close main settings form-table before drawers
+        $this->drawer_open( 'qr-drawer-settings-tree-field-layout', 'Tree Field Layout' );
         if (empty($tree_field_choices)) {
             echo '<p class="description">Tree field layout controls are unavailable.</p>';
         } else {
@@ -1242,8 +1279,8 @@ class QRCodeTracker_Admin {
             echo '<input type="hidden" name="qr_tracker_tree_field_layout_checkout" id="qr_tracker_tree_field_layout_checkout" value="' . esc_attr(implode(',', $tree_field_layout['checkout'])) . '">';
             echo '<p class="description">Drag and drop fields between zones to choose whether each field appears on the product page or on the WooCommerce checkout screen. Reorder within each zone to control display order.</p>';
         }
-        echo '</td></tr>';
-        echo '<tr><th scope="row">Tree Field Text Overrides</th><td>';
+        $this->drawer_close(); // Tree Field Layout drawer
+        $this->drawer_open( 'qr-drawer-settings-text-overrides', 'Tree Field Text Overrides' );
         if (empty($tree_field_choices)) {
             echo '<p class="description">Tree field text override controls are unavailable.</p>';
         } else {
@@ -1269,7 +1306,8 @@ class QRCodeTracker_Admin {
             echo '</tbody></table>';
             echo '<p class="description">Optional overrides for customer-facing labels and helper text shown on product and checkout forms. Leave fields blank to keep built-in text. Description editors support basic HTML, including images.</p>';
         }
-        echo '</td></tr>';
+        $this->drawer_close(); // Tree Field Text Overrides drawer
+        echo '<table class="form-table">'; // Resume form-table for remaining rows
         echo '<tr><th scope="row">WooCommerce Built-in Field Context</th><td>';
         if (empty($woocommerce_product_context_fields)) {
             echo '<p class="description">No built-in WooCommerce product option fields were detected for the currently selected tree products.</p>';
@@ -1303,7 +1341,7 @@ class QRCodeTracker_Admin {
             }
         }
 
-        echo '<h2 style="margin-top:30px;">Welcome Email (Tree Purchase)</h2>';
+        $this->drawer_open( 'qr-drawer-settings-welcome-email', 'Welcome Email (Tree Purchase)' );
         echo '<p>This email is sent automatically to the buyer when a Tree Product order completes and QR codes are generated.</p>';
         echo '<table class="form-table">';
 
@@ -1346,6 +1384,7 @@ class QRCodeTracker_Admin {
 
         echo '</table>';
         // ── End Welcome Email Settings ──────────────────────────────────────────
+        $this->drawer_close(); // Welcome Email drawer
 
         echo '<p><input type="submit" name="qr_tracker_settings_submit" class="button button-primary" value="Save Settings"></p>';
         echo '</form>';
@@ -2635,7 +2674,7 @@ window.showRollupDayChart = function() {
         }
 
         if ($can_review_access_requests) {
-            echo '<h2>Pending QR Access Requests</h2>';
+            $this->drawer_open( 'qr-drawer-teams-pending-requests', 'Pending QR Access Requests', !empty( $pending_requests ) );
             if (!empty($pending_requests)) {
                 echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr><th>Requested</th><th>User</th><th>Team</th><th>Actions</th></tr></thead><tbody>';
                 foreach ($pending_requests as $request) {
@@ -2666,10 +2705,11 @@ window.showRollupDayChart = function() {
             } else {
                 echo '<p>No pending access requests.</p>';
             }
+            $this->drawer_close(); // Pending QR Access Requests drawer
         }
-        
+
         // Display create team form
-        echo '<h2>Create New Team</h2>';
+        $this->drawer_open( 'qr-drawer-teams-create-team', 'Create New Team' );
         echo '<form method="post" style="max-width: 600px; margin-bottom: 30px;">';
         echo '<table class="form-table">';
         echo '<tr><th><label for="team_name">Team Name:</label></th><td><input type="text" name="team_name" id="team_name" required style="width: 100%;"></td></tr>';
@@ -2679,10 +2719,11 @@ window.showRollupDayChart = function() {
         echo '</table>';
         echo '<p><input type="submit" name="create_team" class="button button-primary" value="Create Team"></p>';
         echo '</form>';
-        
+        $this->drawer_close(); // Create New Team drawer
+
         // Display teams list
         $teams = $this->teams->get_all_teams_stats();
-        echo '<h2>Teams Overview</h2>';
+        $this->drawer_open( 'qr-drawer-teams-overview', 'Teams Overview', true );
         echo '<div class="qr-table-responsive"><table class="widefat"><thead><tr>';
         echo '<th>Team Name</th><th>City/Town</th><th>QR Codes</th><th>Total Scans</th>';
         echo '<th>Active QR Codes</th><th>Members</th><th>Management Link</th><th>Actions</th>';
@@ -2735,18 +2776,19 @@ window.showRollupDayChart = function() {
         }
         
         echo '</tbody></table></div>';
-        
+        $this->drawer_close(); // Teams Overview drawer
+
         // Handle team editing
         if (isset($_GET['edit_team'])) {
             $team_id = intval($_GET['edit_team']);
             $team = $this->teams->get_team($team_id);
-            
+
             if ($team && $this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {
                 $private_checked  = !empty($team->is_private)    ? ' checked' : '';
                 $lock1_checked    = !empty($team->lock_message_1) ? ' checked' : '';
                 $lock2_checked    = !empty($team->lock_message_2) ? ' checked' : '';
+                $this->drawer_open( 'qr-drawer-teams-edit-team', 'Edit Team: ' . $team->name, true );
                 ?>
-                <h2>Edit Team: <?php echo esc_html($team->name); ?></h2>
                 <form method="post" style="max-width: 800px;">
                     <input type="hidden" name="team_id" value="<?php echo $team_id; ?>">
                     <table class="form-table">
@@ -2823,9 +2865,10 @@ window.showRollupDayChart = function() {
                     <p><input type="submit" name="update_team" class="button button-primary" value="Update Team"></p>
                 </form>
                 <?php
+                $this->drawer_close(); // Edit Team drawer
             }
         }
-        
+
         // Handle team member management
         if (isset($_GET['manage_team'])) {
             // Check permission to view team members

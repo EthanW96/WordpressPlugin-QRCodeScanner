@@ -42,6 +42,7 @@ class QRCodeTracker_DB {
             shop_logo VARCHAR(255),
             show_shop_link TINYINT(1) DEFAULT 1,
             team_id BIGINT UNSIGNED DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY team_id (team_id),
             KEY short_code (short_code),
@@ -254,6 +255,22 @@ class QRCodeTracker_DB {
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->teams_table} LIKE 'lock_message_2'");
         if (empty($columns)) {
             $wpdb->query("ALTER TABLE {$this->teams_table} ADD COLUMN lock_message_2 TINYINT(1) DEFAULT 0 AFTER prefill_message_2");
+        }
+
+        // Add created_at to main table
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'created_at'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP AFTER team_id");
+            // Backfill with the earliest scan from logs; rows with no log entries keep the ALTER timestamp.
+            $wpdb->query("
+                UPDATE {$this->main_table} main
+                INNER JOIN (
+                    SELECT tracker_id, MIN(scanned_at) AS earliest_scan
+                    FROM {$this->log_table}
+                    GROUP BY tracker_id
+                ) earliest ON main.id = earliest.tracker_id
+                SET main.created_at = earliest.earliest_scan
+            ");
         }
 
         // Add performance indexes for existing installations
