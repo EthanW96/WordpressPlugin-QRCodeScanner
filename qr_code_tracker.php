@@ -1763,11 +1763,12 @@ class QRCodeTracker {
         switch ($field_key) {
             case 'purchaser_type':
                 $this->render_customizable_tree_form_field('purchaser_type', [
-                    'type'    => 'select',
-                    'class'   => ['form-row-wide'],
-                    'label'   => 'Purchasing as',
-                    'options' => $this->get_purchaser_type_options(),
-                ], $this->get_tree_field_value_from_request('purchaser_type', 'individual'));
+                    'type'     => 'select',
+                    'class'    => ['form-row-wide'],
+                    'label'    => 'Purchasing as',
+                    'required' => true,
+                    'options'  => $this->get_purchaser_type_options(),
+                ], $this->get_tree_field_value_from_request('purchaser_type', ''));
                 break;
             case 'individual_first_name':
                 // Pulled from WooCommerce billing address automatically.
@@ -1871,6 +1872,7 @@ class QRCodeTracker {
 
     private function get_purchaser_type_options() {
         $options = [
+            ''           => '— Please select —',
             'individual' => 'Individual',
         ];
 
@@ -1969,6 +1971,11 @@ class QRCodeTracker {
                 wc_add_notice('Please provide a recipient for the pay-forward tree.', 'error');
                 return false;
             }
+        }
+
+        if (isset($field_lookup['purchaser_type']) && $this->get_tree_field_value_from_request('purchaser_type') === '') {
+            wc_add_notice('Please select who you are purchasing as.', 'error');
+            return false;
         }
 
         if (isset($field_lookup['qr_tree_postcode']) && $this->get_tree_field_value_from_request('qr_tree_postcode') === '') {
