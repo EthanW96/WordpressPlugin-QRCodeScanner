@@ -22,6 +22,7 @@ require_once __DIR__ . '/includes/class-qr-code-city-report.php';
 require_once __DIR__ . '/includes/class-qr-code-popup.php';
 require_once __DIR__ . '/includes/class-qr-code-permissions.php';
 require_once __DIR__ . '/includes/class-qr-code-email.php';
+require_once __DIR__ . '/includes/class-qr-code-org-requests.php';
 
 // 1. Add QR code library import at the top (after class QRCodeTracker {)
 use chillerlan\QRCode\QRCode;
@@ -57,6 +58,7 @@ class QRCodeTracker {
     private $popup;
     private $teams;
     private $email;
+    private $org_requests;
     private $tree_checkout_field_overrides_cache = null;
     private $tree_individual_fields_toggle_script_printed = false;
     private $tree_field_description_visibility_style_printed = false;
@@ -72,9 +74,11 @@ class QRCodeTracker {
         register_uninstall_hook(__FILE__, ['QRCodeTracker_DB', 'uninstall']);
         add_action('plugins_loaded', [$this->db, 'maybe_upgrade_schema']);
 
-        $this->teams = new QRCodeTracker_Teams();
-        $this->email = new QRCodeTracker_Email($this);
-        $this->admin = new QRCodeTracker_Admin($this, $this->teams);
+        $this->teams        = new QRCodeTracker_Teams();
+        $this->email        = new QRCodeTracker_Email($this);
+        $this->org_requests = new QRCodeTracker_OrgRequests($this->teams);
+        $this->admin        = new QRCodeTracker_Admin($this, $this->teams);
+        $this->admin->set_org_requests($this->org_requests);
         add_action('admin_menu', [$this->admin, 'admin_menu']);
 
         // Initialize permissions system
@@ -1768,6 +1772,7 @@ class QRCodeTracker {
                     'label'   => 'Purchasing as',
                     'options' => $this->get_purchaser_type_options(),
                 ], $this->get_tree_field_value_from_request('purchaser_type', 'individual'));
+                $this->maybe_render_org_request_link();
                 break;
             case 'individual_first_name':
                 // Pulled from WooCommerce billing address automatically.
@@ -1867,6 +1872,17 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('pay_forward_contact'));
                 break;
         }
+    }
+
+    private function maybe_render_org_request_link() {
+        $request_page_url = get_option('qr_tracker_org_request_page_url', '');
+        if (empty($request_page_url)) {
+            return;
+        }
+        $link_url = add_query_arg('redirect_to', rawurlencode(get_permalink() ?: home_url('/')), $request_page_url);
+        echo '<p class="form-row form-row-wide" style="margin-top:-8px;margin-bottom:12px;">';
+        echo '<a href="' . esc_url($link_url) . '" style="font-size:13px;color:#2d5a27;">Don\'t see your organisation? Request to add it &rarr;</a>';
+        echo '</p>';
     }
 
     private function get_purchaser_type_options() {

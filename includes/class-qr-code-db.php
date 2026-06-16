@@ -6,6 +6,7 @@ class QRCodeTracker_DB {
     private $teams_table;
     private $user_teams_table;
     private $access_requests_table;
+    private $org_requests_table;
 
     public function __construct() {
         global $wpdb;
@@ -14,6 +15,7 @@ class QRCodeTracker_DB {
         $this->teams_table = $wpdb->prefix . 'qr_tracker_teams';
         $this->user_teams_table = $wpdb->prefix . 'qr_tracker_user_teams';
         $this->access_requests_table = $wpdb->prefix . 'qr_tracker_access_requests';
+        $this->org_requests_table = $wpdb->prefix . 'qr_tracker_org_requests';
     }
 
     public function install() {
@@ -123,13 +125,28 @@ class QRCodeTracker_DB {
             KEY status (status)
         ) $charset_collate;";
         
+        $sql_org_requests = "CREATE TABLE {$this->org_requests_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            org_name VARCHAR(255) NOT NULL,
+            requester_name VARCHAR(255) NOT NULL,
+            requester_email VARCHAR(255) NOT NULL,
+            status ENUM('pending', 'approved', 'denied') DEFAULT 'pending',
+            requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at DATETIME DEFAULT NULL,
+            reviewed_by BIGINT UNSIGNED DEFAULT NULL,
+            PRIMARY KEY (id),
+            KEY status (status),
+            KEY requested_at (requested_at)
+        ) $charset_collate;";
+
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql_main);
         dbDelta($sql_log);
         dbDelta($sql_teams);
         dbDelta($sql_user_teams);
         dbDelta($sql_access_requests);
-        
+        dbDelta($sql_org_requests);
+
         // Insert default team if none exists
         $this->insert_default_team();
     }
@@ -146,6 +163,11 @@ class QRCodeTracker_DB {
         $access_requests_exists = $wpdb->get_var("SHOW TABLES LIKE '{$this->access_requests_table}'");
         if (!$access_requests_exists) {
             $this->create_access_requests_table();
+        }
+
+        $org_requests_exists = $wpdb->get_var("SHOW TABLES LIKE '{$this->org_requests_table}'");
+        if (!$org_requests_exists) {
+            $this->create_org_requests_table();
         }
         
         // Check if team_id column exists in main table
@@ -344,7 +366,27 @@ class QRCodeTracker_DB {
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql_access_requests);
     }
-    
+
+    private function create_org_requests_table() {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+        $sql = "CREATE TABLE {$this->org_requests_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            org_name VARCHAR(255) NOT NULL,
+            requester_name VARCHAR(255) NOT NULL,
+            requester_email VARCHAR(255) NOT NULL,
+            status ENUM('pending', 'approved', 'denied') DEFAULT 'pending',
+            requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at DATETIME DEFAULT NULL,
+            reviewed_by BIGINT UNSIGNED DEFAULT NULL,
+            PRIMARY KEY (id),
+            KEY status (status),
+            KEY requested_at (requested_at)
+        ) $charset_collate;";
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+    }
+
     private function insert_default_team() {
         global $wpdb;
         
@@ -490,12 +532,14 @@ class QRCodeTracker_DB {
             $teams_table = $wpdb->prefix . 'qr_tracker_teams';
             $user_teams_table = $wpdb->prefix . 'qr_tracker_user_teams';
             $access_requests_table = $wpdb->prefix . 'qr_tracker_access_requests';
+            $org_requests_table = $wpdb->prefix . 'qr_tracker_org_requests';
 
             $wpdb->query("DROP TABLE IF EXISTS {$main_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$log_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$teams_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$user_teams_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$access_requests_table}");
+            $wpdb->query("DROP TABLE IF EXISTS {$org_requests_table}");
 
             delete_option('qr_tracker_delete_on_uninstall');
             delete_option('qr_tracker_tree_product_ids');
