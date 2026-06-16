@@ -6,6 +6,7 @@ class QRCodeTracker_Admin {
     private $access_requests_table;
     private $tracker;
     private $teams;
+    private $org_requests = null;
 
     public function __construct($tracker, $teams) {
         global $wpdb;
@@ -14,10 +15,14 @@ class QRCodeTracker_Admin {
         $this->access_requests_table = $wpdb->prefix . 'qr_tracker_access_requests';
         $this->tracker = $tracker;
         $this->teams = $teams;
-        
+
         // Initialize search functionality
         require_once plugin_dir_path(__FILE__) . 'class-qr-code-search.php';
         $this->search = new QRCodeTracker_Search();
+    }
+
+    public function set_org_requests($org_requests) {
+        $this->org_requests = $org_requests;
     }
 
     public function admin_menu() {
@@ -56,6 +61,15 @@ class QRCodeTracker_Admin {
             $orphaned_count = $this->teams->get_orphaned_qr_codes_count();
             $settings_title = $orphaned_count > 0 ? "Settings <span class='update-plugins count-{$orphaned_count}'><span class='plugin-count'>{$orphaned_count}</span></span>" : 'Settings';
             add_submenu_page('qr-tracker', 'Settings', $settings_title, 'qr_tracker_view_settings', 'qr-settings', [$this, 'settings_page']);
+        }
+
+        // Org Requests submenu
+        if (QRCodeTracker_Permissions::can_manage_settings() && is_object($this->org_requests)) {
+            $pending_count    = $this->org_requests->get_pending_count();
+            $requests_title   = $pending_count > 0
+                ? "Org Requests <span class='update-plugins count-{$pending_count}'><span class='plugin-count'>{$pending_count}</span></span>"
+                : 'Org Requests';
+            add_submenu_page('qr-tracker', 'Organisation Requests', $requests_title, 'qr_tracker_manage_settings', 'qr-org-requests', [$this, 'org_requests_page']);
         }
         
         // Hide the hidden pages from the menu
@@ -1114,6 +1128,39 @@ class QRCodeTracker_Admin {
             $email_body = isset($_POST['qr_tracker_welcome_email_body']) ? wp_kses_post(wp_unslash($_POST['qr_tracker_welcome_email_body'])) : '';
             update_option('qr_tracker_welcome_email_body', $email_body);
 
+            // Organisation request settings
+            $org_request_page_url = isset($_POST['qr_tracker_org_request_page_url']) ? esc_url_raw(wp_unslash($_POST['qr_tracker_org_request_page_url'])) : '';
+            update_option('qr_tracker_org_request_page_url', $org_request_page_url);
+            $recaptcha_site_key = isset($_POST['qr_tracker_recaptcha_site_key']) ? sanitize_text_field(wp_unslash($_POST['qr_tracker_recaptcha_site_key'])) : '';
+            update_option('qr_tracker_recaptcha_site_key', $recaptcha_site_key);
+            $recaptcha_api_key = isset($_POST['qr_tracker_recaptcha_api_key']) ? sanitize_text_field(wp_unslash($_POST['qr_tracker_recaptcha_api_key'])) : '';
+            update_option('qr_tracker_recaptcha_api_key', $recaptcha_api_key);
+            $recaptcha_project_id = isset($_POST['qr_tracker_recaptcha_project_id']) ? sanitize_text_field(wp_unslash($_POST['qr_tracker_recaptcha_project_id'])) : '';
+            update_option('qr_tracker_recaptcha_project_id', $recaptcha_project_id);
+            $recaptcha_threshold = isset($_POST['qr_tracker_recaptcha_threshold']) ? max(0.0, min(1.0, (float) $_POST['qr_tracker_recaptcha_threshold'])) : 0.5;
+            update_option('qr_tracker_recaptcha_threshold', $recaptcha_threshold);
+
+            // Org request: requester confirmation email
+            update_option('qr_tracker_org_req_confirmation_enabled', isset($_POST['qr_tracker_org_req_confirmation_enabled']) ? 1 : 0);
+            $s = isset($_POST['qr_tracker_org_req_confirmation_subject']) ? sanitize_text_field(wp_unslash($_POST['qr_tracker_org_req_confirmation_subject'])) : '';
+            update_option('qr_tracker_org_req_confirmation_subject', $s);
+            $b = isset($_POST['qr_tracker_org_req_confirmation_body']) ? wp_kses_post(wp_unslash($_POST['qr_tracker_org_req_confirmation_body'])) : '';
+            update_option('qr_tracker_org_req_confirmation_body', $b);
+
+            // Org request: admin notification email
+            update_option('qr_tracker_org_req_admin_notify_enabled', isset($_POST['qr_tracker_org_req_admin_notify_enabled']) ? 1 : 0);
+            $s = isset($_POST['qr_tracker_org_req_admin_notify_subject']) ? sanitize_text_field(wp_unslash($_POST['qr_tracker_org_req_admin_notify_subject'])) : '';
+            update_option('qr_tracker_org_req_admin_notify_subject', $s);
+            $b = isset($_POST['qr_tracker_org_req_admin_notify_body']) ? wp_kses_post(wp_unslash($_POST['qr_tracker_org_req_admin_notify_body'])) : '';
+            update_option('qr_tracker_org_req_admin_notify_body', $b);
+
+            // Org request: approval email
+            update_option('qr_tracker_org_req_approval_enabled', isset($_POST['qr_tracker_org_req_approval_enabled']) ? 1 : 0);
+            $s = isset($_POST['qr_tracker_org_req_approval_subject']) ? sanitize_text_field(wp_unslash($_POST['qr_tracker_org_req_approval_subject'])) : '';
+            update_option('qr_tracker_org_req_approval_subject', $s);
+            $b = isset($_POST['qr_tracker_org_req_approval_body']) ? wp_kses_post(wp_unslash($_POST['qr_tracker_org_req_approval_body'])) : '';
+            update_option('qr_tracker_org_req_approval_body', $b);
+
             echo '<div class="updated"><p>Settings saved.</p></div>';
         }
         $delete_on_uninstall = get_option('qr_tracker_delete_on_uninstall', 0);
@@ -1386,6 +1433,10 @@ class QRCodeTracker_Admin {
         // ── End Welcome Email Settings ──────────────────────────────────────────
         $this->drawer_close(); // Welcome Email drawer
 
+        // ── Organisation Request Settings ────────────────────────────────────────
+        $this->render_org_request_settings_drawers();
+        // ── End Organisation Request Settings ────────────────────────────────────
+
         echo '<p><input type="submit" name="qr_tracker_settings_submit" class="button button-primary" value="Save Settings"></p>';
         echo '</form>';
 
@@ -1404,7 +1455,103 @@ class QRCodeTracker_Admin {
 
         // Display orphaned QR codes section
         $this->display_orphaned_qr_codes_section();
-        
+
+        echo '</div>';
+    }
+
+    // ─── Organisation Requests Admin Page ─────────────────────────────────────
+
+    public function org_requests_page() {
+        if (!QRCodeTracker_Permissions::can_manage_settings()) {
+            QRCodeTracker_Permissions::display_permission_denied_notice('qr_tracker_manage_settings');
+            return;
+        }
+        if (!is_object($this->org_requests)) {
+            echo '<div class="wrap"><h1>Organisation Requests</h1><p>Organisation request handler not available.</p></div>';
+            return;
+        }
+
+        $notice = '';
+
+        // Handle approve
+        if (isset($_POST['qr_org_approve'], $_POST['qr_org_request_id'])) {
+            check_admin_referer('qr_tracker_org_request_action');
+            $id = (int) $_POST['qr_org_request_id'];
+            if ($this->org_requests->approve_request($id)) {
+                $notice = '<div class="updated notice is-dismissible"><p>Request approved and organisation created. The requester has been notified.</p></div>';
+            } else {
+                $notice = '<div class="error notice is-dismissible"><p>Could not approve the request. It may have already been reviewed.</p></div>';
+            }
+        }
+
+        // Handle deny
+        if (isset($_POST['qr_org_deny'], $_POST['qr_org_request_id'])) {
+            check_admin_referer('qr_tracker_org_request_action');
+            $id = (int) $_POST['qr_org_request_id'];
+            if ($this->org_requests->deny_request($id)) {
+                $notice = '<div class="updated notice is-dismissible"><p>Request denied.</p></div>';
+            } else {
+                $notice = '<div class="error notice is-dismissible"><p>Could not deny the request. It may have already been reviewed.</p></div>';
+            }
+        }
+
+        echo '<div class="wrap"><h1>Organisation Requests</h1>';
+        echo $notice;
+
+        // Pending
+        $pending = $this->org_requests->get_requests('pending');
+        echo '<h2>Pending Requests</h2>';
+        if (empty($pending)) {
+            echo '<p>No pending requests at this time.</p>';
+        } else {
+            echo '<table class="widefat striped">';
+            echo '<thead><tr><th>Organisation Name</th><th>Requester Name</th><th>Requester Email</th><th>Submitted</th><th>Actions</th></tr></thead><tbody>';
+            foreach ($pending as $req) {
+                $date_fmt = get_option('date_format') . ' ' . get_option('time_format');
+                echo '<tr>';
+                echo '<td><strong>' . esc_html($req->org_name) . '</strong></td>';
+                echo '<td>' . esc_html($req->requester_name) . '</td>';
+                echo '<td><a href="mailto:' . esc_attr($req->requester_email) . '">' . esc_html($req->requester_email) . '</a></td>';
+                echo '<td>' . esc_html(date_i18n($date_fmt, strtotime($req->requested_at))) . '</td>';
+                echo '<td style="white-space:nowrap;">';
+                // Approve button
+                echo '<form method="post" style="display:inline;margin-right:6px;">';
+                wp_nonce_field('qr_tracker_org_request_action');
+                echo '<input type="hidden" name="qr_org_request_id" value="' . esc_attr($req->id) . '">';
+                echo '<button type="submit" name="qr_org_approve" class="button button-primary">Approve</button>';
+                echo '</form>';
+                // Deny button
+                echo '<form method="post" style="display:inline;">';
+                wp_nonce_field('qr_tracker_org_request_action');
+                echo '<input type="hidden" name="qr_org_request_id" value="' . esc_attr($req->id) . '">';
+                echo '<button type="submit" name="qr_org_deny" class="button" onclick="return confirm(\'Deny this request?\');">Deny</button>';
+                echo '</form>';
+                echo '</td>';
+                echo '</tr>';
+            }
+            echo '</tbody></table>';
+        }
+
+        // History
+        $history = $this->org_requests->get_requests_reviewed();
+        if (!empty($history)) {
+            echo '<h2 style="margin-top:30px;">Request History</h2>';
+            echo '<table class="widefat striped">';
+            echo '<thead><tr><th>Organisation Name</th><th>Requester Name</th><th>Requester Email</th><th>Submitted</th><th>Status</th><th>Reviewed</th></tr></thead><tbody>';
+            foreach ($history as $req) {
+                $status_color = $req->status === 'approved' ? '#2d5a27' : '#d63638';
+                echo '<tr>';
+                echo '<td><strong>' . esc_html($req->org_name) . '</strong></td>';
+                echo '<td>' . esc_html($req->requester_name) . '</td>';
+                echo '<td><a href="mailto:' . esc_attr($req->requester_email) . '">' . esc_html($req->requester_email) . '</a></td>';
+                echo '<td>' . esc_html(date_i18n(get_option('date_format'), strtotime($req->requested_at))) . '</td>';
+                echo '<td><span style="color:' . esc_attr($status_color) . ';font-weight:600;">' . esc_html(ucfirst($req->status)) . '</span></td>';
+                echo '<td>' . ($req->reviewed_at ? esc_html(date_i18n(get_option('date_format'), strtotime($req->reviewed_at))) : '&mdash;') . '</td>';
+                echo '</tr>';
+            }
+            echo '</tbody></table>';
+        }
+
         echo '</div>';
     }
 
@@ -1417,6 +1564,169 @@ class QRCodeTracker_Admin {
         echo '<style>
         /* Hide hidden QR tracker pages from menu */
         </style>';
+    }
+
+    // ─── Org Request Settings Drawers ─────────────────────────────────────────
+
+    private function render_org_request_settings_drawers() {
+        // Resolve default email templates via the org requests class if available
+        $org_req_obj = $this->org_requests;
+
+        // ── General settings ──────────────────────────────────────────────────
+        $this->drawer_open('qr-drawer-org-request-general', 'Organisation Request Form');
+        echo '<p>Settings for the organisation request form displayed on the front end via the <code>[qr_tracker_org_request_form]</code> shortcode. When a user submits a request, admins are notified and can approve or deny it in <strong>QR Tracker &rarr; Org Requests</strong>.</p>';
+        echo '<table class="form-table">';
+
+        $org_request_page_url = get_option('qr_tracker_org_request_page_url', '');
+        echo '<tr><th scope="row">Request Form Page URL</th><td>';
+        echo '<input type="url" name="qr_tracker_org_request_page_url" value="' . esc_attr($org_request_page_url) . '" style="width:100%;max-width:600px;" placeholder="https://yoursite.com/request-organisation/">';
+        echo '<p class="description">The URL of the page containing the <code>[qr_tracker_org_request_form]</code> shortcode. When set, a &ldquo;Request to add organisation&rdquo; link appears below the Purchasing As dropdown on the product page.</p>';
+        echo '</td></tr>';
+
+        echo '<tr><th scope="row" style="vertical-align:top;padding-top:12px;">reCAPTCHA Enterprise</th><td>';
+        $recaptcha_site_key   = get_option('qr_tracker_recaptcha_site_key', '');
+        $recaptcha_api_key    = get_option('qr_tracker_recaptcha_api_key', '');
+        $recaptcha_project_id = get_option('qr_tracker_recaptcha_project_id', '');
+        $recaptcha_threshold  = get_option('qr_tracker_recaptcha_threshold', 0.5);
+        echo '<p class="description" style="margin-bottom:12px;">';
+        echo 'Optional but recommended. Uses <strong>Google reCAPTCHA Enterprise</strong> (invisible, score-based — no checkbox shown to users). ';
+        echo 'First 10,000 assessments per month are free. ';
+        echo '<a href="https://cloud.google.com/recaptcha" target="_blank" rel="noopener noreferrer">Set up a project in Google Cloud Console</a>, ';
+        echo 'create a reCAPTCHA key (type: <em>Score-based (v3)</em>), and generate an API key with the reCAPTCHA Enterprise API enabled. Leave all three fields blank to disable captcha.';
+        echo '</p>';
+        echo '<p><label style="display:block;font-weight:600;margin-bottom:4px;">Site Key <span style="font-weight:400;color:#666;">(KEY_ID from Google Cloud)</span></label>';
+        echo '<input type="text" name="qr_tracker_recaptcha_site_key" value="' . esc_attr($recaptcha_site_key) . '" style="width:100%;max-width:600px;" placeholder="e.g. 6Lc..."></p>';
+        echo '<p><label style="display:block;font-weight:600;margin-bottom:4px;">API Key <span style="font-weight:400;color:#666;">(used for backend assessment calls)</span></label>';
+        echo '<input type="text" name="qr_tracker_recaptcha_api_key" value="' . esc_attr($recaptcha_api_key) . '" style="width:100%;max-width:600px;" placeholder="AIza..."></p>';
+        echo '<p><label style="display:block;font-weight:600;margin-bottom:4px;">Google Cloud Project ID</label>';
+        echo '<input type="text" name="qr_tracker_recaptcha_project_id" value="' . esc_attr($recaptcha_project_id) . '" style="width:100%;max-width:600px;" placeholder="my-project-id"></p>';
+        echo '<p><label style="display:block;font-weight:600;margin-bottom:4px;">Score Threshold <span style="font-weight:400;color:#666;">(0.0 = likely bot, 1.0 = likely human — default 0.5)</span></label>';
+        echo '<input type="number" name="qr_tracker_recaptcha_threshold" value="' . esc_attr($recaptcha_threshold) . '" min="0" max="1" step="0.05" style="width:80px;">  ';
+        echo '<span class="description">Submissions scoring below this value are rejected.</span></p>';
+        echo '</td></tr>';
+
+        echo '</table>';
+        $this->drawer_close();
+
+        // ── Requester confirmation email ───────────────────────────────────────
+        $confirmation_enabled  = get_option('qr_tracker_org_req_confirmation_enabled', 1);
+        $confirmation_subject  = get_option('qr_tracker_org_req_confirmation_subject', 'Your organisation request has been received');
+        $confirmation_body     = get_option('qr_tracker_org_req_confirmation_body', '');
+        if ($confirmation_body === '' && is_object($org_req_obj) && method_exists($org_req_obj, 'get_default_confirmation_template')) {
+            $confirmation_body = $org_req_obj->get_default_confirmation_template();
+        }
+
+        $this->drawer_open('qr-drawer-org-req-confirmation-email', 'Org Request: Requester Confirmation Email');
+        echo '<p>Sent to the person who submitted the request, confirming receipt.</p>';
+        echo '<table class="form-table">';
+        echo '<tr><th scope="row">Enable</th><td>';
+        echo '<label><input type="checkbox" name="qr_tracker_org_req_confirmation_enabled" value="1"' . checked($confirmation_enabled, 1, false) . '> Send a confirmation email to the requester after submission</label>';
+        echo '</td></tr>';
+        echo '<tr><th scope="row">Subject</th><td>';
+        echo '<input type="text" name="qr_tracker_org_req_confirmation_subject" value="' . esc_attr($confirmation_subject) . '" style="width:100%;max-width:600px;">';
+        echo '</td></tr>';
+        echo '<tr><th scope="row" style="vertical-align:top;padding-top:12px;">Body</th><td>';
+        echo '<div style="max-width:800px;">';
+        $this->render_org_email_shortcode_table(['confirmation', 'approval']);
+        wp_editor($confirmation_body, 'qr_tracker_org_req_confirmation_body', [
+            'textarea_name' => 'qr_tracker_org_req_confirmation_body',
+            'textarea_rows' => 14,
+            'media_buttons' => false,
+            'teeny'         => false,
+            'quicktags'     => true,
+        ]);
+        echo '</div></td></tr>';
+        echo '</table>';
+        $this->drawer_close();
+
+        // ── Admin notification email ───────────────────────────────────────────
+        $admin_notify_enabled  = get_option('qr_tracker_org_req_admin_notify_enabled', 1);
+        $admin_notify_subject  = get_option('qr_tracker_org_req_admin_notify_subject', 'New organisation request: [org_name]');
+        $admin_notify_body     = get_option('qr_tracker_org_req_admin_notify_body', '');
+        if ($admin_notify_body === '' && is_object($org_req_obj) && method_exists($org_req_obj, 'get_default_admin_notification_template')) {
+            $admin_notify_body = $org_req_obj->get_default_admin_notification_template();
+        }
+
+        $this->drawer_open('qr-drawer-org-req-admin-notify-email', 'Org Request: Admin Notification Email');
+        echo '<p>Sent to all WordPress administrators when a new request is submitted. Includes a link to the review page.</p>';
+        echo '<table class="form-table">';
+        echo '<tr><th scope="row">Enable</th><td>';
+        echo '<label><input type="checkbox" name="qr_tracker_org_req_admin_notify_enabled" value="1"' . checked($admin_notify_enabled, 1, false) . '> Notify admins when a new organisation request is submitted</label>';
+        echo '</td></tr>';
+        echo '<tr><th scope="row">Subject</th><td>';
+        echo '<input type="text" name="qr_tracker_org_req_admin_notify_subject" value="' . esc_attr($admin_notify_subject) . '" style="width:100%;max-width:600px;">';
+        echo '<p class="description">Shortcodes work in the subject line too.</p>';
+        echo '</td></tr>';
+        echo '<tr><th scope="row" style="vertical-align:top;padding-top:12px;">Body</th><td>';
+        echo '<div style="max-width:800px;">';
+        $this->render_org_email_shortcode_table(['admin']);
+        wp_editor($admin_notify_body, 'qr_tracker_org_req_admin_notify_body', [
+            'textarea_name' => 'qr_tracker_org_req_admin_notify_body',
+            'textarea_rows' => 14,
+            'media_buttons' => false,
+            'teeny'         => false,
+            'quicktags'     => true,
+        ]);
+        echo '</div></td></tr>';
+        echo '</table>';
+        $this->drawer_close();
+
+        // ── Approval email ─────────────────────────────────────────────────────
+        $approval_enabled  = get_option('qr_tracker_org_req_approval_enabled', 1);
+        $approval_subject  = get_option('qr_tracker_org_req_approval_subject', 'Your organisation request has been approved!');
+        $approval_body     = get_option('qr_tracker_org_req_approval_body', '');
+        if ($approval_body === '' && is_object($org_req_obj) && method_exists($org_req_obj, 'get_default_approval_template')) {
+            $approval_body = $org_req_obj->get_default_approval_template();
+        }
+
+        $this->drawer_open('qr-drawer-org-req-approval-email', 'Org Request: Approval Email');
+        echo '<p>Sent to the original requester when their request is approved.</p>';
+        echo '<table class="form-table">';
+        echo '<tr><th scope="row">Enable</th><td>';
+        echo '<label><input type="checkbox" name="qr_tracker_org_req_approval_enabled" value="1"' . checked($approval_enabled, 1, false) . '> Send an approval notification to the requester</label>';
+        echo '</td></tr>';
+        echo '<tr><th scope="row">Subject</th><td>';
+        echo '<input type="text" name="qr_tracker_org_req_approval_subject" value="' . esc_attr($approval_subject) . '" style="width:100%;max-width:600px;">';
+        echo '</td></tr>';
+        echo '<tr><th scope="row" style="vertical-align:top;padding-top:12px;">Body</th><td>';
+        echo '<div style="max-width:800px;">';
+        $this->render_org_email_shortcode_table(['confirmation', 'approval']);
+        wp_editor($approval_body, 'qr_tracker_org_req_approval_body', [
+            'textarea_name' => 'qr_tracker_org_req_approval_body',
+            'textarea_rows' => 14,
+            'media_buttons' => false,
+            'teeny'         => false,
+            'quicktags'     => true,
+        ]);
+        echo '</div></td></tr>';
+        echo '</table>';
+        $this->drawer_close();
+    }
+
+    private function render_org_email_shortcode_table($contexts = ['confirmation', 'admin', 'approval']) {
+        $all_shortcodes = [
+            '[org_name]'        => ['label' => 'The requested organisation name',          'contexts' => ['confirmation', 'admin', 'approval']],
+            '[requester_name]'  => ['label' => 'Name of the person who submitted the request', 'contexts' => ['confirmation', 'admin', 'approval']],
+            '[requester_email]' => ['label' => 'Email of the person who submitted the request', 'contexts' => ['admin']],
+            '[site_name]'       => ['label' => 'WordPress site name',                      'contexts' => ['confirmation', 'admin', 'approval']],
+            '[review_link]'     => ['label' => 'Link to the Org Requests admin page',      'contexts' => ['admin']],
+            '[shop_link]'       => ['label' => 'Link to the shop (from Default Shop Link setting)', 'contexts' => ['approval']],
+        ];
+        $shown = [];
+        foreach ($all_shortcodes as $code => $info) {
+            foreach ($contexts as $ctx) {
+                if (in_array($ctx, $info['contexts'], true)) {
+                    $shown[$code] = $info['label'];
+                    break;
+                }
+            }
+        }
+        echo '<table class="widefat" style="max-width:780px;margin-bottom:14px;">';
+        echo '<thead><tr><th>Shortcode</th><th>Replaced with</th></tr></thead><tbody>';
+        foreach ($shown as $code => $desc) {
+            echo '<tr><td><code>' . esc_html($code) . '</code></td><td>' . esc_html($desc) . '</td></tr>';
+        }
+        echo '</tbody></table>';
     }
 
     /**
