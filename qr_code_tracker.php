@@ -2,7 +2,7 @@
 /*
 Plugin Name: QR Code Tracker
 Description: Generate and track QR code links with query strings, including scan tracking and postcode rollups, plus dynamic HTML messages via shortcodes.
-Version: 0.9998
+Version: 1.0.0
 Author: Ethan Widen
 */
 
