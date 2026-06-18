@@ -41,6 +41,7 @@ class QRCodeTracker_DB {
             shop_link VARCHAR(255),
             shop_logo VARCHAR(255),
             show_shop_link TINYINT(1) DEFAULT 1,
+            church_org_website VARCHAR(255),
             team_id BIGINT UNSIGNED DEFAULT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -233,6 +234,12 @@ class QRCodeTracker_DB {
             $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN show_shop_link TINYINT(1) DEFAULT 1 AFTER shop_logo");
         }
         
+        // Add church_org_website column to main table
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'church_org_website'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN church_org_website VARCHAR(255) AFTER show_shop_link");
+        }
+
         // Add is_private column to teams table
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->teams_table} LIKE 'is_private'");
         if (empty($columns)) {

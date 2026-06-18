@@ -2,7 +2,7 @@
 /*
 Plugin Name: QR Code Tracker
 Description: Generate and track QR code links with query strings, including scan tracking and postcode rollups, plus dynamic HTML messages via shortcodes.
-Version: 0.9998
+Version: 1.0.0
 Author: Ethan Widen
 */
 
@@ -41,6 +41,7 @@ class QRCodeTracker {
         'qr_tree_city',
         'qr_tree_message_1',
         'qr_tree_message_2',
+        'church_org_website',
         'pay_forward_type',
         'pay_forward_contact',
     ];
@@ -1006,14 +1007,11 @@ class QRCodeTracker {
             check_admin_referer('qr_manage_' . $qr_code->id);
 
             $update_data = [
-                'label' => isset($_POST['qr_label']) ? sanitize_text_field(wp_unslash($_POST['qr_label'])) : '',
-                'reporting_id' => isset($_POST['qr_reporting_id']) ? sanitize_text_field(wp_unslash($_POST['qr_reporting_id'])) : '',
-                'message_1' => isset($_POST['qr_message_1']) ? wp_kses_post(wp_unslash($_POST['qr_message_1'])) : '',
-                'message_2' => isset($_POST['qr_message_2']) ? wp_kses_post(wp_unslash($_POST['qr_message_2'])) : '',
-                'show_popup' => isset($_POST['qr_show_popup']) ? 1 : 0,
-                'shop_link' => isset($_POST['qr_shop_link']) ? esc_url_raw(wp_unslash($_POST['qr_shop_link'])) : '',
-                'shop_logo' => isset($_POST['qr_shop_logo']) ? esc_url_raw(wp_unslash($_POST['qr_shop_logo'])) : '',
-                'show_shop_link' => isset($_POST['qr_show_shop_link']) ? 1 : 0,
+                'label'              => isset($_POST['qr_label']) ? sanitize_text_field(wp_unslash($_POST['qr_label'])) : '',
+                'reporting_id'       => isset($_POST['qr_reporting_id']) ? sanitize_text_field(wp_unslash($_POST['qr_reporting_id'])) : '',
+                'message_1'          => isset($_POST['qr_message_1']) ? wp_kses_post(wp_unslash($_POST['qr_message_1'])) : '',
+                'message_2'          => isset($_POST['qr_message_2']) ? wp_kses_post(wp_unslash($_POST['qr_message_2'])) : '',
+                'church_org_website' => isset($_POST['qr_church_org_website']) ? esc_url_raw(wp_unslash($_POST['qr_church_org_website'])) : '',
             ];
 
             $update_result = $wpdb->update($this->main_table, $update_data, ['id' => $qr_code->id]);
@@ -1072,10 +1070,7 @@ class QRCodeTracker {
         );
         echo '</td></tr>';
 
-        echo '<tr><th><label for="qr_show_popup">Show Popup</label></th><td><input type="checkbox" id="qr_show_popup" name="qr_show_popup" value="1"' . checked((int) $qr_code->show_popup, 1, false) . '></td></tr>';
-        echo '<tr><th><label for="qr_shop_link">Shop Link</label></th><td><input type="url" id="qr_shop_link" name="qr_shop_link" value="' . esc_attr($qr_code->shop_link) . '" class="regular-text"></td></tr>';
-        echo '<tr><th><label for="qr_shop_logo">Shop Logo URL</label></th><td><input type="url" id="qr_shop_logo" name="qr_shop_logo" value="' . esc_attr($qr_code->shop_logo) . '" class="regular-text"></td></tr>';
-        echo '<tr><th><label for="qr_show_shop_link">Show Shop Link</label></th><td><input type="checkbox" id="qr_show_shop_link" name="qr_show_shop_link" value="1"' . checked((int) $qr_code->show_shop_link, 1, false) . '></td></tr>';
+        echo '<tr><th><label for="qr_church_org_website">Church / Organisation Website Link</label></th><td><input type="url" id="qr_church_org_website" name="qr_church_org_website" value="' . esc_attr($qr_code->church_org_website ?? '') . '" class="regular-text" placeholder="https://example.com"></td></tr>';
         echo '</table>';
         echo '<p><button type="submit" name="qr_manage_submit" class="button button-primary">Update QR Code</button></p>';
         echo '</form></div>';
@@ -1352,6 +1347,7 @@ class QRCodeTracker {
             'qr_tree_city'          => 'City',
             'qr_tree_message_1'     => 'Message 1',
             'qr_tree_message_2'     => 'Message 2',
+            'church_org_website'    => 'Church / Organisation Website Link',
             'pay_forward_type'      => 'Pay a Tree Forward?',
             'pay_forward_contact'   => 'Pay Forward Recipient',
         ];
@@ -1846,6 +1842,14 @@ class QRCodeTracker {
                     ], $this->get_tree_field_value_from_request('qr_tree_message_2'));
                 }
                 break;
+            case 'church_org_website':
+                $this->render_customizable_tree_form_field('church_org_website', [
+                    'type'        => 'text',
+                    'class'       => ['form-row-wide'],
+                    'label'       => 'Church / Organisation Website Link',
+                    'placeholder' => 'https://example.com',
+                ], $this->get_tree_field_value_from_request('church_org_website'));
+                break;
             case 'pay_forward_type':
                 $this->render_customizable_tree_form_field('pay_forward_type', [
                     'type'    => 'select',
@@ -1927,10 +1931,14 @@ class QRCodeTracker {
                 $valid_options = $this->get_purchaser_type_options();
                 return isset($valid_options[$value]) ? $value : '';
             case 'qr_tree_postcode':
-                return strtoupper(sanitize_text_field($raw_value));
+                return strtoupper(preg_replace('/[^A-Z0-9]/i', '', sanitize_text_field($raw_value)));
+            case 'qr_tree_city':
+                return preg_replace('/[^A-Za-z0-9-]/', '', sanitize_text_field($raw_value));
             case 'qr_tree_message_1':
             case 'qr_tree_message_2':
                 return wp_kses_post($raw_value);
+            case 'church_org_website':
+                return esc_url_raw($raw_value);
             default:
                 return sanitize_text_field($raw_value);
         }
@@ -2002,10 +2010,11 @@ class QRCodeTracker {
             'individual_last_name'  => isset($_POST['individual_last_name']) ? sanitize_text_field(wp_unslash($_POST['individual_last_name'])) : '',
             'pay_forward_type'      => isset($_POST['pay_forward_type']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) : '',
             'pay_forward_contact'   => (isset($_POST['pay_forward_type']) && sanitize_text_field(wp_unslash($_POST['pay_forward_type'])) === 'specific') ? (isset($_POST['pay_forward_contact']) ? sanitize_text_field(wp_unslash($_POST['pay_forward_contact'])) : '') : '',
-            'qr_tree_postcode'      => isset($_POST['qr_tree_postcode']) ? strtoupper(sanitize_text_field(wp_unslash($_POST['qr_tree_postcode']))) : '',
-            'qr_tree_city'          => isset($_POST['qr_tree_city']) ? sanitize_text_field(wp_unslash($_POST['qr_tree_city'])) : '',
+            'qr_tree_postcode'      => isset($_POST['qr_tree_postcode']) ? $this->sanitize_tree_field_value('qr_tree_postcode', wp_unslash($_POST['qr_tree_postcode'])) : '',
+            'qr_tree_city'          => isset($_POST['qr_tree_city']) ? $this->sanitize_tree_field_value('qr_tree_city', wp_unslash($_POST['qr_tree_city'])) : '',
             'qr_tree_message_1'     => isset($_POST['qr_tree_message_1']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_1'])) : '',
             'qr_tree_message_2'     => isset($_POST['qr_tree_message_2']) ? wp_kses_post(wp_unslash($_POST['qr_tree_message_2'])) : '',
+            'church_org_website'    => isset($_POST['church_org_website']) ? $this->sanitize_tree_field_value('church_org_website', wp_unslash($_POST['church_org_website'])) : '',
         ];
 
         foreach ($field_values as $key => $value) {
@@ -2086,8 +2095,9 @@ class QRCodeTracker {
             'city'       => $tree_data['city'],
             'tree'       => $tree_data['tree'],
             'label'      => $tree_data['label'],
-            'message_1'  => $tree_data['message_1'],
-            'message_2'  => $tree_data['message_2'],
+            'message_1'           => $tree_data['message_1'],
+            'message_2'           => $tree_data['message_2'],
+            'church_org_website'  => $tree_data['church_org_website'] ?? '',
         ];
 
         if (!empty($tree_data['team_id'])) {
@@ -2250,10 +2260,11 @@ class QRCodeTracker {
                 continue;
             }
 
-            $postcode  = strtoupper(sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_postcode', 'Postcode')));
-            $city      = strtolower(sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_city', 'City')));
-            $message_1 = wp_kses_post($this->get_tree_field_from_order_item($item, 'qr_tree_message_1', 'Message 1'));
-            $message_2 = wp_kses_post($this->get_tree_field_from_order_item($item, 'qr_tree_message_2', 'Message 2'));
+            $postcode           = strtoupper(sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_postcode', 'Postcode')));
+            $city               = strtolower(sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_city', 'City')));
+            $message_1          = wp_kses_post($this->get_tree_field_from_order_item($item, 'qr_tree_message_1', 'Message 1'));
+            $message_2          = wp_kses_post($this->get_tree_field_from_order_item($item, 'qr_tree_message_2', 'Message 2'));
+            $church_org_website = esc_url_raw($this->get_tree_field_from_order_item($item, 'church_org_website', 'Church / Organisation Website Link'));
 
             if (empty($postcode) || empty($city)) {
                 continue;
@@ -2284,13 +2295,14 @@ class QRCodeTracker {
                 }
 
                 $record_id = $this->insert_tree_qr_record([
-                    'postcode'  => $postcode,
-                    'city'      => $city,
-                    'tree'      => $tree_label,
-                    'label'     => $tree_label,
-                    'message_1' => $message_1,
-                    'message_2' => $message_2,
-                    'team_id'   => $team_id,
+                    'postcode'           => $postcode,
+                    'city'               => $city,
+                    'tree'               => $tree_label,
+                    'label'              => $tree_label,
+                    'message_1'          => $message_1,
+                    'message_2'          => $message_2,
+                    'team_id'            => $team_id,
+                    'church_org_website' => $church_org_website,
                 ]);
 
                 if ($record_id > 0) {
