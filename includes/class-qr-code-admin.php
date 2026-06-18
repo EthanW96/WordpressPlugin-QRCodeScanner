@@ -863,7 +863,7 @@ class QRCodeTracker_Admin {
         // Now display the Tracked QR Codes table
         $entries = $this->teams->get_accessible_qr_codes();
         $this->drawer_open( 'qr-drawer-tracked-qr-codes', 'Tracked QR Codes', true );
-        echo '<div class="qr-table-responsive"><table id="qr-table-tracked" class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>Popup</th><th>Shop Link</th><th>Team</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Social Shares</th><th>Last Scanned</th><th>Last Social Shared</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
+        echo '<div class="qr-table-responsive"><table id="qr-table-tracked" class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>Popup</th><th>Shop Link</th><th>Church / Org Website</th><th>Team</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Social Shares</th><th>Last Scanned</th><th>Last Social Shared</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
         foreach ($entries as $row) {
             $delete_url = esc_url(add_query_arg(['delete_id' => $row->id]));
             $edit_url = esc_url(add_query_arg(['edit_id' => $row->id]));
@@ -929,7 +929,8 @@ class QRCodeTracker_Admin {
             
             $last_social_shared = !empty($row->last_social_shared) ? esc_html($row->last_social_shared) : 'Never';
             $created_at = !empty($row->created_at) ? esc_html($row->created_at) : '';
-            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$team_name}</td><td>{$url_display}</td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>" . number_format((int) $row->social_share_count) . "</td><td>{$row->last_scanned}</td><td>{$last_social_shared}</td><td data-order=\"{$created_at}\">{$created_at}</td>";
+            $church_org_website_display = !empty($row->church_org_website) ? '<a href="' . esc_url($row->church_org_website) . '" target="_blank" rel="noopener noreferrer">' . esc_html($row->church_org_website) . '</a>' : '';
+            echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$church_org_website_display}</td><td>{$team_name}</td><td>{$url_display}</td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>" . number_format((int) $row->social_share_count) . "</td><td>{$row->last_scanned}</td><td>{$last_social_shared}</td><td data-order=\"{$created_at}\">{$created_at}</td>";
             echo "<td>";
             if ((int) $row->scan_count === 0 && (int) $row->social_share_count === 0) {
                 echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a>";
