@@ -46,6 +46,17 @@ class QRCodeTracker {
         'pay_forward_contact',
     ];
 
+    // A3 print-sheet layout (portrait, print resolution).
+    private const A3_PRINT_DPI                = 300;
+    private const A3_WIDTH_MM                 = 297;
+    private const A3_HEIGHT_MM                = 420;
+    private const A3_MARGIN_RATIO             = 0.09;  // side/top margin as a fraction of width
+    private const A3_TITLE_LINE_SPACING_RATIO = 0.12;  // gap between title lines, fraction of font size
+    private const A3_ID_FONT_RATIO            = 0.008; // short_code label height, fraction of canvas height
+    private const A3_QR_RENDER_SCALE          = 20;    // native QR px-per-module before scaling to fit
+    private const A3_TITLE_LINES              = ['Merry', 'Christmas'];
+    private const A3_FONT_RELATIVE_PATH       = '/assets/fonts/Fredoka-Regular.ttf';
+
     private $main_table;
     private $log_table;
     private $access_requests_table;
@@ -579,6 +590,146 @@ class QRCodeTracker {
         return $qrcode->render($url);
     }
 
+    /**
+     * Render the QR code as a raw GD image resource (no PNG round-trip),
+     * so it can be composited onto another canvas.
+     *
+     * @return \GdImage|resource|null
+     */
+    private function render_qr_gd_resource($url) {
+        try {
+            $options = new QROptions([
+                'outputType'     => QRCode::OUTPUT_IMAGE_PNG,
+                'eccLevel'       => QRCode::ECC_H,
+                'scale'          => self::A3_QR_RENDER_SCALE,
+                'returnResource' => true,
+            ]);
+            $qrcode   = new QRCode($options);
+            $resource = $qrcode->render($url);
+        } catch (\Throwable $e) {
+            error_log('QR Tracker: failed to render QR resource for A3 sheet: ' . $e->getMessage());
+            return null;
+        }
+
+        if ($resource instanceof \GdImage || is_resource($resource)) {
+            return $resource;
+        }
+        return null;
+    }
+
+    /**
+     * Find the largest font size at which every title line fits within $target_width.
+     * Measures against a probe size and scales by the widest line.
+     */
+    private function fit_font_to_width($font_path, array $lines, $target_width) {
+        $probe_size = 100.0;
+        $widest     = 1;
+        foreach ($lines as $line) {
+            $bbox  = imagettfbbox($probe_size, 0, $font_path, $line);
+            $width = abs($bbox[2] - $bbox[0]);
+            if ($width > $widest) {
+                $widest = $width;
+            }
+        }
+        return $probe_size * ($target_width / $widest);
+    }
+
+    /**
+     * Build a print-ready A3 sheet (portrait, 300 DPI): the "Merry Christmas"
+     * title across the top, the QR code centred below it, and the short_code in
+     * small grey text at the bottom-right so each printed sheet can be matched
+     * back to the correct client.
+     *
+     * @param string $url        The tracker URL encoded in the QR code.
+     * @param string $short_code The unique short code, printed as the identifier.
+     * @return string|null       Raw PNG bytes, or null if the image toolchain is unavailable.
+     */
+    public function render_a3_print_sheet($url, $short_code) {
+        if (!extension_loaded('gd') || !function_exists('imagettftext')) {
+            error_log('QR Tracker: cannot build A3 sheet - GD/FreeType unavailable.');
+            return null;
+        }
+
+        $font_path = __DIR__ . self::A3_FONT_RELATIVE_PATH;
+        if (!is_readable($font_path)) {
+            error_log('QR Tracker: cannot build A3 sheet - font missing at ' . $font_path);
+            return null;
+        }
+
+        $canvas_width  = (int) round(self::A3_WIDTH_MM  / 25.4 * self::A3_PRINT_DPI);
+        $canvas_height = (int) round(self::A3_HEIGHT_MM / 25.4 * self::A3_PRINT_DPI);
+
+        // A canvas this size is memory-hungry; request headroom where the host allows it.
+        @ini_set('memory_limit', '512M');
+
+        $canvas = imagecreatetruecolor($canvas_width, $canvas_height);
+        if (!$canvas) {
+            error_log('QR Tracker: cannot build A3 sheet - imagecreatetruecolor failed.');
+            return null;
+        }
+
+        $white = imagecolorallocate($canvas, 255, 255, 255);
+        $black = imagecolorallocate($canvas, 0, 0, 0);
+        $grey  = imagecolorallocate($canvas, 120, 120, 120);
+        imagefilledrectangle($canvas, 0, 0, $canvas_width, $canvas_height, $white);
+
+        $margin            = (int) round($canvas_width * self::A3_MARGIN_RATIO);
+        $target_text_width = $canvas_width - (2 * $margin);
+
+        // --- Title: one entry per line, centred, auto-sized so the widest line fits. ---
+        $title_font_size = $this->fit_font_to_width($font_path, self::A3_TITLE_LINES, $target_text_width);
+        $line_spacing    = (int) round($title_font_size * self::A3_TITLE_LINE_SPACING_RATIO);
+        $cursor_y        = $margin; // top of the title block
+
+        foreach (self::A3_TITLE_LINES as $line) {
+            $bbox        = imagettfbbox($title_font_size, 0, $font_path, $line);
+            $text_width  = abs($bbox[2] - $bbox[0]);
+            $text_height = abs($bbox[7] - $bbox[1]);
+            $draw_x      = (int) round(($canvas_width - $text_width) / 2) - $bbox[0];
+            $baseline_y  = $cursor_y + $text_height;
+            imagettftext($canvas, $title_font_size, 0, $draw_x, $baseline_y, $black, $font_path, $line);
+            $cursor_y = $baseline_y + $line_spacing;
+        }
+
+        // --- QR code: rendered crisp, then scaled to fill the space below the title. ---
+        $space_top    = $cursor_y + $margin;            // leave a margin-sized gap under the title
+        $space_bottom = $canvas_height - $margin;
+        $qr_size      = min($target_text_width, max(0, $space_bottom - $space_top));
+
+        $qr_image = $this->render_qr_gd_resource($url);
+        if ($qr_image && $qr_size > 0) {
+            $qr_native = imagesx($qr_image);
+            $qr_dest_x = (int) round(($canvas_width - $qr_size) / 2);
+            $qr_dest_y = (int) round($space_top + max(0, (($space_bottom - $space_top) - $qr_size) / 2));
+
+            // Nearest-neighbour scaling keeps the modules sharp and reliably scannable.
+            imagecopyresized(
+                $canvas, $qr_image,
+                $qr_dest_x, $qr_dest_y, 0, 0,
+                $qr_size, $qr_size, $qr_native, $qr_native
+            );
+            imagedestroy($qr_image);
+        }
+
+        // --- Identifier: short_code in small grey text, bottom-right corner. ---
+        if (!empty($short_code)) {
+            $id_font_size = max(8.0, $canvas_height * self::A3_ID_FONT_RATIO);
+            $id_text      = (string) $short_code;
+            $bbox         = imagettfbbox($id_font_size, 0, $font_path, $id_text);
+            $id_width     = abs($bbox[2] - $bbox[0]);
+            $id_x         = $canvas_width - $margin - $id_width - $bbox[0];
+            $id_y         = $canvas_height - (int) round($margin / 2); // baseline
+            imagettftext($canvas, $id_font_size, 0, (int) round($id_x), $id_y, $grey, $font_path, $id_text);
+        }
+
+        ob_start();
+        imagepng($canvas);
+        $png = ob_get_clean();
+        imagedestroy($canvas);
+
+        return $png;
+    }
+
     public function handle_download_qr() {
         if (!QRCodeTracker_Permissions::can_download_qr_codes()) {
             QRCodeTracker_Permissions::die_with_permission_error('qr_tracker_download_qr_codes');
@@ -590,6 +741,25 @@ class QRCodeTracker {
             wp_die('QR code not found');
         }
         $url = $row->url;
+
+        // Optional A3 print sheet: "Merry Christmas" title + QR + short_code identifier.
+        $format = isset($_GET['format']) ? sanitize_key(wp_unslash($_GET['format'])) : '';
+        if ($format === 'a3') {
+            $sheet = $this->render_a3_print_sheet($url, $row->short_code);
+            if ($sheet === null) {
+                wp_die('Unable to generate the A3 print sheet on this server (image support is unavailable). See the error log for details.');
+            }
+            $postcode = preg_replace('/[^a-zA-Z0-9_-]/', '', $row->postcode);
+            $city     = preg_replace('/[^a-zA-Z0-9_-]/', '', $row->city);
+            $tree     = preg_replace('/[^a-zA-Z0-9_-]/', '', $row->tree);
+            $filename = ($postcode ?: 'qr') . ($city ? '-' . $city : '') . ($tree ? '-' . $tree : '') . '-A3.png';
+            header('Content-Type: image/png');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Content-Length: ' . strlen($sheet));
+            echo $sheet;
+            exit;
+        }
+
         // High-res QR code (e.g., 2000x2000 px)
         $options = new QROptions([
             'outputType' => QRCode::OUTPUT_IMAGE_PNG,
