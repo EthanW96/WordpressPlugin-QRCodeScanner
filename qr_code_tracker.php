@@ -499,7 +499,7 @@ class QRCodeTracker {
         if ($tracker && !empty($tracker->message_2)) {
             return do_shortcode($tracker->message_2);
         }
-        return do_shortcode('Thank you for visiting! Look below to receive a free book, make a comment, listen to a song, and watch a children\'s story.');
+        return do_shortcode('Thanks for visiting! But don\'t stop — there\'s more to discover. Continue the journey above, request a free booklet, or send us a question or comment and we\'ll be in touch.');
     }
 
     public function shortcode_shop_link($atts = []) {
