@@ -1117,6 +1117,35 @@ class QRCodeTracker_Admin {
             $email_body = isset($_POST['qr_tracker_welcome_email_body']) ? wp_kses_post(wp_unslash($_POST['qr_tracker_welcome_email_body'])) : '';
             update_option('qr_tracker_welcome_email_body', $email_body);
 
+            // Per-product welcome email overrides.
+            $selected_email_products = isset($_POST['qr_tracker_product_email_products']) && is_array($_POST['qr_tracker_product_email_products'])
+                ? array_values(array_unique(array_filter(array_map('intval', wp_unslash($_POST['qr_tracker_product_email_products'])))))
+                : [];
+            $posted_product_emails = isset($_POST['qr_tracker_product_email']) && is_array($_POST['qr_tracker_product_email'])
+                ? wp_unslash($_POST['qr_tracker_product_email'])
+                : [];
+            $existing_product_emails = get_option('qr_tracker_product_emails', []);
+            if (!is_array($existing_product_emails)) {
+                $existing_product_emails = [];
+            }
+            $new_product_emails = [];
+            foreach ($selected_email_products as $product_email_id) {
+                if (isset($posted_product_emails[$product_email_id]) && is_array($posted_product_emails[$product_email_id])) {
+                    // Editor for this product was on the page — take its values.
+                    $subject = isset($posted_product_emails[$product_email_id]['subject']) ? sanitize_text_field($posted_product_emails[$product_email_id]['subject']) : '';
+                    $body    = isset($posted_product_emails[$product_email_id]['body']) ? wp_kses_post($posted_product_emails[$product_email_id]['body']) : '';
+                } elseif (isset($existing_product_emails[$product_email_id]) && is_array($existing_product_emails[$product_email_id])) {
+                    // Newly selected product whose editor hasn't rendered yet — keep any existing copy.
+                    $subject = isset($existing_product_emails[$product_email_id]['subject']) ? $existing_product_emails[$product_email_id]['subject'] : '';
+                    $body    = isset($existing_product_emails[$product_email_id]['body']) ? $existing_product_emails[$product_email_id]['body'] : '';
+                } else {
+                    $subject = '';
+                    $body    = '';
+                }
+                $new_product_emails[$product_email_id] = ['subject' => $subject, 'body' => $body];
+            }
+            update_option('qr_tracker_product_emails', $new_product_emails);
+
             echo '<div class="updated"><p>Settings saved.</p></div>';
         }
         $delete_on_uninstall = get_option('qr_tracker_delete_on_uninstall', 0);
@@ -1344,8 +1373,8 @@ class QRCodeTracker_Admin {
             }
         }
 
-        $this->drawer_open( 'qr-drawer-settings-welcome-email', 'Welcome Email (Tree Purchase)' );
-        echo '<p>This email is sent automatically to the buyer when a Tree Product order completes and QR codes are generated.</p>';
+        $this->drawer_open( 'qr-drawer-settings-welcome-email', 'Welcome Email (Default)' );
+        echo '<p>This is the <strong>default</strong> email sent to the buyer when a Tree Product order completes and QR codes are generated. To send a different email for a specific product (e.g. a QR code stand), set it up under <em>Per-Product Welcome Emails</em> below.</p>';
         echo '<table class="form-table">';
 
         echo '<tr><th scope="row">Enable Welcome Email</th><td>';
@@ -1388,6 +1417,76 @@ class QRCodeTracker_Admin {
         echo '</table>';
         // ── End Welcome Email Settings ──────────────────────────────────────────
         $this->drawer_close(); // Welcome Email drawer
+
+        // ── Per-Product Welcome Emails ──────────────────────────────────────────
+        $product_emails = get_option('qr_tracker_product_emails', []);
+        if (!is_array($product_emails)) {
+            $product_emails = [];
+        }
+        $product_email_ids = array_map('intval', array_keys($product_emails));
+
+        $this->drawer_open('qr-drawer-settings-product-emails', 'Per-Product Welcome Emails');
+        echo '<p>Give individual products their own welcome email. When a product listed here is purchased, the buyer receives <strong>its</strong> subject and body instead of the default above. An order containing several of these products sends one email per product. Products not listed here fall back to the default Welcome Email.</p>';
+
+        echo '<table class="form-table">';
+        echo '<tr><th scope="row">Products with a custom email</th><td>';
+        if (!post_type_exists('product')) {
+            echo '<p class="description">WooCommerce products are unavailable. Activate WooCommerce to configure this setting.</p>';
+        } elseif (empty($available_tree_products)) {
+            echo '<p class="description">No WooCommerce products found.</p>';
+        } else {
+            echo '<select name="qr_tracker_product_email_products[]" multiple size="10" style="width:100%;max-width:600px;">';
+            foreach ($available_tree_products as $product_id) {
+                $title = get_the_title($product_id);
+                if ($title === '') {
+                    $title = '(no title)';
+                }
+                echo '<option value="' . esc_attr($product_id) . '"' . selected(in_array((int) $product_id, $product_email_ids, true), true, false) . '>';
+                echo esc_html($title . ' (ID: ' . $product_id . ')');
+                echo '</option>';
+            }
+            echo '</select>';
+            echo '<p class="description">Select the products that should have their own welcome email, then click <strong>Save Settings</strong>. A subject + body editor for each selected product appears below. Non-tree products (e.g. a QR code stand) get an info-only email; tree products also include their QR codes. Hold Ctrl (Windows) or Command (Mac) to select multiple.</p>';
+        }
+        echo '</td></tr>';
+        echo '</table>';
+
+        if (!empty($product_email_ids)) {
+            foreach ($product_email_ids as $product_id) {
+                $entry     = isset($product_emails[$product_id]) && is_array($product_emails[$product_id]) ? $product_emails[$product_id] : [];
+                $p_subject = isset($entry['subject']) ? $entry['subject'] : '';
+                $p_body    = isset($entry['body']) ? $entry['body'] : '';
+                $title     = get_the_title($product_id);
+                if ($title === '') {
+                    $title = '(no title)';
+                }
+
+                echo '<h4 style="margin:20px 0 4px;">' . esc_html($title) . ' <span style="color:#888;font-weight:normal;">(ID: ' . esc_html($product_id) . ')</span></h4>';
+                echo '<table class="form-table">';
+                echo '<tr><th scope="row">Subject</th><td>';
+                echo '<input type="text" name="qr_tracker_product_email[' . esc_attr($product_id) . '][subject]" value="' . esc_attr($p_subject) . '" style="width:100%;max-width:600px;" placeholder="' . esc_attr($welcome_email_subject) . '">';
+                echo '<p class="description">Leave blank to use the default subject.</p>';
+                echo '</td></tr>';
+                echo '<tr><th scope="row" style="vertical-align:top;padding-top:12px;">Body</th><td>';
+                echo '<div style="max-width:800px;">';
+                // Same rich editor as the default email. Unique editor id per product
+                // (lowercase + underscores only, as wp_editor requires); textarea_name
+                // keeps posting to the array field the save handler already reads.
+                wp_editor($p_body, 'qr_tracker_product_email_body_' . (int) $product_id, [
+                    'textarea_name' => 'qr_tracker_product_email[' . (int) $product_id . '][body]',
+                    'textarea_rows' => 14,
+                    'media_buttons' => true,
+                    'teeny'         => false,
+                    'quicktags'     => true,
+                ]);
+                echo '</div>';
+                echo '<p class="description">HTML plus the same shortcodes listed in the Welcome Email section above. Leave blank to use the default body.</p>';
+                echo '</td></tr>';
+                echo '</table>';
+            }
+        }
+        $this->drawer_close(); // Per-Product Welcome Emails drawer
+        // ── End Per-Product Welcome Emails ──────────────────────────────────────
 
         echo '<p><input type="submit" name="qr_tracker_settings_submit" class="button button-primary" value="Save Settings"></p>';
         echo '</form>';

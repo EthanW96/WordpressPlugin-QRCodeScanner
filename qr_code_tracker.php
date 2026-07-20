@@ -2426,21 +2426,49 @@ class QRCodeTracker {
         }
 
         $order = wc_get_order($order_id);
-        if (!$order || $order->get_meta('_qr_tracker_rows_created', true)) {
+        if (!$order) {
+            return;
+        }
+        // Process each order once. Historical orders carry _qr_tracker_rows_created;
+        // orders processed since per-product emails were added also carry
+        // _qr_tracker_welcome_sent (covers products that email without creating rows).
+        if ($order->get_meta('_qr_tracker_rows_created', true) || $order->get_meta('_qr_tracker_welcome_sent', true)) {
             return;
         }
 
-        $inserted_count  = 0;
-        $inserted_ids    = [];
-        $purchaser_name  = '';
-        $is_individual   = false;
+        $product_emails = get_option('qr_tracker_product_emails', []);
+        if (!is_array($product_emails)) {
+            $product_emails = [];
+        }
+
+        $inserted_count = 0;
+        // One bucket per distinct product that should receive a welcome email,
+        // keyed by the email product id so each product yields a single email.
+        $buckets = [];
 
         foreach ($order->get_items('line_item') as $item_id => $item) {
             $variation_id = (int) $item->get_variation_id();
-            $product_id = $variation_id > 0 ? $variation_id : (int) $item->get_product_id();
-
-            if (!$product_id || !$this->is_tree_product($product_id)) {
+            $product_id   = $variation_id > 0 ? $variation_id : (int) $item->get_product_id();
+            if (!$product_id) {
                 continue;
+            }
+
+            $is_tree    = $this->is_tree_product($product_id);
+            $email_pid  = $this->resolve_welcome_email_product_id($product_id, $product_emails);
+            $has_custom = isset($product_emails[$email_pid]);
+
+            // Only email about tree products (which carry QR codes) or products
+            // that have their own configured welcome email.
+            if (!$is_tree && !$has_custom) {
+                continue;
+            }
+
+            if (!isset($buckets[$email_pid])) {
+                $buckets[$email_pid] = ['record_ids' => [], 'is_individual' => false, 'purchaser_name' => ''];
+            }
+
+            if (!$is_tree) {
+                continue; // Non-tree custom-email product: no QR records to create.
             }
 
             $postcode           = strtoupper(sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_postcode', 'Postcode')));
@@ -2454,13 +2482,13 @@ class QRCodeTracker {
             }
 
             // Resolve the team this purchase belongs to.
-            $team_info      = $this->resolve_team_id_for_order_item($item, $order);
-            $team_id        = $team_info['team_id'];
+            $team_info = $this->resolve_team_id_for_order_item($item, $order);
+            $team_id   = $team_info['team_id'];
             if ($team_info['is_individual']) {
-                $is_individual = true;
+                $buckets[$email_pid]['is_individual'] = true;
             }
-            if ($purchaser_name === '' && $team_info['purchaser_name'] !== '') {
-                $purchaser_name = $team_info['purchaser_name'];
+            if ($buckets[$email_pid]['purchaser_name'] === '' && $team_info['purchaser_name'] !== '') {
+                $buckets[$email_pid]['purchaser_name'] = $team_info['purchaser_name'];
             }
 
             $quantity       = max(1, (int) $item->get_quantity());
@@ -2491,33 +2519,86 @@ class QRCodeTracker {
                 if ($record_id > 0) {
                     $inserted_count++;
                     $item_inserted++;
-                    $inserted_ids[] = $record_id;
+                    $buckets[$email_pid]['record_ids'][] = $record_id;
                 }
+            }
+        }
+
+        if (empty($buckets)) {
+            return;
+        }
+
+        // Send one welcome email per distinct product, each with its own QR codes.
+        $emails_sent  = 0;
+        $billing_name = trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name());
+        foreach ($buckets as $email_pid => $bucket) {
+            $records    = $this->fetch_qr_records_by_ids($bucket['record_ids']);
+            $has_custom = isset($product_emails[$email_pid]);
+
+            // Nothing to say: a tree product that produced no records and has no custom email.
+            if (empty($records) && !$has_custom) {
+                continue;
+            }
+
+            $name = $bucket['purchaser_name'] !== '' ? $bucket['purchaser_name'] : $billing_name;
+            if ($this->email->send_welcome_email($order, $records, $name, $bucket['is_individual'], (int) $email_pid)) {
+                $emails_sent++;
             }
         }
 
         if ($inserted_count > 0) {
             $order->update_meta_data('_qr_tracker_rows_created', 1);
-            $order->save();
-
-            // Send the buyer their welcome email with QR codes.
-            if (!empty($inserted_ids)) {
-                global $wpdb;
-                $placeholders = implode(',', array_fill(0, count($inserted_ids), '%d'));
-                // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
-                $qr_records = $wpdb->get_results(
-                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-                    $wpdb->prepare(
-                        "SELECT id, url, short_code, postcode, city, tree, label, team_id FROM {$this->main_table} WHERE id IN ($placeholders)",
-                        ...$inserted_ids
-                    )
-                );
-                if ($purchaser_name === '') {
-                    $purchaser_name = trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name());
-                }
-                $this->email->send_welcome_email($order, $qr_records ?: [], $purchaser_name, $is_individual);
-            }
         }
+        if ($inserted_count > 0 || $emails_sent > 0) {
+            $order->update_meta_data('_qr_tracker_welcome_sent', 1);
+            $order->save();
+        }
+    }
+
+    /**
+     * Resolve the product id used to look up a welcome-email override for a line
+     * item, and to group line items into one email per product. A custom email
+     * configured on the exact product (or variation) wins; otherwise variations
+     * are grouped under their parent so one product yields one email.
+     *
+     * @param int   $product_id     Line-item product/variation id.
+     * @param array $product_emails Configured per-product overrides, keyed by id.
+     * @return int
+     */
+    private function resolve_welcome_email_product_id($product_id, array $product_emails) {
+        $product_id = (int) $product_id;
+        if (isset($product_emails[$product_id])) {
+            return $product_id;
+        }
+        $parent_id = (int) wp_get_post_parent_id($product_id);
+        if ($parent_id > 0 && isset($product_emails[$parent_id])) {
+            return $parent_id;
+        }
+        return $parent_id > 0 ? $parent_id : $product_id;
+    }
+
+    /**
+     * Fetch QR tracker rows for the given ids (empty in, empty out).
+     *
+     * @param int[] $ids
+     * @return array stdClass rows.
+     */
+    private function fetch_qr_records_by_ids(array $ids) {
+        $ids = array_values(array_filter(array_map('intval', $ids)));
+        if (empty($ids)) {
+            return [];
+        }
+        global $wpdb;
+        $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+        $records = $wpdb->get_results(
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $wpdb->prepare(
+                "SELECT id, url, short_code, postcode, city, tree, label, team_id FROM {$this->main_table} WHERE id IN ($placeholders)",
+                ...$ids
+            )
+        );
+        return $records ?: [];
     }
 }
 

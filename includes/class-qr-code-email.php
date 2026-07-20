@@ -15,32 +15,71 @@ class QRCodeTracker_Email {
     /**
      * Send the welcome-to-the-network email to the buyer.
      *
+     * The subject and body are resolved per product: if the purchased product
+     * has a configured override (see qr_tracker_product_emails), that copy is
+     * used; otherwise the global default welcome email is used.
+     *
      * @param WC_Order $order
      * @param array    $qr_records    stdObjects from wp_qr_tracker (id, url, short_code, postcode, city, tree, label, team_id).
      * @param string   $purchaser_name
      * @param bool     $is_individual  True when purchaser_type was "individual".
+     * @param int      $product_id     Product/variation the email is for; 0 uses the global default.
+     * @return bool                    True when an email was handed to wp_mail(), false otherwise.
      */
-    public function send_welcome_email($order, array $qr_records, $purchaser_name, $is_individual = false) {
+    public function send_welcome_email($order, array $qr_records, $purchaser_name, $is_individual = false, $product_id = 0) {
         if (!get_option('qr_tracker_welcome_email_enabled', 1)) {
-            return;
+            return false;
         }
 
         $email = $order->get_billing_email();
         if (empty($email) || !is_email($email)) {
-            return;
+            return false;
         }
 
-        $subject  = get_option('qr_tracker_welcome_email_subject', 'Welcome to the Advent Tree Network!');
-        $template = get_option('qr_tracker_welcome_email_body', '');
-        if (empty($template)) {
-            $template = $this->get_default_template();
-        }
+        list($subject, $template) = $this->resolve_email_content($product_id);
 
         $body = $this->process_shortcodes($template, $order, $qr_records, $purchaser_name, $is_individual);
         $body = $this->wrap_in_email_shell($body);
 
         $headers = ['Content-Type: text/html; charset=UTF-8'];
-        wp_mail($email, $subject, $body, $headers);
+        return (bool) wp_mail($email, $subject, $body, $headers);
+    }
+
+    /**
+     * Resolve the subject + body for a welcome email, preferring a per-product
+     * override and falling back to the global default (then the built-in template).
+     *
+     * @param int $product_id WooCommerce product/variation ID, or 0 for the global default.
+     * @return array [subject, body]
+     */
+    private function resolve_email_content($product_id) {
+        $default_subject = get_option('qr_tracker_welcome_email_subject', 'Welcome to the Advent Tree Network!');
+
+        $subject = $default_subject;
+        $body    = get_option('qr_tracker_welcome_email_body', '');
+
+        $product_id = (int) $product_id;
+        if ($product_id > 0) {
+            $overrides = get_option('qr_tracker_product_emails', []);
+            if (is_array($overrides) && isset($overrides[$product_id]) && is_array($overrides[$product_id])) {
+                $override = $overrides[$product_id];
+                if (!empty($override['subject'])) {
+                    $subject = $override['subject'];
+                }
+                if (!empty($override['body'])) {
+                    $body = $override['body'];
+                }
+            }
+        }
+
+        if (empty($subject)) {
+            $subject = $default_subject;
+        }
+        if (empty($body)) {
+            $body = $this->get_default_template();
+        }
+
+        return [$subject, $body];
     }
 
     /**

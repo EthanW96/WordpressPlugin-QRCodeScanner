@@ -506,6 +506,10 @@ class QRCodeTracker_DB {
 
             delete_option('qr_tracker_delete_on_uninstall');
             delete_option('qr_tracker_tree_product_ids');
+            delete_option('qr_tracker_welcome_email_enabled');
+            delete_option('qr_tracker_welcome_email_subject');
+            delete_option('qr_tracker_welcome_email_body');
+            delete_option('qr_tracker_product_emails');
         }
     }
 } 
