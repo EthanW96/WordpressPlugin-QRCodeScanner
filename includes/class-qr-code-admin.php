@@ -738,7 +738,7 @@ class QRCodeTracker_Admin {
                     <tr><th><label for="qr_message_2">Message 2 (HTML):</label></th>
                         <td>'; wp_editor('', 'qr_message_2', ['textarea_rows' => 5]); echo '<p class="description"><strong>Button Shortcode:</strong> <code>[qr_message_2_button url="https://example.com" label="Read More"]</code> - Use this shortcode within your message content to add a button with custom URL and label.</p><p class="description"><strong>Shortcode:</strong> <code>[qr_tracker_message_2]</code> - Use this shortcode in your WordPress pages/posts to display this message when someone scans the QR code.</p></td></tr>
                     <tr><th><label for="qr_show_popup">Show Popup:</label></th>
-                        <td><input type="checkbox" name="qr_show_popup" id="qr_show_popup" value="1" checked> <label for="qr_show_popup">Display popup with messages when QR code is scanned</label><p class="description">If checked, a popup will appear showing both messages when someone scans this QR code.</p></td></tr>
+                        <td><input type="checkbox" name="qr_show_popup" id="qr_show_popup" value="1"> <label for="qr_show_popup">Display popup with messages when QR code is scanned</label><p class="description">If checked, a popup will appear showing both messages when someone scans this QR code.</p></td></tr>
                     <tr><th><label for="qr_shop_link">Shop Link:</label></th>
                         <td><input type="url" name="qr_shop_link" id="qr_shop_link" placeholder="https://example.com/shop"><p class="description">URL to your shop. Leave empty to use default from settings.</p></td></tr>
                     <tr><th><label for="qr_shop_logo">Shop Logo URL:</label></th>

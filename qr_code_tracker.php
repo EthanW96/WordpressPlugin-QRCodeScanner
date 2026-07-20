@@ -55,7 +55,8 @@ class QRCodeTracker {
     private const A3_ID_FONT_RATIO            = 0.008; // short_code label height, fraction of canvas height
     private const A3_QR_RENDER_SCALE          = 20;    // native QR px-per-module before scaling to fit
     private const A3_TITLE_LINES              = ['Merry', 'Christmas'];
-    private const A3_FONT_RELATIVE_PATH       = '/assets/fonts/Fredoka-Regular.ttf';
+    private const A3_TITLE_FONT_RELATIVE_PATH = '/assets/fonts/Quicksand-Bold.ttf'; // "Merry Christmas" title face
+    private const A3_FONT_RELATIVE_PATH       = '/assets/fonts/Fredoka-Regular.ttf'; // short_code identifier face
 
     private $main_table;
     private $log_table;
@@ -603,6 +604,10 @@ class QRCodeTracker {
                 'eccLevel'       => QRCode::ECC_H,
                 'scale'          => self::A3_QR_RENDER_SCALE,
                 'returnResource' => true,
+                // No built-in quiet zone: the white A3 canvas around the code
+                // already provides the surrounding quiet space, so the printed
+                // QR sits flush with no extra padding border.
+                'addQuietzone'   => false,
             ]);
             $qrcode   = new QRCode($options);
             $resource = $qrcode->render($url);
@@ -656,6 +661,14 @@ class QRCodeTracker {
             return null;
         }
 
+        // Title uses Quicksand Bold; fall back to the identifier font if it's
+        // missing so the sheet still renders (logged rather than failing outright).
+        $title_font_path = __DIR__ . self::A3_TITLE_FONT_RELATIVE_PATH;
+        if (!is_readable($title_font_path)) {
+            error_log('QR Tracker: A3 title font missing at ' . $title_font_path . ' - falling back to ' . $font_path);
+            $title_font_path = $font_path;
+        }
+
         $canvas_width  = (int) round(self::A3_WIDTH_MM  / 25.4 * self::A3_PRINT_DPI);
         $canvas_height = (int) round(self::A3_HEIGHT_MM / 25.4 * self::A3_PRINT_DPI);
 
@@ -677,17 +690,17 @@ class QRCodeTracker {
         $target_text_width = $canvas_width - (2 * $margin);
 
         // --- Title: one entry per line, centred, auto-sized so the widest line fits. ---
-        $title_font_size = $this->fit_font_to_width($font_path, self::A3_TITLE_LINES, $target_text_width);
+        $title_font_size = $this->fit_font_to_width($title_font_path, self::A3_TITLE_LINES, $target_text_width);
         $line_spacing    = (int) round($title_font_size * self::A3_TITLE_LINE_SPACING_RATIO);
         $cursor_y        = $margin; // top of the title block
 
         foreach (self::A3_TITLE_LINES as $line) {
-            $bbox        = imagettfbbox($title_font_size, 0, $font_path, $line);
+            $bbox        = imagettfbbox($title_font_size, 0, $title_font_path, $line);
             $text_width  = abs($bbox[2] - $bbox[0]);
             $text_height = abs($bbox[7] - $bbox[1]);
             $draw_x      = (int) round(($canvas_width - $text_width) / 2) - $bbox[0];
             $baseline_y  = $cursor_y + $text_height;
-            imagettftext($canvas, $title_font_size, 0, $draw_x, $baseline_y, $black, $font_path, $line);
+            imagettftext($canvas, $title_font_size, 0, $draw_x, $baseline_y, $black, $title_font_path, $line);
             $cursor_y = $baseline_y + $line_spacing;
         }
 
