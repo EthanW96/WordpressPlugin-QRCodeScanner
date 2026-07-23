@@ -1033,7 +1033,7 @@ class QRCodeTracker_Admin {
             return;
         }
         
-        $plugin_version = '1.0.3';
+        $plugin_version = '1.0.4';
         if (isset($_POST['qr_tracker_settings_submit'])) {
             // Check manage settings permission
             if (!QRCodeTracker_Permissions::can_manage_settings()) {
@@ -1109,6 +1109,9 @@ class QRCodeTracker_Admin {
             if (is_object($this->tracker) && method_exists($this->tracker, 'reset_tree_checkout_field_override_cache')) {
                 $this->tracker->reset_tree_checkout_field_override_cache();
             }
+
+            // Scan popup default for newly purchased trees.
+            update_option('qr_tracker_purchase_popup_default', isset($_POST['qr_tracker_purchase_popup_default']) ? 1 : 0);
 
             // Welcome email settings
             update_option('qr_tracker_welcome_email_enabled', isset($_POST['qr_tracker_welcome_email_enabled']) ? 1 : 0);
@@ -1353,6 +1356,17 @@ class QRCodeTracker_Admin {
         echo '<p class="description">These are native WooCommerce product option fields displayed through product setup or theme configuration and are not managed by QR Tracker field layout.</p>';
         echo '</td></tr>';
         echo '</table>';
+
+        // ── Tree Purchase Defaults ──────────────────────────────────────────────
+        $purchase_popup_default = (int) get_option('qr_tracker_purchase_popup_default', 0);
+        $this->drawer_open( 'qr-drawer-settings-purchase-defaults', 'Tree Purchase Defaults' );
+        echo '<table class="form-table">';
+        echo '<tr><th scope="row">Scan Popup on New Purchases</th><td>';
+        echo '<label><input type="checkbox" name="qr_tracker_purchase_popup_default" value="1"' . checked($purchase_popup_default, 1, false) . '> Show the scan popup by default on trees created from a purchase</label>';
+        echo '<p class="description">Applies only to newly purchased trees. You can still turn the popup on/off per tree from its Edit screen, and existing trees are unaffected. (The popup also requires both Message 1 and Message 2 to be filled in.)</p>';
+        echo '</td></tr>';
+        echo '</table>';
+        $this->drawer_close();
 
         // ── Welcome Email Settings ──────────────────────────────────────────────
         $welcome_email_enabled = (int) get_option('qr_tracker_welcome_email_enabled', 1);
