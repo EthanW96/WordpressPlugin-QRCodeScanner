@@ -58,6 +58,10 @@ class QRCodeTracker {
     private const A3_TITLE_FONT_RELATIVE_PATH = '/assets/fonts/Quicksand-Bold.ttf'; // "Merry Christmas" title face
     private const A3_FONT_RELATIVE_PATH       = '/assets/fonts/Fredoka-Regular.ttf'; // short_code identifier face
 
+    // Message 2 combined button ([qr_tracker_message_2_button]).
+    private const MESSAGE_2_BUTTON_DEFAULT_LABEL = 'Click Here';
+    private const MESSAGE_2_BUTTON_STYLE         = 'background-color: #af691c;color: white;font-size: 14px';
+
     private $main_table;
     private $log_table;
     private $access_requests_table;
@@ -107,6 +111,7 @@ class QRCodeTracker {
         add_action('wp_footer', [$this, 'render_visit_debug_message'], 99);
         add_shortcode('qr_tracker_message_1', [$this, 'shortcode_message_1']);
         add_shortcode('qr_tracker_message_2', [$this, 'shortcode_message_2']);
+        add_shortcode('qr_tracker_message_2_button', [$this, 'shortcode_message_2_button_combined']);
         add_shortcode('qr_tracker_shop_link', [$this, 'shortcode_shop_link']);
         add_action('admin_action_qr_tracker_download_qr', [$this, 'handle_download_qr']);
         add_action('init', [$this, 'handle_public_qr_image_request'], 1);
@@ -512,6 +517,53 @@ class QRCodeTracker {
             return do_shortcode($tracker->message_2);
         }
         return do_shortcode('Thanks for visiting! But don\'t stop — there\'s more to discover. Continue the journey above, request a free booklet, or send us a question or comment and we\'ll be in touch.');
+    }
+
+    /**
+     * Combined shortcode [qr_tracker_message_2_button]: renders Message 2 followed
+     * by a button linking to the scanned tree's Church / Organisation Website.
+     *
+     * Both the link and label are supplied automatically from the current tracker,
+     * so no attributes are required. Optional overrides:
+     *   [qr_tracker_message_2_button label="Read More"]
+     *   [qr_tracker_message_2_button url="https://example.com"]
+     */
+    public function shortcode_message_2_button_combined($atts = []) {
+        $atts = shortcode_atts([
+            'url'   => '',
+            'label' => self::MESSAGE_2_BUTTON_DEFAULT_LABEL,
+        ], $atts, 'qr_tracker_message_2_button');
+
+        // Part 1: the Message 2 content (mirrors [qr_tracker_message_2]).
+        $message_html = $this->shortcode_message_2();
+
+        // Part 2: resolve the button URL — an explicit attribute wins, otherwise
+        // pull the Church / Organisation Website from the current tracker.
+        $url = trim((string) $atts['url']);
+        if ($url === '') {
+            $tracker = $this->get_current_tracker();
+            if ($tracker && !empty($tracker->church_org_website)) {
+                $url = (string) $tracker->church_org_website;
+            }
+        }
+
+        // With no destination, output the message alone rather than a dead button.
+        if ($url === '') {
+            return $message_html;
+        }
+
+        $label = ($atts['label'] !== '') ? $atts['label'] : self::MESSAGE_2_BUTTON_DEFAULT_LABEL;
+
+        $button_html = sprintf(
+            '<p style="margin:12px 0;">'
+                . '<a class="button qr-message-2-button" style="%1$s" href="%2$s" target="_blank" rel="noopener noreferrer">%3$s</a>'
+                . '</p>',
+            esc_attr(self::MESSAGE_2_BUTTON_STYLE),
+            esc_url($url),
+            esc_html($label)
+        );
+
+        return $message_html . $button_html;
     }
 
     public function shortcode_shop_link($atts = []) {
