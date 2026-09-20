@@ -2621,13 +2621,17 @@ window.showRollupDayChart = function() {
             $description = sanitize_textarea_field($_POST['team_description']);
             $city = sanitize_text_field($_POST['team_city']);
             $is_private = isset($_POST['team_is_private']) ? 1 : 0;
-            $prefill_message_1 = isset($_POST['team_prefill_message_1']) ? wp_kses_post(wp_unslash($_POST['team_prefill_message_1'])) : '';
-            $lock_message_1    = isset($_POST['team_lock_message_1']) ? 1 : 0;
-            $prefill_message_2 = isset($_POST['team_prefill_message_2']) ? wp_kses_post(wp_unslash($_POST['team_prefill_message_2'])) : '';
-            $lock_message_2    = isset($_POST['team_lock_message_2']) ? 1 : 0;
+            $prefill_settings = [
+                'prefill_message_1'          => isset($_POST['team_prefill_message_1']) ? wp_kses_post(wp_unslash($_POST['team_prefill_message_1'])) : '',
+                'lock_message_1'             => isset($_POST['team_lock_message_1']) ? 1 : 0,
+                'prefill_message_2'          => isset($_POST['team_prefill_message_2']) ? wp_kses_post(wp_unslash($_POST['team_prefill_message_2'])) : '',
+                'lock_message_2'             => isset($_POST['team_lock_message_2']) ? 1 : 0,
+                'prefill_church_org_website' => isset($_POST['team_prefill_church_org_website']) ? esc_url_raw(wp_unslash($_POST['team_prefill_church_org_website'])) : '',
+                'lock_church_org_website'    => isset($_POST['team_lock_church_org_website']) ? 1 : 0,
+            ];
 
             if (!empty($name) && $this->teams->user_can_manage_team(get_current_user_id(), $team_id)) {
-                $result = $this->teams->update_team($team_id, $name, $description, $city, $is_private, $prefill_message_1, $lock_message_1, $prefill_message_2, $lock_message_2);
+                $result = $this->teams->update_team($team_id, $name, $description, $city, $is_private, $prefill_settings);
                 if ($result !== false) {
                     echo '<div class="updated"><p>Team updated successfully.</p></div>';
                 } else {
@@ -2903,6 +2907,7 @@ window.showRollupDayChart = function() {
                 $private_checked  = !empty($team->is_private)    ? ' checked' : '';
                 $lock1_checked    = !empty($team->lock_message_1) ? ' checked' : '';
                 $lock2_checked    = !empty($team->lock_message_2) ? ' checked' : '';
+                $lock_website_checked = !empty($team->lock_church_org_website) ? ' checked' : '';
                 $this->drawer_open( 'qr-drawer-teams-edit-team', 'Edit Team: ' . $team->name, true );
                 ?>
                 <form method="post" style="max-width: 800px;">
@@ -2973,6 +2978,22 @@ window.showRollupDayChart = function() {
                                 <label style="display:block; margin-top: 8px;">
                                     <input type="checkbox" name="team_lock_message_2" value="1"<?php echo $lock2_checked; ?>>
                                     <strong>Lock this message</strong> — purchasers will see it but cannot edit it.
+                                    Leave unchecked to prefill it but allow edits.
+                                </label>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="team_prefill_church_org_website">Church / Organisation Website Link:</label></th>
+                            <td>
+                                <input type="url" name="team_prefill_church_org_website" id="team_prefill_church_org_website"
+                                       value="<?php echo esc_attr($team->prefill_church_org_website ?? ''); ?>"
+                                       placeholder="https://example.com" style="width: 100%;">
+                                <p class="description" style="margin-top: 6px;">
+                                    Leave blank to let the purchaser enter their own link.
+                                </p>
+                                <label style="display:block; margin-top: 8px;">
+                                    <input type="checkbox" name="team_lock_church_org_website" value="1"<?php echo $lock_website_checked; ?>>
+                                    <strong>Lock this link</strong> — purchasers will see it but cannot edit it.
                                     Leave unchecked to prefill it but allow edits.
                                 </label>
                             </td>

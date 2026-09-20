@@ -1895,6 +1895,8 @@ class QRCodeTracker {
                         'lock_1'    => !empty($team->lock_message_1),
                         'message_2' => isset($team->prefill_message_2) ? $team->prefill_message_2 : '',
                         'lock_2'    => !empty($team->lock_message_2),
+                        'website'      => isset($team->prefill_church_org_website) ? $team->prefill_church_org_website : '',
+                        'lock_website' => !empty($team->lock_church_org_website),
                     ];
                 }
             }
@@ -1916,15 +1918,17 @@ class QRCodeTracker {
         echo 'if(firstNameInput){firstNameInput.disabled=!showFields;}';
         echo 'if(lastNameInput){lastNameInput.disabled=!showFields;}';
         echo '}';
-        echo 'function applyPrefillToField(textarea,value,locked){';
-        echo 'if(!textarea){return;}';
-        echo 'if(value!==""){textarea.value=value;}else{textarea.value="";}';
-        echo 'textarea.readOnly=!!(value!==""&&locked);';
-        echo 'textarea.style.background=(value!==""&&locked)?"#f0f0f0":"";';
-        echo 'var desc=textarea.closest(".form-row")||textarea.parentNode;';
-        echo 'var hint=desc?desc.querySelector(".description"):null;';
+        echo 'function applyPrefillToField(field,value,locked,noun){';
+        echo 'if(!field){return;}';
+        echo 'if(value!==""){field.value=value;}else{field.value="";}';
+        echo 'field.readOnly=!!(value!==""&&locked);';
+        echo 'field.style.background=(value!==""&&locked)?"#f0f0f0":"";';
+        echo 'var row=field.closest(".form-row")||field.parentNode;';
+        echo 'var hint=row?row.querySelector(".description"):null;';
+        echo 'if(hint&&value===""&&hint.dataset.qrPrefillHint==="1"){hint.parentNode.removeChild(hint);hint=null;}';
+        echo 'if(!hint&&row&&value!==""){hint=document.createElement("span");hint.className="description";hint.dataset.qrPrefillHint="1";row.appendChild(hint);}';
         echo 'if(hint){';
-        echo 'if(value!==""&&locked){hint.textContent="This message has been set by your organisation and cannot be changed.";}';
+        echo 'if(value!==""&&locked){hint.textContent="This "+noun+" has been set by your organisation and cannot be changed.";}';
         echo 'else if(value!==""){hint.textContent="Pre-filled by your organisation — you may edit this.";}';
         echo '}';
         echo '}';
@@ -1935,8 +1939,10 @@ class QRCodeTracker {
         echo 'var prefill=teamPrefills[selectedTeam]||null;';
         echo 'var msg1=document.querySelector("textarea[name=\"qr_tree_message_1\"]");';
         echo 'var msg2=document.querySelector("textarea[name=\"qr_tree_message_2\"]");';
-        echo 'applyPrefillToField(msg1,prefill?prefill.message_1:"",prefill?prefill.lock_1:false);';
-        echo 'applyPrefillToField(msg2,prefill?prefill.message_2:"",prefill?prefill.lock_2:false);';
+        echo 'var website=document.querySelector("input[name=\"church_org_website\"]");';
+        echo 'applyPrefillToField(msg1,prefill?prefill.message_1:"",prefill?prefill.lock_1:false,"message");';
+        echo 'applyPrefillToField(msg2,prefill?prefill.message_2:"",prefill?prefill.lock_2:false,"message");';
+        echo 'applyPrefillToField(website,prefill?prefill.website:"",prefill?prefill.lock_website:false,"link");';
         echo '}';
         echo 'function updatePayForwardContactVisibility(){';
         echo 'var payForwardTypeField=document.querySelector("select[name=\"pay_forward_type\"]");';
@@ -2078,12 +2084,32 @@ class QRCodeTracker {
                 }
                 break;
             case 'church_org_website':
-                $this->render_customizable_tree_form_field('church_org_website', [
-                    'type'        => 'text',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Church / Organisation Website Link',
-                    'placeholder' => 'https://example.com',
-                ], $this->get_tree_field_value_from_request('church_org_website'));
+                $team_prefill = $this->get_selected_team_prefill();
+                $prefill_website = ($team_prefill && isset($team_prefill->prefill_church_org_website)) ? $team_prefill->prefill_church_org_website : '';
+                if ($prefill_website !== '' && !empty($team_prefill->lock_church_org_website)) {
+                    $this->render_customizable_tree_form_field('church_org_website', [
+                        'type'              => 'text',
+                        'class'             => ['form-row-wide'],
+                        'label'             => 'Church / Organisation Website Link',
+                        'custom_attributes' => ['readonly' => 'readonly'],
+                        'description'       => 'This link has been set by your organisation and cannot be changed.',
+                    ], $prefill_website);
+                } elseif ($prefill_website !== '') {
+                    $this->render_customizable_tree_form_field('church_org_website', [
+                        'type'        => 'text',
+                        'class'       => ['form-row-wide'],
+                        'label'       => 'Church / Organisation Website Link',
+                        'placeholder' => 'https://example.com',
+                        'description' => 'Pre-filled by your organisation — you may edit this.',
+                    ], $this->get_tree_field_value_from_request('church_org_website', $prefill_website));
+                } else {
+                    $this->render_customizable_tree_form_field('church_org_website', [
+                        'type'        => 'text',
+                        'class'       => ['form-row-wide'],
+                        'label'       => 'Church / Organisation Website Link',
+                        'placeholder' => 'https://example.com',
+                    ], $this->get_tree_field_value_from_request('church_org_website'));
+                }
                 break;
             case 'pay_forward_type':
                 $this->render_customizable_tree_form_field('pay_forward_type', [
