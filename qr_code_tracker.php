@@ -2,7 +2,7 @@
 /*
 Plugin Name: QR Code Tracker
 Description: Generate and track QR code links with query strings, including scan tracking and postcode rollups, plus dynamic HTML messages via shortcodes.
-Version: 1.0.4
+Version: 1.0.5
 Author: Ethan Widen
 */
 
@@ -62,6 +62,10 @@ class QRCodeTracker {
     private const MESSAGE_2_BUTTON_DEFAULT_LABEL = 'Click Here';
     private const MESSAGE_2_BUTTON_STYLE         = 'background-color: #af691c;color: white;font-size: 14px';
 
+    // Notices shown under a tree message field that a team has prefilled.
+    private const MESSAGE_LOCKED_NOTICE    = 'This message has been set by your organisation and cannot be changed.';
+    private const MESSAGE_PREFILLED_NOTICE = 'Pre-filled by your organisation — you may edit this.';
+
     private $main_table;
     private $log_table;
     private $access_requests_table;
@@ -77,6 +81,7 @@ class QRCodeTracker {
     private $tree_checkout_field_overrides_cache = null;
     private $tree_individual_fields_toggle_script_printed = false;
     private $tree_field_description_visibility_style_printed = false;
+    private $tree_message_editor_support_printed = false;
 
     public function __construct() {
         global $wpdb;
@@ -1918,32 +1923,90 @@ class QRCodeTracker {
         echo 'if(firstNameInput){firstNameInput.disabled=!showFields;}';
         echo 'if(lastNameInput){lastNameInput.disabled=!showFields;}';
         echo '}';
-        echo 'function applyPrefillToField(field,value,locked,noun){';
+        echo 'var LOCKED_NOTICE=' . wp_json_encode(self::MESSAGE_LOCKED_NOTICE) . ';';
+        echo 'var PREFILLED_NOTICE=' . wp_json_encode(self::MESSAGE_PREFILLED_NOTICE) . ';';
+        // TinyMCE 4.6 replaced setMode() with mode.set(); support both, and
+        // never let a failure here stop the rest of the fields updating.
+        echo 'function setEditorReadOnly(editor,isLocked){';
+        echo 'var mode=isLocked?"readonly":"design";';
+        echo 'try{';
+        echo 'if(editor.mode&&typeof editor.mode.set==="function"){editor.mode.set(mode);}';
+        echo 'else if(typeof editor.setMode==="function"){editor.setMode(mode);}';
+        echo '}catch(e){}';
+        echo '}';
+        // The website link is a plain input, so it keeps the simple readonly
+        // treatment. Only the message fields are editors.
+        echo 'function applyPrefillToInputField(field,value,locked,noun){';
         echo 'if(!field){return;}';
-        echo 'if(value!==""){field.value=value;}else{field.value="";}';
-        echo 'field.readOnly=!!(value!==""&&locked);';
-        echo 'field.style.background=(value!==""&&locked)?"#f0f0f0":"";';
+        echo 'field.value=value||"";';
+        echo 'var isLocked=!!(value!==""&&locked);';
+        echo 'field.readOnly=isLocked;';
+        echo 'field.style.background=isLocked?"#f0f0f0":"";';
         echo 'var row=field.closest(".form-row")||field.parentNode;';
         echo 'var hint=row?row.querySelector(".description"):null;';
         echo 'if(hint&&value===""&&hint.dataset.qrPrefillHint==="1"){hint.parentNode.removeChild(hint);hint=null;}';
         echo 'if(!hint&&row&&value!==""){hint=document.createElement("span");hint.className="description";hint.dataset.qrPrefillHint="1";row.appendChild(hint);}';
         echo 'if(hint){';
-        echo 'if(value!==""&&locked){hint.textContent="This "+noun+" has been set by your organisation and cannot be changed.";}';
-        echo 'else if(value!==""){hint.textContent="Pre-filled by your organisation — you may edit this.";}';
+        echo 'if(isLocked){hint.textContent="This "+noun+" has been set by your organisation and cannot be changed.";}';
+        echo 'else if(value!==""){hint.textContent=PREFILLED_NOTICE;}';
         echo '}';
+        echo '}';
+        // Message fields are TinyMCE editors, so set their content through the
+        // editor when it is up and fall back to the raw textarea when it is not.
+        echo 'function applyPrefillToMessageField(fieldId,value,locked){';
+        echo 'var textarea=document.getElementById(fieldId);';
+        echo 'if(!textarea){return;}';
+        echo 'var isLocked=!!(value!==""&&locked);';
+        echo 'var editor=(window.tinymce&&window.tinymce.get)?window.tinymce.get(fieldId):null;';
+        echo 'if(editor&&!editor.isHidden()){';
+        echo 'editor.setContent(value||"");';
+        echo 'setEditorReadOnly(editor,isLocked);';
+        echo '}else{';
+        echo 'textarea.value=value||"";';
+        echo 'textarea.readOnly=isLocked;';
+        echo '}';
+        echo 'var row=document.getElementById(fieldId+"_field")||textarea.closest(".form-row");';
+        echo 'if(!row){return;}';
+        echo 'row.classList.toggle("qr-tree-message-locked",isLocked);';
+        // The preview stands in for the editor while the message is locked, so
+        // it carries the same sanitised HTML the editor holds.
+        echo 'var preview=row.querySelector(".qr-tree-message-preview");';
+        echo 'if(preview){preview.innerHTML=value||"";}';
+        echo 'var hint=row.querySelector(".description");';
+        echo 'if(!hint){return;}';
+        echo 'if(isLocked){hint.textContent=LOCKED_NOTICE;hint.style.display="";}';
+        echo 'else if(value!==""){hint.textContent=PREFILLED_NOTICE;hint.style.display="";}';
+        // The fallback is the field's own description, stored as sanitised
+        // HTML, so it goes back in as markup rather than as text.
+        echo 'else{var fallback=row.getAttribute("data-qr-default-description")||"";hint.innerHTML=fallback;hint.style.display=fallback===""?"none":"";}';
         echo '}';
         echo 'function updateTeamPrefillFields(){';
         echo 'var purchaserTypeField=document.querySelector("select[name=\"purchaser_type\"]");';
         echo 'if(!purchaserTypeField){return;}';
         echo 'var selectedTeam=purchaserTypeField.value;';
         echo 'var prefill=teamPrefills[selectedTeam]||null;';
-        echo 'var msg1=document.querySelector("textarea[name=\"qr_tree_message_1\"]");';
-        echo 'var msg2=document.querySelector("textarea[name=\"qr_tree_message_2\"]");';
+        // Each field is updated independently so a failure on one cannot stop
+        // the others from being filled in.
+        echo 'try{applyPrefillToMessageField("qr_tree_message_1",prefill?prefill.message_1:"",prefill?prefill.lock_1:false);}catch(e){}';
+        echo 'try{applyPrefillToMessageField("qr_tree_message_2",prefill?prefill.message_2:"",prefill?prefill.lock_2:false);}catch(e){}';
+        echo 'try{';
         echo 'var website=document.querySelector("input[name=\"church_org_website\"]");';
-        echo 'applyPrefillToField(msg1,prefill?prefill.message_1:"",prefill?prefill.lock_1:false,"message");';
-        echo 'applyPrefillToField(msg2,prefill?prefill.message_2:"",prefill?prefill.lock_2:false,"message");';
-        echo 'applyPrefillToField(website,prefill?prefill.website:"",prefill?prefill.lock_website:false,"link");';
+        echo 'applyPrefillToInputField(website,prefill?prefill.website:"",prefill?prefill.lock_website:false,"link");';
+        echo '}catch(e){}';
         echo '}';
+        // The server already rendered the right content and notice; this only
+        // has to put an already-locked editor into readonly mode once TinyMCE
+        // has initialised, which happens after this script runs.
+        echo 'function lockInitialMessageEditors(){';
+        echo 'if(!window.tinymce||!window.tinymce.get){return;}';
+        echo 'var rows=document.querySelectorAll(".qr-tree-message-locked[data-qr-message-field]");';
+        echo 'for(var i=0;i<rows.length;i++){';
+        echo 'var editor=window.tinymce.get(rows[i].getAttribute("data-qr-message-field"));';
+        echo 'if(editor&&!editor.isHidden()){setEditorReadOnly(editor,true);}';
+        echo '}';
+        echo '}';
+        echo 'if(window.jQuery){window.jQuery(window).on("load",lockInitialMessageEditors);}';
+        echo 'else{window.addEventListener("load",lockInitialMessageEditors);}';
         echo 'function updatePayForwardContactVisibility(){';
         echo 'var payForwardTypeField=document.querySelector("select[name=\"pay_forward_type\"]");';
         echo 'var contactWrapper=document.getElementById("pay_forward_contact_field");';
@@ -1996,6 +2059,123 @@ class QRCodeTracker {
         woocommerce_form_field($field_key, $args, $value);
     }
 
+    /**
+     * Render a tree message field as a rich-text editor.
+     *
+     * Team prefills are authored in wp_editor and therefore contain HTML. A
+     * plain textarea would show that markup to the customer as literal tags,
+     * so these two fields use an editor: the formatting renders, and the
+     * customer can still edit it unless the team locked the message.
+     *
+     * @param string $field_key   Form field name (also the editor id).
+     * @param string $prefill_key Team column holding the prefill HTML.
+     * @param string $lock_key    Team column holding the lock flag.
+     * @param string $label       Default field label.
+     */
+    private function render_tree_message_field($field_key, $prefill_key, $lock_key, $label) {
+        $team_prefill = $this->get_selected_team_prefill();
+        $prefill      = ($team_prefill && isset($team_prefill->$prefill_key)) ? (string) $team_prefill->$prefill_key : '';
+        $has_prefill  = $prefill !== '';
+        $is_locked    = $has_prefill && !empty($team_prefill->$lock_key);
+
+        if ($is_locked) {
+            $value       = $prefill;
+            $description = self::MESSAGE_LOCKED_NOTICE;
+        } elseif ($has_prefill) {
+            $value       = $this->get_tree_field_value_from_request($field_key, $prefill);
+            $description = self::MESSAGE_PREFILLED_NOTICE;
+        } else {
+            $value       = $this->get_tree_field_value_from_request($field_key);
+            $description = '';
+        }
+
+        $label = $this->get_tree_field_label($field_key, $label);
+        // The unprefilled description doubles as the fallback the team-switch
+        // script restores when the customer moves back to a team with no prefill.
+        $default_description = $this->get_tree_field_description($field_key, '');
+        // An admin description override still wins over the prefill notices.
+        $description = $this->get_tree_field_description($field_key, $description);
+
+        $wrapper_classes = 'form-row form-row-wide qr-tree-message-field';
+        if ($is_locked) {
+            $wrapper_classes .= ' qr-tree-message-locked';
+        }
+
+        // A div, not the usual <p class="form-row">: the editor emits block
+        // markup, which a browser would force out of an open paragraph.
+        echo '<div class="' . esc_attr($wrapper_classes) . '" id="' . esc_attr($field_key) . '_field"'
+            . ' data-qr-message-field="' . esc_attr($field_key) . '"'
+            . ' data-qr-default-description="' . esc_attr($default_description) . '">';
+        echo '<label for="' . esc_attr($field_key) . '">' . esc_html($label) . '</label>';
+        echo '<span class="woocommerce-input-wrapper">';
+
+        wp_editor($value, $field_key, [
+            'textarea_name' => $field_key,
+            'textarea_rows' => 5,
+            'media_buttons' => false,
+            'teeny'         => true,
+            'quicktags'     => false,
+            'tinymce'       => [
+                'toolbar1' => 'bold,italic,underline,bullist,link,unlink,undo,redo',
+                'toolbar2' => '',
+            ],
+        ]);
+
+        // wp_kses_post, not esc_html: descriptions are stored as sanitised HTML
+        // and woocommerce_form_field() renders them the same way.
+        // Shown instead of the editor when the message is locked: a readonly
+        // TinyMCE swallows clicks, so links inside it would be dead.
+        echo '<div class="qr-tree-message-preview">' . wp_kses_post($value) . '</div>';
+
+        echo '<span class="description"' . ($description === '' ? ' style="display:none;"' : '') . '>' . wp_kses_post($description) . '</span>';
+        echo '</span></div>';
+
+        $this->render_tree_message_editor_support();
+    }
+
+    /**
+     * Print the styles and scripts the message editors need on the front end.
+     *
+     * Locked editors are put into TinyMCE's readonly mode and stripped of
+     * their chrome so they read as rendered text rather than an input. The
+     * submit hooks flush TinyMCE back into its textarea, which WooCommerce
+     * needs for both the product form POST and the AJAX checkout.
+     */
+    private function render_tree_message_editor_support() {
+        if ($this->tree_message_editor_support_printed) {
+            return;
+        }
+
+        $this->tree_message_editor_support_printed = true;
+
+        if (function_exists('wp_enqueue_editor')) {
+            wp_enqueue_editor();
+        }
+
+        echo '<style>';
+        echo '.qr-tree-message-field{margin-bottom:18px;}';
+        echo '.qr-tree-message-field>label{display:block;margin-bottom:6px;font-weight:600;}';
+        echo '.qr-tree-message-field .wp-editor-container{border:1px solid #ddd;background:#fff;}';
+        // The locked message is the content of the field, so it gets a quiet
+        // panel of its own rather than sitting flush against label and notice.
+        echo '.qr-tree-message-preview{display:none;padding:12px 14px;background:rgba(0,0,0,.03);';
+        echo 'border-left:3px solid rgba(0,0,0,.18);border-radius:3px;line-height:1.5;}';
+        echo '.qr-tree-message-preview>:first-child{margin-top:0;}';
+        echo '.qr-tree-message-preview>:last-child{margin-bottom:0;}';
+        echo '.qr-tree-message-locked .wp-editor-wrap{display:none;}';
+        echo '.qr-tree-message-locked .qr-tree-message-preview{display:block;}';
+        echo '.qr-tree-message-field .description{display:block;margin-top:6px;font-size:.875em;opacity:.7;}';
+        echo '</style>';
+
+        echo '<script>';
+        echo '(function(){';
+        echo 'function flushEditors(){if(window.tinymce&&window.tinymce.triggerSave){window.tinymce.triggerSave();}}';
+        echo 'document.addEventListener("submit",flushEditors,true);';
+        echo 'if(window.jQuery){window.jQuery(document.body).on("checkout_place_order",function(){flushEditors();return true;});}';
+        echo '})();';
+        echo '</script>';
+    }
+
     private function render_tree_checkout_field($field_key) {
         switch ($field_key) {
             case 'purchaser_type':
@@ -2030,58 +2210,10 @@ class QRCodeTracker {
                 ], $this->get_tree_field_value_from_request('qr_tree_city'));
                 break;
             case 'qr_tree_message_1':
-                $team_prefill = $this->get_selected_team_prefill();
-                $has_prefill_1 = $team_prefill && isset($team_prefill->prefill_message_1) && $team_prefill->prefill_message_1 !== '';
-                if ($has_prefill_1 && !empty($team_prefill->lock_message_1)) {
-                    $this->render_customizable_tree_form_field('qr_tree_message_1', [
-                        'type'              => 'textarea',
-                        'class'             => ['form-row-wide'],
-                        'label'             => 'Message 1',
-                        'custom_attributes' => ['readonly' => 'readonly'],
-                        'description'       => 'This message has been set by your organisation and cannot be changed.',
-                    ], $team_prefill->prefill_message_1);
-                } elseif ($has_prefill_1) {
-                    $this->render_customizable_tree_form_field('qr_tree_message_1', [
-                        'type'        => 'textarea',
-                        'class'       => ['form-row-wide'],
-                        'label'       => 'Message 1',
-                        'description' => 'Pre-filled by your organisation — you may edit this.',
-                    ], $this->get_tree_field_value_from_request('qr_tree_message_1', $team_prefill->prefill_message_1));
-                } else {
-                    $this->render_customizable_tree_form_field('qr_tree_message_1', [
-                        'type'        => 'textarea',
-                        'class'       => ['form-row-wide'],
-                        'label'       => 'Message 1',
-                        'description' => 'Suggestion: "Merry Christmas from [Name]!"',
-                    ], $this->get_tree_field_value_from_request('qr_tree_message_1'));
-                }
+                $this->render_tree_message_field('qr_tree_message_1', 'prefill_message_1', 'lock_message_1', 'Message 1');
                 break;
             case 'qr_tree_message_2':
-                $team_prefill = $this->get_selected_team_prefill();
-                $has_prefill_2 = $team_prefill && isset($team_prefill->prefill_message_2) && $team_prefill->prefill_message_2 !== '';
-                if ($has_prefill_2 && !empty($team_prefill->lock_message_2)) {
-                    $this->render_customizable_tree_form_field('qr_tree_message_2', [
-                        'type'              => 'textarea',
-                        'class'             => ['form-row-wide'],
-                        'label'             => 'Message 2',
-                        'custom_attributes' => ['readonly' => 'readonly'],
-                        'description'       => 'This message has been set by your organisation and cannot be changed.',
-                    ], $team_prefill->prefill_message_2);
-                } elseif ($has_prefill_2) {
-                    $this->render_customizable_tree_form_field('qr_tree_message_2', [
-                        'type'        => 'textarea',
-                        'class'       => ['form-row-wide'],
-                        'label'       => 'Message 2',
-                        'description' => 'Pre-filled by your organisation — you may edit this.',
-                    ], $this->get_tree_field_value_from_request('qr_tree_message_2', $team_prefill->prefill_message_2));
-                } else {
-                    $this->render_customizable_tree_form_field('qr_tree_message_2', [
-                        'type'        => 'textarea',
-                        'class'       => ['form-row-wide'],
-                        'label'       => 'Message 2',
-                        'description' => 'Suggestions: Click Here, Read More, Email. To render a button in Message 2, use [qr_message_2_button ...] only when that shortcode is available in your site (check with your site admin/plugin docs).',
-                    ], $this->get_tree_field_value_from_request('qr_tree_message_2'));
-                }
+                $this->render_tree_message_field('qr_tree_message_2', 'prefill_message_2', 'lock_message_2', 'Message 2');
                 break;
             case 'church_org_website':
                 $team_prefill = $this->get_selected_team_prefill();
@@ -2100,7 +2232,7 @@ class QRCodeTracker {
                         'class'       => ['form-row-wide'],
                         'label'       => 'Church / Organisation Website Link',
                         'placeholder' => 'https://example.com',
-                        'description' => 'Pre-filled by your organisation — you may edit this.',
+                        'description' => self::MESSAGE_PREFILLED_NOTICE,
                     ], $this->get_tree_field_value_from_request('church_org_website', $prefill_website));
                 } else {
                     $this->render_customizable_tree_form_field('church_org_website', [
