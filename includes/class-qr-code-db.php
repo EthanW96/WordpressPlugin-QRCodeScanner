@@ -89,6 +89,8 @@ class QRCodeTracker_DB {
             lock_message_1 TINYINT(1) DEFAULT 0,
             prefill_message_2 LONGTEXT,
             lock_message_2 TINYINT(1) DEFAULT 0,
+            prefill_church_org_website VARCHAR(255),
+            lock_church_org_website TINYINT(1) DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -264,6 +266,16 @@ class QRCodeTracker_DB {
             $wpdb->query("ALTER TABLE {$this->teams_table} ADD COLUMN lock_message_2 TINYINT(1) DEFAULT 0 AFTER prefill_message_2");
         }
 
+        // Add prefill/lock columns for the Church / Organisation Website Link
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->teams_table} LIKE 'prefill_church_org_website'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->teams_table} ADD COLUMN prefill_church_org_website VARCHAR(255) AFTER lock_message_2");
+        }
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->teams_table} LIKE 'lock_church_org_website'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->teams_table} ADD COLUMN lock_church_org_website TINYINT(1) DEFAULT 0 AFTER prefill_church_org_website");
+        }
+
         // Add created_at to main table
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'created_at'");
         if (empty($columns)) {
@@ -302,6 +314,8 @@ class QRCodeTracker_DB {
             lock_message_1 TINYINT(1) DEFAULT 0,
             prefill_message_2 LONGTEXT,
             lock_message_2 TINYINT(1) DEFAULT 0,
+            prefill_church_org_website VARCHAR(255),
+            lock_church_org_website TINYINT(1) DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),

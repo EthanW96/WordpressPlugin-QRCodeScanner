@@ -2,7 +2,7 @@
 /*
 Plugin Name: QR Code Tracker
 Description: Generate and track QR code links with query strings, including scan tracking and postcode rollups, plus dynamic HTML messages via shortcodes.
-Version: 1.0.4
+Version: 1.0.5
 Author: Ethan Widen
 */
 
@@ -1900,6 +1900,8 @@ class QRCodeTracker {
                         'lock_1'    => !empty($team->lock_message_1),
                         'message_2' => isset($team->prefill_message_2) ? $team->prefill_message_2 : '',
                         'lock_2'    => !empty($team->lock_message_2),
+                        'website'      => isset($team->prefill_church_org_website) ? $team->prefill_church_org_website : '',
+                        'lock_website' => !empty($team->lock_church_org_website),
                     ];
                 }
             }
@@ -1923,8 +1925,6 @@ class QRCodeTracker {
         echo '}';
         echo 'var LOCKED_NOTICE=' . wp_json_encode(self::MESSAGE_LOCKED_NOTICE) . ';';
         echo 'var PREFILLED_NOTICE=' . wp_json_encode(self::MESSAGE_PREFILLED_NOTICE) . ';';
-        // Message fields are TinyMCE editors, so set their content through the
-        // editor when it is up and fall back to the raw textarea when it is not.
         // TinyMCE 4.6 replaced setMode() with mode.set(); support both, and
         // never let a failure here stop the rest of the fields updating.
         echo 'function setEditorReadOnly(editor,isLocked){';
@@ -1934,7 +1934,26 @@ class QRCodeTracker {
         echo 'else if(typeof editor.setMode==="function"){editor.setMode(mode);}';
         echo '}catch(e){}';
         echo '}';
-        echo 'function applyPrefillToField(fieldId,value,locked){';
+        // The website link is a plain input, so it keeps the simple readonly
+        // treatment. Only the message fields are editors.
+        echo 'function applyPrefillToInputField(field,value,locked,noun){';
+        echo 'if(!field){return;}';
+        echo 'field.value=value||"";';
+        echo 'var isLocked=!!(value!==""&&locked);';
+        echo 'field.readOnly=isLocked;';
+        echo 'field.style.background=isLocked?"#f0f0f0":"";';
+        echo 'var row=field.closest(".form-row")||field.parentNode;';
+        echo 'var hint=row?row.querySelector(".description"):null;';
+        echo 'if(hint&&value===""&&hint.dataset.qrPrefillHint==="1"){hint.parentNode.removeChild(hint);hint=null;}';
+        echo 'if(!hint&&row&&value!==""){hint=document.createElement("span");hint.className="description";hint.dataset.qrPrefillHint="1";row.appendChild(hint);}';
+        echo 'if(hint){';
+        echo 'if(isLocked){hint.textContent="This "+noun+" has been set by your organisation and cannot be changed.";}';
+        echo 'else if(value!==""){hint.textContent=PREFILLED_NOTICE;}';
+        echo '}';
+        echo '}';
+        // Message fields are TinyMCE editors, so set their content through the
+        // editor when it is up and fall back to the raw textarea when it is not.
+        echo 'function applyPrefillToMessageField(fieldId,value,locked){';
         echo 'var textarea=document.getElementById(fieldId);';
         echo 'if(!textarea){return;}';
         echo 'var isLocked=!!(value!==""&&locked);';
@@ -1967,9 +1986,13 @@ class QRCodeTracker {
         echo 'var selectedTeam=purchaserTypeField.value;';
         echo 'var prefill=teamPrefills[selectedTeam]||null;';
         // Each field is updated independently so a failure on one cannot stop
-        // the other from being filled in.
-        echo 'try{applyPrefillToField("qr_tree_message_1",prefill?prefill.message_1:"",prefill?prefill.lock_1:false);}catch(e){}';
-        echo 'try{applyPrefillToField("qr_tree_message_2",prefill?prefill.message_2:"",prefill?prefill.lock_2:false);}catch(e){}';
+        // the others from being filled in.
+        echo 'try{applyPrefillToMessageField("qr_tree_message_1",prefill?prefill.message_1:"",prefill?prefill.lock_1:false);}catch(e){}';
+        echo 'try{applyPrefillToMessageField("qr_tree_message_2",prefill?prefill.message_2:"",prefill?prefill.lock_2:false);}catch(e){}';
+        echo 'try{';
+        echo 'var website=document.querySelector("input[name=\"church_org_website\"]");';
+        echo 'applyPrefillToInputField(website,prefill?prefill.website:"",prefill?prefill.lock_website:false,"link");';
+        echo '}catch(e){}';
         echo '}';
         // The server already rendered the right content and notice; this only
         // has to put an already-locked editor into readonly mode once TinyMCE
@@ -2193,12 +2216,32 @@ class QRCodeTracker {
                 $this->render_tree_message_field('qr_tree_message_2', 'prefill_message_2', 'lock_message_2', 'Message 2');
                 break;
             case 'church_org_website':
-                $this->render_customizable_tree_form_field('church_org_website', [
-                    'type'        => 'text',
-                    'class'       => ['form-row-wide'],
-                    'label'       => 'Church / Organisation Website Link',
-                    'placeholder' => 'https://example.com',
-                ], $this->get_tree_field_value_from_request('church_org_website'));
+                $team_prefill = $this->get_selected_team_prefill();
+                $prefill_website = ($team_prefill && isset($team_prefill->prefill_church_org_website)) ? $team_prefill->prefill_church_org_website : '';
+                if ($prefill_website !== '' && !empty($team_prefill->lock_church_org_website)) {
+                    $this->render_customizable_tree_form_field('church_org_website', [
+                        'type'              => 'text',
+                        'class'             => ['form-row-wide'],
+                        'label'             => 'Church / Organisation Website Link',
+                        'custom_attributes' => ['readonly' => 'readonly'],
+                        'description'       => 'This link has been set by your organisation and cannot be changed.',
+                    ], $prefill_website);
+                } elseif ($prefill_website !== '') {
+                    $this->render_customizable_tree_form_field('church_org_website', [
+                        'type'        => 'text',
+                        'class'       => ['form-row-wide'],
+                        'label'       => 'Church / Organisation Website Link',
+                        'placeholder' => 'https://example.com',
+                        'description' => self::MESSAGE_PREFILLED_NOTICE,
+                    ], $this->get_tree_field_value_from_request('church_org_website', $prefill_website));
+                } else {
+                    $this->render_customizable_tree_form_field('church_org_website', [
+                        'type'        => 'text',
+                        'class'       => ['form-row-wide'],
+                        'label'       => 'Church / Organisation Website Link',
+                        'placeholder' => 'https://example.com',
+                    ], $this->get_tree_field_value_from_request('church_org_website'));
+                }
                 break;
             case 'pay_forward_type':
                 $this->render_customizable_tree_form_field('pay_forward_type', [
