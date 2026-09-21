@@ -172,22 +172,19 @@ class QRCodeTracker_Teams {
      * @param string $description Optional description.
      * @param string $city        Optional city.
      * @param int    $is_private  1 = private (hidden from purchaser dropdown), 0 = public.
+     * @param array  $prefill     Optional prefill/lock settings, see build_prefill_columns().
      * @return int|false New team ID or false on failure.
      */
-    public function create_team($name, $description = '', $city = '', $is_private = 0, $prefill_message_1 = '', $lock_message_1 = 0, $prefill_message_2 = '', $lock_message_2 = 0) {
+    public function create_team($name, $description = '', $city = '', $is_private = 0, array $prefill = []) {
         global $wpdb;
 
-        $result = $wpdb->insert($this->teams_table, [
-            'name'              => sanitize_text_field($name),
-            'description'       => sanitize_textarea_field($description),
-            'city'              => sanitize_text_field($city),
-            'is_private'        => (int) (bool) $is_private,
-            'prefill_message_1' => wp_kses_post($prefill_message_1),
-            'lock_message_1'    => (int) (bool) $lock_message_1,
-            'prefill_message_2' => wp_kses_post($prefill_message_2),
-            'lock_message_2'    => (int) (bool) $lock_message_2,
-        ]);
-        
+        $result = $wpdb->insert($this->teams_table, array_merge([
+            'name'        => sanitize_text_field($name),
+            'description' => sanitize_textarea_field($description),
+            'city'        => sanitize_text_field($city),
+            'is_private'  => (int) (bool) $is_private,
+        ], $this->build_prefill_columns($prefill)));
+
         if ($result) {
             $team_id = $wpdb->insert_id;
             
@@ -215,21 +212,38 @@ class QRCodeTracker_Teams {
      * @param string $description Optional description.
      * @param string $city        Optional city.
      * @param int    $is_private  1 = private (hidden from purchaser dropdown), 0 = public.
+     * @param array  $prefill     Optional prefill/lock settings, see build_prefill_columns().
      * @return int|false Number of rows updated or false on failure.
      */
-    public function update_team($team_id, $name, $description = '', $city = '', $is_private = 0, $prefill_message_1 = '', $lock_message_1 = 0, $prefill_message_2 = '', $lock_message_2 = 0) {
+    public function update_team($team_id, $name, $description = '', $city = '', $is_private = 0, array $prefill = []) {
         global $wpdb;
 
-        return $wpdb->update($this->teams_table, [
-            'name'              => sanitize_text_field($name),
-            'description'       => sanitize_textarea_field($description),
-            'city'              => sanitize_text_field($city),
-            'is_private'        => (int) (bool) $is_private,
-            'prefill_message_1' => wp_kses_post($prefill_message_1),
-            'lock_message_1'    => (int) (bool) $lock_message_1,
-            'prefill_message_2' => wp_kses_post($prefill_message_2),
-            'lock_message_2'    => (int) (bool) $lock_message_2,
-        ], ['id' => $team_id]);
+        return $wpdb->update($this->teams_table, array_merge([
+            'name'        => sanitize_text_field($name),
+            'description' => sanitize_textarea_field($description),
+            'city'        => sanitize_text_field($city),
+            'is_private'  => (int) (bool) $is_private,
+        ], $this->build_prefill_columns($prefill)), ['id' => $team_id]);
+    }
+
+    /**
+     * Normalise the team prefill/lock settings into sanitised DB columns.
+     *
+     * Accepted keys: prefill_message_1, lock_message_1, prefill_message_2,
+     * lock_message_2, prefill_church_org_website, lock_church_org_website.
+     *
+     * @param array $prefill Raw settings.
+     * @return array Column => sanitised value.
+     */
+    private function build_prefill_columns(array $prefill) {
+        return [
+            'prefill_message_1'          => wp_kses_post($prefill['prefill_message_1'] ?? ''),
+            'lock_message_1'             => (int) (bool) ($prefill['lock_message_1'] ?? 0),
+            'prefill_message_2'          => wp_kses_post($prefill['prefill_message_2'] ?? ''),
+            'lock_message_2'             => (int) (bool) ($prefill['lock_message_2'] ?? 0),
+            'prefill_church_org_website' => esc_url_raw($prefill['prefill_church_org_website'] ?? ''),
+            'lock_church_org_website'    => (int) (bool) ($prefill['lock_church_org_website'] ?? 0),
+        ];
     }
 
     /**
