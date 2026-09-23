@@ -6,6 +6,8 @@ class QRCodeTracker_DB {
     private $teams_table;
     private $user_teams_table;
     private $access_requests_table;
+    private $aliases_table;
+    private $merges_table;
 
     public function __construct() {
         global $wpdb;
@@ -14,6 +16,8 @@ class QRCodeTracker_DB {
         $this->teams_table = $wpdb->prefix . 'qr_tracker_teams';
         $this->user_teams_table = $wpdb->prefix . 'qr_tracker_user_teams';
         $this->access_requests_table = $wpdb->prefix . 'qr_tracker_access_requests';
+        $this->aliases_table = $wpdb->prefix . 'qr_tracker_aliases';
+        $this->merges_table = $wpdb->prefix . 'qr_tracker_merges';
     }
 
     public function install() {
@@ -132,14 +136,15 @@ class QRCodeTracker_DB {
         dbDelta($sql_teams);
         dbDelta($sql_user_teams);
         dbDelta($sql_access_requests);
-        
+        $this->create_merge_tables();
+
         // Insert default team if none exists
         $this->insert_default_team();
     }
 
     public function maybe_upgrade_schema() {
         global $wpdb;
-        
+
         // Check if teams table exists
         $teams_table_exists = $wpdb->get_var("SHOW TABLES LIKE '{$this->teams_table}'");
         if (!$teams_table_exists) {
@@ -149,6 +154,12 @@ class QRCodeTracker_DB {
         $access_requests_exists = $wpdb->get_var("SHOW TABLES LIKE '{$this->access_requests_table}'");
         if (!$access_requests_exists) {
             $this->create_access_requests_table();
+        }
+
+        $aliases_exists = $wpdb->get_var("SHOW TABLES LIKE '{$this->aliases_table}'");
+        $merges_exists  = $wpdb->get_var("SHOW TABLES LIKE '{$this->merges_table}'");
+        if (!$aliases_exists || !$merges_exists) {
+            $this->create_merge_tables();
         }
         
         // Check if team_id column exists in main table
@@ -365,7 +376,57 @@ class QRCodeTracker_DB {
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql_access_requests);
     }
-    
+
+    /**
+     * Tables backing the merge tool. Both are new, so creating them never
+     * touches existing data.
+     *
+     * - aliases: keeps a merged-away QR code's printed short code, URL and
+     *   postcode/city/tree resolving to the QR code it was merged into. The
+     *   scan path only consults it after every normal lookup has failed.
+     * - merges: an audit record per merge, including a full JSON snapshot of
+     *   every row the merge removed or changed, so no merge is unrecoverable.
+     */
+    private function create_merge_tables() {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql_aliases = "CREATE TABLE {$this->aliases_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            merge_id BIGINT UNSIGNED NOT NULL,
+            original_tracker_id BIGINT UNSIGNED NOT NULL,
+            target_tracker_id BIGINT UNSIGNED NOT NULL,
+            short_code VARCHAR(16) DEFAULT NULL,
+            url TEXT,
+            postcode VARCHAR(32),
+            city VARCHAR(64),
+            tree VARCHAR(64),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY merge_id (merge_id),
+            KEY target_tracker_id (target_tracker_id),
+            KEY short_code (short_code),
+            KEY location (postcode, city, tree),
+            KEY url (url(191))
+        ) $charset_collate;";
+
+        $sql_merges = "CREATE TABLE {$this->merges_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            merged_by BIGINT UNSIGNED NOT NULL,
+            merged_at DATETIME NOT NULL,
+            kept_ids TEXT NOT NULL,
+            removed_ids TEXT NOT NULL,
+            plan LONGTEXT NOT NULL,
+            snapshot LONGTEXT NOT NULL,
+            PRIMARY KEY (id),
+            KEY merged_at (merged_at)
+        ) $charset_collate;";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql_aliases);
+        dbDelta($sql_merges);
+    }
+
     private function insert_default_team() {
         global $wpdb;
         
@@ -425,7 +486,6 @@ class QRCodeTracker_DB {
     }
 
     private function generate_unique_short_code($length = 6) {
-        global $wpdb;
         $characters = 'abcdefghijklmnopqrstuvwxyz0123456789';
         $max_index = strlen($characters) - 1;
 
@@ -435,22 +495,14 @@ class QRCodeTracker_DB {
                 $code .= $characters[random_int(0, $max_index)];
             }
 
-            $exists = $wpdb->get_var($wpdb->prepare(
-                "SELECT id FROM {$this->main_table} WHERE short_code = %s LIMIT 1",
-                $code
-            ));
-            if (!$exists) {
+            if (!QRCodeTracker_Aliases::is_short_code_taken($code)) {
                 return $code;
             }
         }
 
         do {
             $fallback = strtolower(wp_generate_password($length + 2, false, false));
-            $exists = $wpdb->get_var($wpdb->prepare(
-                "SELECT id FROM {$this->main_table} WHERE short_code = %s LIMIT 1",
-                $fallback
-            ));
-        } while ($exists);
+        } while (QRCodeTracker_Aliases::is_short_code_taken($fallback));
 
         return $fallback;
     }
@@ -517,8 +569,11 @@ class QRCodeTracker_DB {
             $wpdb->query("DROP TABLE IF EXISTS {$teams_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$user_teams_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$access_requests_table}");
+            $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}qr_tracker_aliases");
+            $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}qr_tracker_merges");
 
             delete_option('qr_tracker_delete_on_uninstall');
+            delete_option('qr_tracker_has_aliases');
             delete_option('qr_tracker_tree_product_ids');
             delete_option('qr_tracker_welcome_email_enabled');
             delete_option('qr_tracker_welcome_email_subject');

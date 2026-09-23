@@ -6,6 +6,8 @@ class QRCodeTracker_Admin {
     private $access_requests_table;
     private $tracker;
     private $teams;
+    private $merge_page;
+    private $delete_guard;
 
     public function __construct($tracker, $teams) {
         global $wpdb;
@@ -14,10 +16,16 @@ class QRCodeTracker_Admin {
         $this->access_requests_table = $wpdb->prefix . 'qr_tracker_access_requests';
         $this->tracker = $tracker;
         $this->teams = $teams;
-        
+
         // Initialize search functionality
         require_once plugin_dir_path(__FILE__) . 'class-qr-code-search.php';
         $this->search = new QRCodeTracker_Search();
+
+        require_once plugin_dir_path(__FILE__) . 'class-qr-code-merge-page.php';
+        $this->merge_page = new QRCodeTracker_Merge_Page($teams);
+
+        require_once plugin_dir_path(__FILE__) . 'class-qr-code-delete.php';
+        $this->delete_guard = new QRCodeTracker_Delete($teams);
     }
 
     public function admin_menu() {
@@ -29,6 +37,11 @@ class QRCodeTracker_Admin {
             add_menu_page('QR Tracker', 'QR Tracker', 'qr_tracker_view_qr_codes', 'qr-tracker', [$this, 'admin_page'], 'data:image/svg+xml;base64,' . base64_encode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h6v6H3V3zm2 2v2h2V5H5zm8-2h6v6h-6V3zm2 2v2h2V5h-2zM3 11h6v6H3v-6zm2 2v2h2v-2H5zm8 0h6v6h-6v-6zm2 2v2h2v-2h-2z"/></svg>'));
         }
         
+        // Merge tool: removes QR codes, so it needs both edit and delete.
+        if (QRCodeTracker_Merge_Page::can_merge()) {
+            add_submenu_page('qr-tracker', 'Merge QR Codes', 'Merge QR Codes', 'qr_tracker_delete_qr_codes', QRCodeTracker_Merge_Page::PAGE_SLUG, [$this->merge_page, 'render']);
+        }
+
         // Scan Logs submenu
         if (QRCodeTracker_Permissions::can_view_scan_logs()) {
             add_submenu_page('qr-tracker', 'Scan Logs', 'Scan Logs', 'qr_tracker_view_scan_logs', 'qr-scan-logs', [$this, 'scan_logs_page']);
@@ -309,126 +322,10 @@ class QRCodeTracker_Admin {
             }
         }
 
-        if (isset($_GET['delete_id'])) {
-            // Check delete permission
-            if (!QRCodeTracker_Permissions::can_delete_qr_codes()) {
-                echo '<div class="error"><p>You do not have permission to delete QR codes.</p></div>';
-                return;
-            }
-            
-            $delete_id = intval($_GET['delete_id']);
-            $row = $wpdb->get_row($wpdb->prepare("SELECT scan_count, social_share_count, team_id FROM {$this->main_table} WHERE id = %d", $delete_id));
-            
-            if ($row) {
-                // Check if user can access this QR code
-                if ($row->team_id && !$this->teams->user_can_access_team(get_current_user_id(), $row->team_id)) {
-                    echo '<div class="error"><p>You do not have permission to delete this QR code.</p></div>';
-                } elseif ((int) $row->scan_count === 0 && (int) $row->social_share_count === 0) {
-                    // Only allow deletion if no tracked visits exist
-                    $wpdb->delete($this->main_table, ['id' => $delete_id]);
-                    echo '<div class="updated"><p>QR Code entry deleted.</p></div>';
-                } else {
-                    echo '<div class="error"><p>Cannot delete QR code with existing scan or social share data. Use the merge function instead.</p></div>';
-                }
-            } else {
-                echo '<div class="error"><p>QR Code not found.</p></div>';
-            }
-        }
-
-        if (isset($_POST['qr_merge_submit'])) {
-            $source_id = intval($_POST['qr_merge_source_id']);
-            $target_allocations = $_POST['qr_merge_allocations'];
-            $total_allocated = 0;
-            
-            // Validate allocations
-            foreach ($target_allocations as $target_id => $allocation) {
-                if (!empty($allocation) && is_numeric($allocation)) {
-                    $total_allocated += intval($allocation);
-                }
-            }
-            
-            // Verify source exists and has enough scans
-            $source = $wpdb->get_row($wpdb->prepare("SELECT scan_count, social_share_count FROM {$this->main_table} WHERE id = %d", $source_id));
-            
-            $source_scan_count = $source ? (int) $source->scan_count : 0;
-            $source_social_share_count = $source ? (int) $source->social_share_count : 0;
-            $source_merge_total = $source_scan_count > 0 ? $source_scan_count : $source_social_share_count;
-            
-            if ($source && $source_merge_total > 0 && $total_allocated == $source_merge_total) {
-                $remaining_social_shares = (int) $source->social_share_count;
-                $processed_allocations = 0;
-                $allocation_count = count(array_filter($target_allocations, function($allocation) {
-                    return !empty($allocation) && is_numeric($allocation) && intval($allocation) > 0;
-                }));
-
-                // Process each allocation
-                foreach ($target_allocations as $target_id => $allocation) {
-                    if (!empty($allocation) && is_numeric($allocation) && intval($allocation) > 0) {
-                        $target_id = intval($target_id);
-                        $allocation = intval($allocation);
-                        $processed_allocations++;
-                        
-                        if ($source_scan_count > 0) {
-                            // Update scan count on target
-                            $wpdb->query($wpdb->prepare(
-                                "UPDATE {$this->main_table} SET scan_count = scan_count + %d WHERE id = %d",
-                                $allocation, $target_id
-                            ));
-                        }
-
-                        if ($source_social_share_count > 0) {
-                            if ($source_scan_count === 0) {
-                                $social_allocation = $allocation;
-                            } elseif ($processed_allocations === $allocation_count) {
-                                $social_allocation = $remaining_social_shares;
-                            } else {
-                                $social_allocation = (int) floor(($allocation / $source_scan_count) * $source_social_share_count);
-                                $remaining_social_shares -= $social_allocation;
-                            }
-
-                            if ($social_allocation > 0) {
-                                $wpdb->query($wpdb->prepare(
-                                    "UPDATE {$this->main_table} SET social_share_count = social_share_count + %d WHERE id = %d",
-                                    $social_allocation, $target_id
-                                ));
-                            }
-                        }
-                        
-                        // Transfer proportional scan logs to target
-                        if ($source_scan_count > 0) {
-                            $logs_to_transfer = $wpdb->get_results($wpdb->prepare(
-                                "SELECT id FROM {$this->log_table} WHERE tracker_id = %d ORDER BY scanned_at LIMIT %d",
-                                $source_id, $allocation
-                            ));
-                            
-                            if (!empty($logs_to_transfer)) {
-                                $log_ids = array_column($logs_to_transfer, 'id');
-                                $placeholders = implode(',', array_fill(0, count($log_ids), '%d'));
-                                $wpdb->query($wpdb->prepare(
-                                    "UPDATE {$this->log_table} SET tracker_id = %d WHERE id IN ($placeholders)",
-                                    array_merge([$target_id], $log_ids)
-                                ));
-                            }
-                        }
-                    } 
-                }
-                
-                // Delete the source entry
-                $wpdb->delete($this->main_table, ['id' => $source_id]);
-                
-                $merge_message = 'QR Code merged successfully.';
-                if ($source_scan_count > 0) {
-                    $merge_message .= ' ' . $source_scan_count . ' scans distributed across ' . count(array_filter($target_allocations)) . ' target QR codes.';
-                }
-                if ($source_social_share_count > 0) {
-                    $merge_message .= ' ' . $source_social_share_count . ' social share hits were redistributed.';
-                }
-                echo '<div class="updated"><p>' . esc_html($merge_message) . '</p></div>';
-            } else {
-                $expected_total = $source ? $source_merge_total : 0;
-                $expected_label = ($source_scan_count > 0) ? 'scan count' : 'social share hit count';
-                echo '<div class="error"><p>Merge failed. Please ensure total allocation equals source ' . esc_html($expected_label) . ' (' . (int) $expected_total . ').</p></div>';
-            }
+        // Delete is a confirm page then a nonced POST; see QRCodeTracker_Delete.
+        if ($this->delete_guard->handle()) {
+            echo '</div>';
+            return;
         }
 
         // Handle edit form display
@@ -449,77 +346,8 @@ class QRCodeTracker_Admin {
             }
         }
 
-        // Handle merge form display
-        $merging = false;
-        $merge_data = null;
-        if (isset($_GET['merge_id'])) {
-            $merge_id = intval($_GET['merge_id']);
-            $merge_data = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->main_table} WHERE id = %d", $merge_id));
-            $merge_total = ($merge_data && (int) $merge_data->scan_count > 0)
-                ? (int) $merge_data->scan_count
-                : (($merge_data) ? (int) $merge_data->social_share_count : 0);
-            $merge_label = ($merge_data && (int) $merge_data->scan_count > 0) ? 'scans' : 'social share hits';
-            if ($merge_data && $merge_total > 0) {
-                // Check if user can access this QR code
-                if ($merge_data->team_id && !$this->teams->user_can_access_team(get_current_user_id(), $merge_data->team_id)) {
-                    echo '<div class="error"><p>You do not have permission to merge this QR code.</p></div>';
-                } else {
-                    $merging = true;
-                }
-            } else {
-                echo '<div class="error"><p>Cannot merge QR code with no tracked visit data. Use delete instead.</p></div>';
-            }
-        }
-
         // Display the add QR code form at the top
-        if ($merging && $merge_data) {
-            // Get accessible QR codes for target selection (excluding the source)
-            $target_options = $this->teams->get_accessible_qr_codes();
-            $target_options = array_filter($target_options, function($option) use ($merge_data) {
-                return $option->id != $merge_data->id;
-            });
-            
-            echo '<h2>Merge QR Code</h2>
-            <p><strong>Source QR Code:</strong> Postcode: ' . esc_html($merge_data->postcode) . ' - Tree: ' . esc_html($merge_data->tree) . ' (' . esc_html(number_format($merge_total)) . ' ' . esc_html($merge_label) . ')</p>
-            <form method="post">
-                <input type="hidden" name="qr_merge_source_id" value="' . $merge_data->id . '">
-                <table class="form-table">
-                    <tr><th><label>Distribute tracked visits to:</label></th>
-                        <td><div class="qr-merge-allocation-list">';
-            foreach ($target_options as $option) {
-                echo '<div class="qr-merge-allocation-item">
-                    <label>' . esc_html('Postcode: ' . $option->postcode . ' - Tree: ' . $option->tree) . '</label>
-                    <input type="number" name="qr_merge_allocations[' . $option->id . ']" min="0" max="' . esc_attr($merge_total) . '" placeholder="0">
-                    <span style="color: #666; font-size: 12px;">(' . esc_html($option->label) . ')</span>
-                </div>';
-            }
-            echo '</div></td></tr>
-                </table>
-                <p><strong>Total to allocate:</strong> <span id="total-allocated">0</span> / ' . esc_html(number_format($merge_total)) . '</p>
-                <p><strong>Warning:</strong> This will distribute tracked visits from the source to the target QR codes and delete the source entry.</p>
-                <p><input type="submit" name="qr_merge_submit" class="button button-primary" value="Merge QR Code" onclick="return confirm(\'Are you sure you want to merge these QR codes? This action cannot be undone.\')"></p>
-            </form>
-            <script>
-            document.addEventListener("DOMContentLoaded", function() {
-                const inputs = document.querySelectorAll("input[name^=\'qr_merge_allocations\']");
-                const totalSpan = document.getElementById("total-allocated");
-                
-                function updateTotal() {
-                    let total = 0;
-                    inputs.forEach(input => {
-                        total += parseInt(input.value) || 0;
-                    });
-                    totalSpan.textContent = total;
-                    totalSpan.style.color = total == ' . (int) $merge_total . ' ? "green" : "red";
-                }
-                
-                inputs.forEach(input => {
-                    input.addEventListener("input", updateTotal);
-                });
-                updateTotal();
-            });
-            </script>';
-        } elseif ($editing && $edit_data) {
+        if ($editing && $edit_data) {
             echo '<h2>Edit QR Code</h2>';
             $has_recorded_hits = ((int) $edit_data->scan_count > 0 || (int) $edit_data->social_share_count > 0);
             if ($has_recorded_hits) {
@@ -862,12 +690,13 @@ class QRCodeTracker_Admin {
 
         // Now display the Tracked QR Codes table
         $entries = $this->teams->get_accessible_qr_codes();
+        $can_merge = QRCodeTracker_Merge_Page::can_merge();
         $this->drawer_open( 'qr-drawer-tracked-qr-codes', 'Tracked QR Codes', true );
         echo '<div class="qr-table-responsive"><table id="qr-table-tracked" class="widefat"><thead><tr><th>Postcode</th><th>City</th><th>Tree</th><th>Label</th><th>Reporting ID</th><th>Popup</th><th>Shop Link</th><th>Church / Org Website</th><th>Team</th><th>URL</th><th>QR Code</th><th>Scans</th><th>Social Shares</th><th>Last Scanned</th><th>Last Social Shared</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
         foreach ($entries as $row) {
-            $delete_url = esc_url(add_query_arg(['delete_id' => $row->id]));
+            $delete_url = esc_url(QRCodeTracker_Delete::link_url((int) $row->id));
             $edit_url = esc_url(add_query_arg(['edit_id' => $row->id]));
-            $merge_url = esc_url(add_query_arg(['merge_id' => $row->id]));
+            $merge_url = esc_url(QRCodeTracker_Merge_Page::url(['merge_id' => (int) $row->id]));
             $download_url = esc_url(admin_url('admin.php?action=qr_tracker_download_qr&id=' . $row->id));
             $popup_status = $row->show_popup ? '<span style="color: green;">✓ Enabled</span>' : '<span style="color: #666;">✗ Disabled</span>';
             $shop_link_status = $row->show_shop_link ? '<span style="color: green;">✓ Enabled</span>' : '<span style="color: #666;">✗ Disabled</span>';
@@ -932,11 +761,11 @@ class QRCodeTracker_Admin {
             $church_org_website_display = !empty($row->church_org_website) ? '<a href="' . esc_url($row->church_org_website) . '" target="_blank" rel="noopener noreferrer">' . esc_html($row->church_org_website) . '</a>' : '';
             echo "<tr><td>{$row->postcode}</td><td>{$row->city}</td><td>{$row->tree}</td><td>{$row->label}</td><td>{$row->reporting_id}</td><td>{$popup_status}</td><td>{$shop_link_status}</td><td>{$church_org_website_display}</td><td>{$team_name}</td><td>{$url_display}</td><td><img src='" . esc_attr($this->tracker->generate_qr_code_image($row->url)) . "' alt='QR Code' style='width:80px;height:80px;'></td><td>{$row->scan_count}</td><td>" . number_format((int) $row->social_share_count) . "</td><td>{$row->last_scanned}</td><td>{$last_social_shared}</td><td data-order=\"{$created_at}\">{$created_at}</td>";
             echo "<td>";
+            echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a>";
             if ((int) $row->scan_count === 0 && (int) $row->social_share_count === 0) {
-                echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a>";
-                echo "<a href=\"$delete_url\" onclick=\"return confirm('Are you sure you want to delete this QR code?')\" class=\"button button-secondary\">Delete</a>";
-            } else {
-                echo "<a href=\"$edit_url\" class=\"button button-secondary\">Edit</a>";
+                echo "<a href=\"$delete_url\" class=\"button button-secondary\">Delete</a>";
+            }
+            if ($can_merge) {
                 echo "<a href=\"$merge_url\" class=\"button button-secondary\">Merge</a>";
             }
             echo "<a href='$download_url' class='button' target='_blank'>Download QR Image</a>";
@@ -1033,7 +862,7 @@ class QRCodeTracker_Admin {
             return;
         }
         
-        $plugin_version = '1.0.5';
+        $plugin_version = '1.0.6';
         if (isset($_POST['qr_tracker_settings_submit'])) {
             // Check manage settings permission
             if (!QRCodeTracker_Permissions::can_manage_settings()) {

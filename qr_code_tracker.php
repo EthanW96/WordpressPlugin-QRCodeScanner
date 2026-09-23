@@ -2,7 +2,7 @@
 /*
 Plugin Name: QR Code Tracker
 Description: Generate and track QR code links with query strings, including scan tracking and postcode rollups, plus dynamic HTML messages via shortcodes.
-Version: 1.0.5
+Version: 1.0.6
 Author: Ethan Widen
 */
 
@@ -12,6 +12,7 @@ if (file_exists(__DIR__ . '/vendor/autoload.php')) {
     require_once __DIR__ . '/vendor/autoload.php';
 }
 
+require_once __DIR__ . '/includes/class-qr-code-aliases.php';
 require_once __DIR__ . '/includes/class-qr-code-db.php';
 require_once __DIR__ . '/includes/class-qr-code-admin.php';
 require_once __DIR__ . '/includes/class-qr-code-teams.php';
@@ -279,6 +280,23 @@ class QRCodeTracker {
             }
         }
 
+        // Last resort: a QR code that was merged away with "keep working"
+        // chosen. Only reached when every lookup above found nothing, so it
+        // cannot change how any live QR code resolves.
+        if (!$row) {
+            $alias_match = $this->find_merged_alias_for_request(function_exists('is_404') && is_404());
+            if ($alias_match) {
+                $row = $alias_match['row'];
+                if ($alias_match['via_path']) {
+                    // Path-based short codes are the social link — always count as social share.
+                    $is_social_share = true;
+                }
+                $scan_source = $is_social_share
+                    ? QRCodeTracker_Aliases::SOCIAL_SCAN_SOURCE
+                    : QRCodeTracker_Aliases::SCAN_SOURCE;
+            }
+        }
+
         if ($row) {
             $request_uri = isset($_SERVER['REQUEST_URI']) ? sanitize_text_field(wp_unslash($_SERVER['REQUEST_URI'])) : '';
             $request_uri = function_exists('mb_substr')
@@ -369,6 +387,11 @@ class QRCodeTracker {
             $short_code
         ));
 
+        // A merged-away code redirects to the QR code it was merged into.
+        if (!$row) {
+            $row = QRCodeTracker_Aliases::load_target(QRCodeTracker_Aliases::find_by_short_code($short_code));
+        }
+
         if (!$row || empty($row->url)) {
             return;
         }
@@ -381,6 +404,71 @@ class QRCodeTracker {
         $redirect_url = add_query_arg('_qr_redirect', '1', $validated_url);
         wp_safe_redirect($redirect_url, 302);
         exit;
+    }
+
+    /**
+     * The exact-URL variants the legacy URL lookups try, for the alias fallback.
+     *
+     * Mirrors the inline list in track_visit() and get_current_tracker(), which
+     * are deliberately left as they are so existing codes resolve unchanged.
+     *
+     * @return string[]
+     */
+    private function get_request_url_variants() {
+        $current_url = home_url(add_query_arg(null, null));
+        $request_uri = home_url(isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '');
+
+        return [
+            $current_url,
+            $request_uri,
+            rtrim($current_url, '/'),
+            rtrim($request_uri, '/'),
+            str_replace('/?', '?', $current_url),
+            str_replace('/?', '?', $request_uri),
+        ];
+    }
+
+    /**
+     * Resolve the current request through a merged-away QR code's alias.
+     *
+     * Only ever called after the normal lookups have found no QR code, and it
+     * tries the same identifiers in the same order: ?qr= short code, then the
+     * path short code (the social link, only when WordPress found no page),
+     * then postcode/city/tree, then the exact URL.
+     *
+     * @param bool $allow_path_short_code Whether to try the path short code.
+     * @return array|null ['row' => surviving QR code row, 'via_path' => bool]
+     */
+    private function find_merged_alias_for_request($allow_path_short_code) {
+        $via_path = false;
+
+        $alias = QRCodeTracker_Aliases::find_by_short_code(
+            isset($_GET['qr']) ? sanitize_text_field($_GET['qr']) : ''
+        );
+
+        if (!$alias && $allow_path_short_code) {
+            $alias = QRCodeTracker_Aliases::find_by_short_code($this->get_path_short_code_from_request());
+            $via_path = (bool) $alias;
+        }
+
+        if (!$alias) {
+            $alias = QRCodeTracker_Aliases::find_by_location(
+                isset($_GET['postcode']) ? sanitize_text_field($_GET['postcode']) : '',
+                isset($_GET['city']) ? sanitize_text_field($_GET['city']) : '',
+                isset($_GET['tree']) ? sanitize_text_field($_GET['tree']) : ''
+            );
+        }
+
+        if (!$alias) {
+            $alias = QRCodeTracker_Aliases::find_by_urls($this->get_request_url_variants());
+        }
+
+        $row = QRCodeTracker_Aliases::load_target($alias);
+        if (!$row) {
+            return null;
+        }
+
+        return ['row' => $row, 'via_path' => $via_path];
     }
 
     private function get_path_short_code_from_request() {
@@ -501,9 +589,16 @@ class QRCodeTracker {
         $request_uri_alt = str_replace('/?', '?', $request_uri);
         
         $row = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$this->main_table} WHERE url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR url = %s", 
+            "SELECT * FROM {$this->main_table} WHERE url = %s OR url = %s OR url = %s OR url = %s OR url = %s OR url = %s",
             $current_url, $request_uri, $current_url_no_slash, $request_uri_no_slash, $current_url_alt, $request_uri_alt
         ));
+
+        // Last resort, as in track_visit(): a merged-away QR code.
+        if (!$row) {
+            $alias_match = $this->find_merged_alias_for_request(false);
+            $row = $alias_match ? $alias_match['row'] : null;
+        }
+
         $this->current_tracker = $row;
         return $row;
     }
@@ -870,6 +965,15 @@ class QRCodeTracker {
             $short_code
         ));
         if (!$row) {
+            // A merged-away code keeps rendering its own original URL rather
+            // than the survivor's, so images already emailed or printed stay
+            // identical — the alias then resolves that URL when scanned.
+            $alias = QRCodeTracker_Aliases::find_by_short_code($short_code);
+            if ($alias && QRCodeTracker_Aliases::load_target($alias)) {
+                $row = $alias;
+            }
+        }
+        if (!$row) {
             status_header(404);
             exit;
         }
@@ -1015,6 +1119,26 @@ class QRCodeTracker {
         return strtolower($request_path);
     }
 
+    /**
+     * Where a legacy postcode/city/tree link for a merged-away tree redirects.
+     *
+     * It goes to the retired short code rather than the survivor's, so the
+     * resulting visit is logged as arriving through the merged-away code. It
+     * falls back to the survivor's code for legacy rows that never had one.
+     *
+     * @return object|null Object with a short_code property, or null.
+     */
+    private function get_merged_alias_redirect_row($postcode, $city, $tree) {
+        $alias  = QRCodeTracker_Aliases::find_by_location($postcode, $city, $tree);
+        $target = QRCodeTracker_Aliases::load_target($alias);
+        if (!$target) {
+            return null;
+        }
+
+        $short_code = !empty($alias->short_code) ? $alias->short_code : $target->short_code;
+        return (object) ['short_code' => $short_code];
+    }
+
     public function maybe_redirect_query_url_to_short_code($wp = null) {
         if (is_admin() || wp_doing_ajax() || wp_doing_cron() || (defined('REST_REQUEST') && REST_REQUEST)) {
             return;
@@ -1039,6 +1163,10 @@ class QRCodeTracker {
             $city,
             $tree
         ));
+
+        if (!$row) {
+            $row = $this->get_merged_alias_redirect_row($postcode, $city, $tree);
+        }
 
         if (!$row || empty($row->short_code)) {
             return;
@@ -1086,6 +1214,11 @@ class QRCodeTracker {
             "SELECT url FROM {$this->main_table} WHERE short_code = %s LIMIT 1",
             $short_code
         ));
+
+        // A merged-away code serves the QR code it was merged into.
+        if (!$row) {
+            $row = QRCodeTracker_Aliases::load_target(QRCodeTracker_Aliases::find_by_short_code($short_code));
+        }
 
         if (!$row || empty($row->url)) {
             return;
@@ -1516,7 +1649,6 @@ class QRCodeTracker {
     }
 
     public function generate_unique_short_code($length = self::SHORT_CODE_MIN_LENGTH) {
-        global $wpdb;
         $characters = 'abcdefghijklmnopqrstuvwxyz0123456789';
         $max_index = strlen($characters) - 1;
 
@@ -1526,22 +1658,14 @@ class QRCodeTracker {
                 $code .= $characters[random_int(0, $max_index)];
             }
 
-            $exists = $wpdb->get_var($wpdb->prepare(
-                "SELECT id FROM {$this->main_table} WHERE short_code = %s LIMIT 1",
-                $code
-            ));
-            if (!$exists) {
+            if (!QRCodeTracker_Aliases::is_short_code_taken($code)) {
                 return $code;
             }
         }
 
         do {
             $fallback = strtolower(wp_generate_password($length + 2, false, false));
-            $exists = $wpdb->get_var($wpdb->prepare(
-                "SELECT id FROM {$this->main_table} WHERE short_code = %s LIMIT 1",
-                $fallback
-            ));
-        } while ($exists);
+        } while (QRCodeTracker_Aliases::is_short_code_taken($fallback));
 
         return $fallback;
     }

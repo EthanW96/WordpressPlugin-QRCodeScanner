@@ -1,0 +1,145 @@
+/* Merge QR Codes screen. Colours use WordPress admin conventions. */
+
+.qr-merge-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+    margin: 12px 0 16px;
+    padding: 0;
+    list-style: none;
+    color: #646970;
+}
+
+.qr-merge-steps li.is-current {
+    color: #1d2327;
+    font-weight: 600;
+}
+
+.qr-merge-intro {
+    max-width: 780px;
+    font-size: 14px;
+}
+
+.qr-merge-notice {
+    margin: 10px 0;
+}
+
+.qr-merge-card {
+    margin: 0 0 20px;
+    padding: 12px 16px 16px;
+    background: #fff;
+    border: 1px solid #dcdcde;
+    border-radius: 4px;
+}
+
+.qr-merge-card h3 {
+    margin-top: 4px;
+}
+
+/* Wide tables scroll inside their card rather than the whole page. */
+.qr-merge-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.qr-merge-select-table tr[hidden] {
+    display: none;
+}
+
+.qr-merge-field-table td,
+.qr-merge-field-table th {
+    min-width: 140px;
+    vertical-align: top;
+}
+
+.qr-merge-field-table th:first-child {
+    min-width: 120px;
+}
+
+.qr-merge-field-table .is-own {
+    background: #f0f6fc;
+}
+
+.qr-merge-field-table label {
+    display: block;
+    cursor: pointer;
+}
+
+.qr-merge-alloc-table {
+    max-width: 720px;
+}
+
+.qr-merge-discard-row th,
+.qr-merge-discard-row td {
+    border-top: 1px solid #dcdcde;
+}
+
+.qr-merge-discard.is-discarding,
+.qr-merge-discard.is-over,
+.qr-merge-danger {
+    color: #b32d2e;
+    font-weight: 600;
+}
+
+.qr-merge-ok {
+    color: #00a32a;
+    font-weight: 600;
+}
+
+.qr-merge-empty {
+    color: #8c8f94;
+}
+
+.qr-merge-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.6;
+    color: #1d2327;
+    background: #f0f0f1;
+    border-radius: 3px;
+}
+
+.qr-merge-badge-recent {
+    color: #fff;
+    background: #d63638;
+}
+
+.qr-merge-diff-table tr.is-changed {
+    background: #fcf9e8;
+}
+
+.qr-merge-hr {
+    margin: 6px 0;
+    border: 0;
+    border-top: 1px dashed #dcdcde;
+}
+
+.qr-merge-list {
+    list-style: disc;
+    padding-left: 20px;
+}
+
+.qr-merge-level-danger {
+    border-left-width: 6px;
+}
+
+.qr-merge-confirm {
+    margin-top: 24px;
+    padding: 12px 16px;
+    background: #fff;
+    border: 2px solid #d63638;
+    border-radius: 4px;
+    max-width: 780px;
+}
+
+.qr-merge-actions {
+    margin-top: 16px;
+}
+
+@media screen and (max-width: 782px) {
+    .qr-merge-card {
+        padding: 10px 12px 12px;
+    }
+}
