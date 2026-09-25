@@ -99,7 +99,7 @@ class QRCodeTracker_Popup {
         <div id="qr-tracker-popup" class="qr-tracker-popup" style="display: none;">
             <div class="qr-tracker-popup-content">
                 <div class="qr-tracker-popup-header">
-                    <button class="qr-tracker-popup-close" id="qr-tracker-popup-close">&times;</button>
+                    <button type="button" class="qr-tracker-popup-close" id="qr-tracker-popup-close" aria-label="<?php esc_attr_e('Close', 'qr-code-tracker'); ?>">&times;</button>
                 </div>
                 <div class="qr-tracker-popup-body">
                     <div class="qr-tracker-message-container">
