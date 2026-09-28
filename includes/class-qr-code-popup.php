@@ -16,11 +16,13 @@ class QRCodeTracker_Popup {
      * Enqueue necessary scripts and styles for the popup
      */
     public function enqueue_scripts() {
+        $base_path = plugin_dir_path(dirname(__FILE__));
+
         wp_enqueue_script(
             'qr-tracker-popup',
             plugin_dir_url(dirname(__FILE__)) . 'assets/js/qr-tracker-popup.js',
             ['jquery'],
-            '1.0.0',
+            filemtime($base_path . 'assets/js/qr-tracker-popup.js') ?: '1.0.0',
             true
         );
 
@@ -35,7 +37,7 @@ class QRCodeTracker_Popup {
             'qr-tracker-popup-style',
             plugin_dir_url(dirname(__FILE__)) . 'assets/css/qr-tracker-popup.css',
             [],
-            '1.0.0'
+            filemtime($base_path . 'assets/css/qr-tracker-popup.css') ?: '1.0.0'
         );
     }
 
