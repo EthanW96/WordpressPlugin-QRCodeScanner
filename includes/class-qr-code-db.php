@@ -8,6 +8,8 @@ class QRCodeTracker_DB {
     private $access_requests_table;
     private $aliases_table;
     private $merges_table;
+    private $clicks_table;
+    private $recipient_links_table;
 
     public function __construct() {
         global $wpdb;
@@ -18,6 +20,8 @@ class QRCodeTracker_DB {
         $this->access_requests_table = $wpdb->prefix . 'qr_tracker_access_requests';
         $this->aliases_table = $wpdb->prefix . 'qr_tracker_aliases';
         $this->merges_table = $wpdb->prefix . 'qr_tracker_merges';
+        $this->clicks_table = $wpdb->prefix . 'qr_tracker_clicks';
+        $this->recipient_links_table = $wpdb->prefix . 'qr_tracker_recipient_links';
     }
 
     public function install() {
@@ -137,6 +141,7 @@ class QRCodeTracker_DB {
         dbDelta($sql_user_teams);
         dbDelta($sql_access_requests);
         $this->create_merge_tables();
+        $this->create_update_email_tables();
 
         // Insert default team if none exists
         $this->insert_default_team();
@@ -160,6 +165,12 @@ class QRCodeTracker_DB {
         $merges_exists  = $wpdb->get_var("SHOW TABLES LIKE '{$this->merges_table}'");
         if (!$aliases_exists || !$merges_exists) {
             $this->create_merge_tables();
+        }
+
+        $clicks_exists = $wpdb->get_var("SHOW TABLES LIKE '{$this->clicks_table}'");
+        $links_exists  = $wpdb->get_var("SHOW TABLES LIKE '{$this->recipient_links_table}'");
+        if (!$clicks_exists || !$links_exists) {
+            $this->create_update_email_tables();
         }
         
         // Check if team_id column exists in main table
@@ -427,6 +438,54 @@ class QRCodeTracker_DB {
         dbDelta($sql_merges);
     }
 
+    /**
+     * Tables backing the purchaser update emails. Both are new, so creating
+     * them never touches existing data.
+     *
+     * - clicks: one row per click on a tree's Church / Organisation Website
+     *   button. Kept apart from the scan logs so scan counts and every report
+     *   are unaffected.
+     * - recipient_links: which email receives updates about which QR code.
+     *   One row per (email, QR code); is_removed keeps an admin's removal so
+     *   automatic linking never re-adds it.
+     */
+    private function create_update_email_tables() {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql_clicks = "CREATE TABLE {$this->clicks_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            tracker_id BIGINT UNSIGNED NOT NULL,
+            clicked_at DATETIME NOT NULL,
+            visitor_hash VARCHAR(64) DEFAULT NULL,
+            PRIMARY KEY (id),
+            KEY tracker_id (tracker_id),
+            KEY clicked_at (clicked_at)
+        ) $charset_collate;";
+
+        $sql_links = "CREATE TABLE {$this->recipient_links_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            email VARCHAR(190) NOT NULL,
+            name VARCHAR(190) DEFAULT NULL,
+            tracker_id BIGINT UNSIGNED NOT NULL,
+            order_id BIGINT UNSIGNED DEFAULT NULL,
+            source VARCHAR(16) NOT NULL DEFAULT 'manual',
+            is_manual TINYINT(1) NOT NULL DEFAULT 0,
+            is_removed TINYINT(1) NOT NULL DEFAULT 0,
+            updated_by BIGINT UNSIGNED DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY email_tracker (email, tracker_id),
+            KEY tracker_id (tracker_id),
+            KEY order_id (order_id)
+        ) $charset_collate;";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql_clicks);
+        dbDelta($sql_links);
+    }
+
     private function insert_default_team() {
         global $wpdb;
         
@@ -571,6 +630,8 @@ class QRCodeTracker_DB {
             $wpdb->query("DROP TABLE IF EXISTS {$access_requests_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}qr_tracker_aliases");
             $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}qr_tracker_merges");
+            $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}qr_tracker_clicks");
+            $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}qr_tracker_recipient_links");
 
             delete_option('qr_tracker_delete_on_uninstall');
             delete_option('qr_tracker_has_aliases');

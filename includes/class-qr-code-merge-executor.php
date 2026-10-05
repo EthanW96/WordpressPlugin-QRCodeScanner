@@ -53,6 +53,7 @@ class QRCodeTracker_Merge_Executor {
             $this->update_kept($preview);
             $this->apply_access_requests($preview);
             $this->repoint_existing_aliases($preview);
+            $this->move_clicks_and_links($preview);
             $this->create_aliases($preview, $merge_id);
             $this->delete_removed($preview);
 
@@ -183,6 +184,8 @@ class QRCodeTracker_Merge_Executor {
             'moved_logs'       => $this->fetch_logs($this->ids_to_move($preview), 'id, tracker_id, postcode, city, tree'),
             'access_requests'  => $preview['access_requests']['rows'],
             'existing_aliases' => $preview['existing_aliases']['rows'],
+            'clicks'           => $preview['related']['clicks'],
+            'recipient_links'  => $preview['related']['link_rows'],
         ];
     }
 
@@ -334,6 +337,35 @@ class QRCodeTracker_Merge_Executor {
         foreach ($preview['access_requests']['repoint'] as $request_id => $keep_id) {
             $updated = $wpdb->update($this->access_requests_table, ['qr_id' => (int) $keep_id], ['id' => (int) $request_id]);
             $this->expect_rows($updated, 1, 'move an access request');
+        }
+    }
+
+    /**
+     * Website clicks and recipient links follow a removed code to the code it
+     * now opens (see the planner's plan_clicks_and_links()).
+     */
+    private function move_clicks_and_links(array $preview) {
+        global $wpdb;
+        $related = $preview['related'];
+
+        foreach ($related['clicks'] as $remove_id => $clicks) {
+            if (empty($clicks['ids'])) {
+                continue;
+            }
+            $moved = $wpdb->query($wpdb->prepare(
+                "UPDATE " . QRCodeTracker_Clicks::table() . " SET tracker_id = %d WHERE tracker_id = %d",
+                (int) $clicks['to'], (int) $remove_id
+            ));
+            $this->expect_rows($moved, count($clicks['ids']), 'move website clicks');
+        }
+
+        foreach ($related['link_drops'] as $link_id) {
+            $dropped = $wpdb->delete(QRCodeTracker_Recipient_Links::table(), ['id' => (int) $link_id]);
+            $this->expect_rows($dropped, 1, 'drop a duplicate recipient link');
+        }
+        foreach ($related['link_moves'] as $link_id => $keep_id) {
+            $moved = $wpdb->update(QRCodeTracker_Recipient_Links::table(), ['tracker_id' => (int) $keep_id], ['id' => (int) $link_id]);
+            $this->expect_rows($moved, 1, 'move a recipient link');
         }
     }
 

@@ -173,6 +173,14 @@ class QRCodeTracker_Merge_Preview_View {
         if (!empty($aliases['repoint'])) {
             $items[] = count($aliases['repoint']) . ' code(s) kept working by an earlier merge currently open a code being removed; they will open the kept code instead.';
         }
+        $click_total = array_sum(array_map(function ($clicks) { return count($clicks['ids']); }, $dry_run['related']['clicks']));
+        if ($click_total > 0) {
+            $items[] = $click_total . ' website button click(s) move with the removed code(s).';
+        }
+        $link_total = count($dry_run['related']['link_moves']) + count($dry_run['related']['link_drops']);
+        if ($link_total > 0) {
+            $items[] = $link_total . ' update-email recipient link(s) move to the kept code, so those purchasers keep receiving this tree\'s numbers.';
+        }
         if (!empty($dry_run['plan']['rewrite_logs'])) {
             $items[] = 'Moved visits are relabelled with the kept code\'s postcode, city and tree.';
         } else {
