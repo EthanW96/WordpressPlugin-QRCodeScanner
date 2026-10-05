@@ -166,7 +166,8 @@ class QRCodeTracker_Recipients {
 
         $first_name = $this->first_name($recipient['name']);
         if ($first_name !== '') {
-            // Only sent when known, so a name already in Mailchimp is never blanked.
+            // Only sent when known; the sync also drops it for contacts that already
+            // have a first name in Mailchimp, so it only ever fills a blank.
             $fields['FNAME'] = $first_name;
         }
 

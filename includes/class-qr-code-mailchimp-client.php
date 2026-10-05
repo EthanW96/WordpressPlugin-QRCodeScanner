@@ -111,6 +111,42 @@ class QRCodeTracker_Mailchimp_Client {
         ]);
     }
 
+    // Members fetched per page when reading an audience's first names.
+    const MEMBERS_PAGE_SIZE = 1000;
+
+    /**
+     * Every member of an audience that has a first name, so a sync can avoid
+     * overwriting it.
+     *
+     * @return array ['ok', 'names' => [lowercased email => first name], 'error']
+     */
+    public function get_first_names($list_id) {
+        $names  = [];
+        $offset = 0;
+
+        do {
+            $response = $this->request('GET', sprintf(
+                '/lists/%s/members?count=%d&offset=%d&fields=total_items,members.email_address,members.merge_fields.FNAME',
+                rawurlencode($list_id), self::MEMBERS_PAGE_SIZE, $offset
+            ));
+            if (!$response['ok']) {
+                return ['ok' => false, 'names' => [], 'error' => $response['error']];
+            }
+
+            $members = $response['data']['members'] ?? [];
+            foreach ($members as $member) {
+                $first_name = trim((string) ($member['merge_fields']['FNAME'] ?? ''));
+                if ($first_name !== '') {
+                    $names[strtolower((string) $member['email_address'])] = $first_name;
+                }
+            }
+            $offset += self::MEMBERS_PAGE_SIZE;
+            $total   = (int) ($response['data']['total_items'] ?? 0);
+        } while (!empty($members) && $offset < $total);
+
+        return ['ok' => true, 'names' => $names, 'error' => ''];
+    }
+
     public function start_batch(array $operations) {
         return $this->request('POST', '/batches', ['operations' => $operations]);
     }

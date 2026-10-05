@@ -186,7 +186,7 @@ class QRCodeTracker_Updates_Mailchimp_View {
     private function render_reference() {
         echo '<h2>Merge tags for your Mailchimp emails</h2>';
         echo '<table class="widefat striped" style="max-width:780px"><thead><tr><th>Tag</th><th>Contains</th></tr></thead><tbody>';
-        echo '<tr><td><code>*|FNAME|*</code></td><td>First name (only set when known)</td></tr>';
+        echo '<tr><td><code>*|FNAME|*</code></td><td>First name — only filled in when the contact has none in Mailchimp; an existing name is never overwritten</td></tr>';
         foreach (QRCodeTracker_Recipients::merge_field_definitions() as $tag => $definition) {
             echo '<tr><td><code>*|' . esc_html($tag) . '|*</code></td><td>' . esc_html($definition[0]) . '</td></tr>';
         }

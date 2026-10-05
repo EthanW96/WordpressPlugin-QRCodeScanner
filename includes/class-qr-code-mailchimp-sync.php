@@ -166,10 +166,11 @@ class QRCodeTracker_Mailchimp_Sync {
         }
 
         $mode       = empty(self::test_emails()) ? '' : ' (test mode — only the test addresses)';
+        $built      = $this->keep_existing_first_names($built, $settings['list_id'], $notes);
         $operations = $this->build_operations($built, $settings);
 
         if (count($built) <= self::DIRECT_LIMIT) {
-            return $this->run_direct($trigger, $operations, count($built), $mode);
+            return $this->run_direct($trigger, $operations, count($built), $mode, $notes);
         }
 
         $response = $this->client()->start_batch($operations);
@@ -177,7 +178,7 @@ class QRCodeTracker_Mailchimp_Sync {
             return $this->record($trigger, false, $response['error']);
         }
 
-        return $this->record($trigger, true, sprintf('Sent %d recipient(s) to Mailchimp%s. Mailchimp processes the batch in the background.', count($built), $mode), [
+        return $this->record($trigger, true, sprintf('Sent %d recipient(s) to Mailchimp%s. Mailchimp processes the batch in the background.%s', count($built), $mode, $notes), [
             'batch_id'     => (string) ($response['data']['id'] ?? ''),
             'batch_status' => (string) ($response['data']['status'] ?? 'pending'),
             'recipients'   => count($built),
@@ -188,7 +189,7 @@ class QRCodeTracker_Mailchimp_Sync {
      * Send each operation as its own request and report every failure by
      * contact, so a small sync's outcome is known immediately.
      */
-    private function run_direct($trigger, array $operations, $recipient_count, $mode) {
+    private function run_direct($trigger, array $operations, $recipient_count, $mode, $notes = '') {
         $client = $this->client();
         $errors = [];
 
@@ -202,9 +203,9 @@ class QRCodeTracker_Mailchimp_Sync {
         }
 
         if (!empty($errors)) {
-            return $this->record($trigger, false, sprintf('Synced %d recipient(s)%s with %d error(s): %s', $recipient_count, $mode, count($errors), implode(' | ', $errors)));
+            return $this->record($trigger, false, sprintf('Synced %d recipient(s)%s with %d error(s): %s.%s', $recipient_count, $mode, count($errors), implode(' | ', $errors), $notes));
         }
-        return $this->record($trigger, true, sprintf('Synced %d recipient(s) to Mailchimp%s. Done.', $recipient_count, $mode));
+        return $this->record($trigger, true, sprintf('Synced %d recipient(s) to Mailchimp%s. Done.%s', $recipient_count, $mode, $notes));
     }
 
     /**
@@ -235,6 +236,34 @@ class QRCodeTracker_Mailchimp_Sync {
      * One PUT per recipient, plus a tag request when a tag is configured.
      * status_if_new only applies to contacts Mailchimp does not have yet.
      */
+    /**
+     * First names are only filled in, never overwritten: FNAME is dropped for
+     * anyone who already has one in the audience. If the audience cannot be
+     * read, FNAME is dropped for everyone in this run rather than risk
+     * overwriting a name.
+     *
+     * @param string $notes Set to a note for the sync result, or ''.
+     */
+    private function keep_existing_first_names(array $built, $list_id, &$notes) {
+        $notes    = '';
+        $existing = $this->client()->get_first_names($list_id);
+
+        if (!$existing['ok']) {
+            $notes = ' First names were not sent this time, because the audience\'s existing names could not be read (' . $existing['error'] . ').';
+            foreach ($built as $email => $entry) {
+                unset($built[$email]['fields']['FNAME']);
+            }
+            return $built;
+        }
+
+        foreach ($built as $email => $entry) {
+            if (isset($existing['names'][$email])) {
+                unset($built[$email]['fields']['FNAME']);
+            }
+        }
+        return $built;
+    }
+
     private function build_operations(array $built, array $settings) {
         $list       = '/lists/' . rawurlencode($settings['list_id']) . '/members/';
         $operations = [];
