@@ -2,7 +2,7 @@
 /*
 Plugin Name: QR Code Tracker
 Description: Generate and track QR code links with query strings, including scan tracking and postcode rollups, plus dynamic HTML messages via shortcodes.
-Version: 1.0.7
+Version: 1.0.8
 Author: Ethan Widen
 */
 
@@ -23,6 +23,12 @@ require_once __DIR__ . '/includes/class-qr-code-city-report.php';
 require_once __DIR__ . '/includes/class-qr-code-popup.php';
 require_once __DIR__ . '/includes/class-qr-code-permissions.php';
 require_once __DIR__ . '/includes/class-qr-code-email.php';
+require_once __DIR__ . '/includes/class-qr-code-clicks.php';
+require_once __DIR__ . '/includes/class-qr-code-recipient-links.php';
+require_once __DIR__ . '/includes/class-qr-code-link-backfill.php';
+require_once __DIR__ . '/includes/class-qr-code-recipients.php';
+require_once __DIR__ . '/includes/class-qr-code-mailchimp-client.php';
+require_once __DIR__ . '/includes/class-qr-code-mailchimp-sync.php';
 
 // 1. Add QR code library import at the top (after class QRCodeTracker {)
 use chillerlan\QRCode\QRCode;
@@ -79,6 +85,9 @@ class QRCodeTracker {
     private $popup;
     private $teams;
     private $email;
+    private $clicks;
+    private $recipients;
+    private $mailchimp_sync;
     private $tree_checkout_field_overrides_cache = null;
     private $tree_individual_fields_toggle_script_printed = false;
     private $tree_field_description_visibility_style_printed = false;
@@ -97,6 +106,16 @@ class QRCodeTracker {
 
         $this->teams = new QRCodeTracker_Teams();
         $this->email = new QRCodeTracker_Email($this);
+
+        // Purchaser update emails: click counting, recipients, Mailchimp sync.
+        // All inert until Mailchimp is connected in Purchaser Updates.
+        $this->clicks         = new QRCodeTracker_Clicks();
+        $this->recipients     = new QRCodeTracker_Recipients($this->teams);
+        $this->mailchimp_sync = new QRCodeTracker_Mailchimp_Sync($this->recipients);
+        add_action('init', [$this->clicks, 'handle_request'], 1);
+        add_action(QRCodeTracker_Mailchimp_Sync::CRON_HOOK, [$this->mailchimp_sync, 'run_scheduled']);
+        register_deactivation_hook(__FILE__, ['QRCodeTracker_Mailchimp_Sync', 'clear_schedule']);
+
         $this->admin = new QRCodeTracker_Admin($this, $this->teams);
         add_action('admin_menu', [$this->admin, 'admin_menu']);
 
@@ -126,6 +145,14 @@ class QRCodeTracker {
 
     public function get_email_handler() {
         return $this->email;
+    }
+
+    public function get_recipients() {
+        return $this->recipients;
+    }
+
+    public function get_mailchimp_sync() {
+        return $this->mailchimp_sync;
     }
 
     public static function get_social_scan_source_prefix() {
@@ -643,7 +670,10 @@ class QRCodeTracker {
         if ($url === '') {
             $tracker = $this->get_current_tracker();
             if ($tracker && !empty($tracker->church_org_website)) {
-                $url = (string) $tracker->church_org_website;
+                // Route through the click counter, which redirects to this same
+                // website; a tree with no short code keeps the direct link.
+                $tracking_url = QRCodeTracker_Clicks::tracking_url($tracker);
+                $url = $tracking_url !== '' ? $tracking_url : (string) $tracker->church_org_website;
             }
         }
 
@@ -2755,6 +2785,53 @@ class QRCodeTracker {
     }
 
 
+    /**
+     * What a tree line item asked for, read-only, for matching existing QR
+     * codes back to the order that created them.
+     *
+     * Unlike resolve_team_id_for_order_item() this never creates a team: for
+     * an individual it returns the name their private team was given.
+     *
+     * @return array|null ['postcode', 'city', 'team_name', 'quantity'], or null
+     *                    when the line is not a tree with a postcode and city.
+     */
+    public function describe_order_tree_item($item, $order) {
+        $variation_id = (int) $item->get_variation_id();
+        $product_id   = $variation_id > 0 ? $variation_id : (int) $item->get_product_id();
+        if (!$product_id || !$this->is_tree_product($product_id)) {
+            return null;
+        }
+
+        $postcode = strtoupper(sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_postcode', 'Postcode')));
+        $city     = strtolower(sanitize_text_field($this->get_tree_field_from_order_item($item, 'qr_tree_city', 'City')));
+        if ($postcode === '' || $city === '') {
+            return null;
+        }
+
+        $labels         = $this->get_tree_checkout_field_choices();
+        $purchaser_type = sanitize_text_field($this->get_tree_field_from_order_item($item, 'purchaser_type', $labels['purchaser_type'] ?? 'Purchasing As'));
+        $team_name      = $purchaser_type;
+
+        if ($purchaser_type === 'individual') {
+            $first = sanitize_text_field($this->get_tree_field_from_order_item($item, 'individual_first_name', $labels['individual_first_name'] ?? 'First Name'));
+            $last  = sanitize_text_field($this->get_tree_field_from_order_item($item, 'individual_last_name', $labels['individual_last_name'] ?? 'Last Name'));
+            if ($first === '') {
+                $first = sanitize_text_field($order->get_billing_first_name());
+            }
+            if ($last === '') {
+                $last = sanitize_text_field($order->get_billing_last_name());
+            }
+            $team_name = trim($first . ' ' . $last) !== '' ? trim($first . ' ' . $last) : 'Individual';
+        }
+
+        return [
+            'postcode'  => $postcode,
+            'city'      => $city,
+            'team_name' => $team_name,
+            'quantity'  => max(1, (int) $item->get_quantity()),
+        ];
+    }
+
     public function create_qr_records_for_completed_order($order_id) {
         if (empty($order_id)) {
             return;
@@ -2887,6 +2964,33 @@ class QRCodeTracker {
         if ($inserted_count > 0 || $emails_sent > 0) {
             $order->update_meta_data('_qr_tracker_welcome_sent', 1);
             $order->save();
+        }
+
+        $this->link_order_recipient($order, $buckets, $billing_name);
+    }
+
+    /**
+     * Record that this order's billing email receives update emails about the
+     * trees it just created. Runs last and swallows its own failures, so it
+     * can never affect QR code creation or the welcome email.
+     */
+    private function link_order_recipient($order, array $buckets, $billing_name) {
+        try {
+            $record_ids = [];
+            foreach ($buckets as $bucket) {
+                $record_ids = array_merge($record_ids, $bucket['record_ids']);
+            }
+            if (!empty($record_ids)) {
+                QRCodeTracker_Recipient_Links::link_automatically(
+                    $order->get_billing_email(),
+                    $billing_name,
+                    $record_ids,
+                    $order->get_id(),
+                    QRCodeTracker_Recipient_Links::SOURCE_ORDER
+                );
+            }
+        } catch (Throwable $error) {
+            error_log('[QR Tracker links] Could not link order ' . (int) $order->get_id() . ': ' . $error->getMessage());
         }
     }
 

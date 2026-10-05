@@ -8,6 +8,7 @@ class QRCodeTracker_Admin {
     private $teams;
     private $merge_page;
     private $delete_guard;
+    private $updates_page;
 
     public function __construct($tracker, $teams) {
         global $wpdb;
@@ -26,6 +27,9 @@ class QRCodeTracker_Admin {
 
         require_once plugin_dir_path(__FILE__) . 'class-qr-code-delete.php';
         $this->delete_guard = new QRCodeTracker_Delete($teams);
+
+        require_once plugin_dir_path(__FILE__) . 'class-qr-code-updates-page.php';
+        $this->updates_page = new QRCodeTracker_Updates_Page($tracker, $teams);
     }
 
     public function admin_menu() {
@@ -40,6 +44,11 @@ class QRCodeTracker_Admin {
         // Merge tool: removes QR codes, so it needs both edit and delete.
         if (QRCodeTracker_Merge_Page::can_merge()) {
             add_submenu_page('qr-tracker', 'Merge QR Codes', 'Merge QR Codes', 'qr_tracker_delete_qr_codes', QRCodeTracker_Merge_Page::PAGE_SLUG, [$this->merge_page, 'render']);
+        }
+
+        // Purchaser update emails (Mailchimp sync and recipients).
+        if (QRCodeTracker_Updates_Page::can_manage()) {
+            add_submenu_page('qr-tracker', 'Purchaser Updates', 'Purchaser Updates', 'qr_tracker_manage_settings', QRCodeTracker_Updates_Page::PAGE_SLUG, [$this->updates_page, 'render']);
         }
 
         // Scan Logs submenu
@@ -862,7 +871,7 @@ class QRCodeTracker_Admin {
             return;
         }
         
-        $plugin_version = '1.0.7';
+        $plugin_version = '1.0.8';
         if (isset($_POST['qr_tracker_settings_submit'])) {
             // Check manage settings permission
             if (!QRCodeTracker_Permissions::can_manage_settings()) {

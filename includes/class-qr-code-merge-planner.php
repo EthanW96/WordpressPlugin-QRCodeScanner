@@ -91,6 +91,7 @@ class QRCodeTracker_Merge_Planner {
         $results    = $this->compute_results($plan, $rows, $assignment, $timelines);
         $access     = $this->plan_access_requests($plan);
         $aliases    = $this->plan_existing_aliases($plan);
+        $related    = $this->plan_clicks_and_links($plan);
 
         $errors = $this->check_transaction_support();
 
@@ -102,9 +103,10 @@ class QRCodeTracker_Merge_Planner {
             'log_summary'     => $this->summarize_logs($assignment, $timelines),
             'access_requests' => $access,
             'existing_aliases'=> $aliases,
+            'related'         => $related,
             'warnings'        => array_merge($this->notes, $this->collect_warnings($plan, $rows, $assignment, $timelines)),
             'errors'          => $errors,
-            'fingerprint'     => $this->fingerprint($plan, $rows, $timelines, $access, $aliases),
+            'fingerprint'     => $this->fingerprint($plan, $rows, $timelines, $access, $aliases, $related),
         ];
     }
 
@@ -417,7 +419,10 @@ class QRCodeTracker_Merge_Planner {
     private function check_transaction_support() {
         global $wpdb;
 
-        $tables = [$this->main_table, $this->log_table, $this->access_requests_table, QRCodeTracker_Aliases::table(), $wpdb->prefix . 'qr_tracker_merges'];
+        $tables = [
+            $this->main_table, $this->log_table, $this->access_requests_table, QRCodeTracker_Aliases::table(),
+            $wpdb->prefix . 'qr_tracker_merges', QRCodeTracker_Clicks::table(), QRCodeTracker_Recipient_Links::table(),
+        ];
         $placeholders = implode(',', array_fill(0, count($tables), '%s'));
         $engines = $wpdb->get_results($wpdb->prepare(
             "SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($placeholders)",
@@ -772,7 +777,7 @@ class QRCodeTracker_Merge_Planner {
      * recomputes it and refuses to commit if anything changed since the dry
      * run was shown — a scan arriving mid-review, say.
      */
-    private function fingerprint(array $plan, array $rows, array $timelines, array $access, array $aliases) {
+    private function fingerprint(array $plan, array $rows, array $timelines, array $access, array $aliases, array $related) {
         $log_ids = [];
         foreach ($timelines as $remove_id => $types) {
             foreach ($types as $type => $logs) {
@@ -786,7 +791,61 @@ class QRCodeTracker_Merge_Planner {
             'logs'     => $log_ids,
             'requests' => array_map(function ($request) { return [(int) $request->id, (int) $request->qr_id, $request->status]; }, $access['rows']),
             'aliases'  => array_map(function ($alias) { return [(int) $alias->id, (int) $alias->target_tracker_id]; }, $aliases['rows']),
+            'clicks'   => $related['clicks'],
+            'links'    => array_map(function ($link) { return [(int) $link->id, (int) $link->tracker_id, $link->email, (int) $link->is_removed]; }, $related['link_rows']),
         ]));
+    }
+
+    /**
+     * Website clicks and recipient links on a removed code follow it to the
+     * code its printed code now opens, or to the first kept code when it
+     * stops working — so a purchaser keeps their tree's numbers after a
+     * merge. A link that would duplicate one the destination already has
+     * (the table allows one per email per code) is dropped instead of moved.
+     *
+     * @return array ['clicks' => [remove_id => ['to' => keep_id, 'ids' => int[]]],
+     *               'link_moves' => [link_id => keep_id], 'link_drops' => int[], 'link_rows' => rows]
+     */
+    private function plan_clicks_and_links(array $plan) {
+        global $wpdb;
+        $placeholders = implode(',', array_fill(0, count($plan['remove_ids']), '%d'));
+
+        $clicks = [];
+        foreach ($plan['remove_ids'] as $remove_id) {
+            $clicks[$remove_id] = ['to' => $this->related_destination($plan, $remove_id), 'ids' => []];
+        }
+        $click_rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, tracker_id FROM " . QRCodeTracker_Clicks::table() . " WHERE tracker_id IN ($placeholders) ORDER BY id ASC",
+            $plan['remove_ids']
+        ));
+        foreach ((array) $click_rows as $click) {
+            $clicks[(int) $click->tracker_id]['ids'][] = (int) $click->id;
+        }
+
+        $link_rows = (array) $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM " . QRCodeTracker_Recipient_Links::table() . " WHERE tracker_id IN ($placeholders) ORDER BY id ASC",
+            $plan['remove_ids']
+        ));
+
+        $moves = [];
+        $drops = [];
+        $taken = []; // "email|keep_id" already present at, or moving to, the destination
+        foreach ($link_rows as $link) {
+            $to   = $this->related_destination($plan, (int) $link->tracker_id);
+            $slot = $link->email . '|' . $to;
+            if (isset($taken[$slot]) || QRCodeTracker_Recipient_Links::find($link->email, $to)) {
+                $drops[] = (int) $link->id;
+                continue;
+            }
+            $taken[$slot]              = true;
+            $moves[(int) $link->id] = $to;
+        }
+
+        return ['clicks' => $clicks, 'link_moves' => $moves, 'link_drops' => $drops, 'link_rows' => $link_rows];
+    }
+
+    private function related_destination(array $plan, $remove_id) {
+        return $plan['alias'][$remove_id] ?: reset($plan['keep_ids']);
     }
 
     // ------------------------------------------------------------------
