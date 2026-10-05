@@ -204,8 +204,10 @@ class QRCodeTracker_Updates_Mailchimp_View {
             $lines[] = "*|T{$slot}NAME|*: *|T{$slot}SCANS|* scans, *|T{$slot}CLICKS|* website clicks — *|T{$slot}URL|*";
             $lines[] = '*|END:IF|*';
         }
-        $lines[] = '*|IF:MORETREES>0|*';
-        $lines[] = '…plus *|MORETREES|* more: *|TREELIST|*';
+        // Plain IF checks only: they work on every Mailchimp plan, where
+        // comparisons such as MORETREES>0 may be rejected as invalid.
+        $lines[] = '*|IF:T2NAME|*';
+        $lines[] = 'All your trees at a glance: *|TREELIST|*';
         $lines[] = '*|END:IF|*';
         $lines[] = '';
         $lines[] = 'Across the whole Advent Tree Network: *|NETSCANS|* scans of *|NETTREES|* trees.';
