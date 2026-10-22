@@ -19,6 +19,9 @@ class QRCodeTracker_Recipients {
 
     const OPTION_INCLUDE_TEAM = 'qr_tracker_updates_include_team_members';
 
+    // The catch-all team for codes with no real team (see QRCodeTracker_DB).
+    const DEFAULT_TEAM_NAME = 'Default Team';
+
     private $teams;
     private $trees = null; // [id => row], loaded once per request
 
@@ -45,6 +48,7 @@ class QRCodeTracker_Recipients {
             'MYSHARES'  => ['Social shares of their trees', 'number'],
             'MYCLICKS'  => ['Website button clicks on their trees', 'number'],
             'TEAMSCANS' => ['Scans across their team(s)', 'number'],
+            'TEAMNAME'  => ['Their team or church (blank for individual buyers)', 'text'],
             'NETSCANS'  => ['Scans across the whole network', 'number'],
             'NETTREES'  => ['Trees in the whole network', 'number'],
             'MORETREES' => ['Trees beyond the per-tree breakdown', 'number'],
@@ -140,6 +144,7 @@ class QRCodeTracker_Recipients {
             'clicks'     => QRCodeTracker_Clicks::counts_for(array_keys($trees)),
             'network'    => $this->network_totals($trees),
             'teams'      => $this->team_scan_totals($trees),
+            'team_names' => $this->shared_team_names(),
             'engagement' => $engagement,
             'net_time'   => QRCodeTracker_Engagement::average_seconds($engagement, array_keys($engagement)),
         ];
@@ -175,6 +180,7 @@ class QRCodeTracker_Recipients {
             'MYSHARES'  => array_sum(array_map(function ($tree) { return (int) $tree->social_share_count; }, $mine)),
             'MYCLICKS'  => array_sum(array_map(function ($tree) use ($clicks) { return $clicks[(int) $tree->id] ?? 0; }, $mine)),
             'TEAMSCANS' => array_sum(array_map(function ($team_id) use ($teams) { return $teams[$team_id] ?? 0; }, $team_ids)),
+            'TEAMNAME'  => $this->team_name_for($mine, $context['team_names']),
             'NETSCANS'  => $context['network']['scans'],
             'NETTREES'  => $context['network']['trees'],
             'MORETREES' => max(0, count($mine) - self::TREE_SLOTS),
@@ -262,6 +268,39 @@ class QRCodeTracker_Recipients {
             'scans' => array_sum(array_map(function ($tree) { return (int) $tree->scan_count; }, $trees)),
             'trees' => count($trees),
         ];
+    }
+
+    /**
+     * The team an email should name: that of their most-scanned tree that
+     * belongs to a real team. Blank for individual buyers, so an email can
+     * branch on *|IF:TEAMNAME|*.
+     */
+    private function team_name_for(array $mine, array $team_names) {
+        foreach ($mine as $tree) {
+            $name = $team_names[(int) $tree->team_id] ?? '';
+            if ($name !== '') {
+                return mb_substr($name, 0, self::TEXT_FIELD_MAX);
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Names of teams that represent a group, keyed by id. Left out: private
+     * teams, which are created automatically for each individual buyer, and
+     * Default Team, which only holds codes that have no real team.
+     *
+     * @return array [team_id => name]
+     */
+    private function shared_team_names() {
+        $names = [];
+        foreach ((array) $this->teams->get_all_teams() as $team) {
+            $name = trim(self::unescape($team->name));
+            if (empty($team->is_private) && $name !== '' && strcasecmp($name, self::DEFAULT_TEAM_NAME) !== 0) {
+                $names[(int) $team->id] = $name;
+            }
+        }
+        return $names;
     }
 
     private function team_scan_totals(array $trees) {
