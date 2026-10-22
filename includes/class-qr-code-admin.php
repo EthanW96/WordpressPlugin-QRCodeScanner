@@ -871,7 +871,7 @@ class QRCodeTracker_Admin {
             return;
         }
         
-        $plugin_version = '1.0.9';
+        $plugin_version = '1.0.10';
         if (isset($_POST['qr_tracker_settings_submit'])) {
             // Check manage settings permission
             if (!QRCodeTracker_Permissions::can_manage_settings()) {

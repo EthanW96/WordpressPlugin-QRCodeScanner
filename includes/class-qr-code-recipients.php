@@ -32,8 +32,11 @@ class QRCodeTracker_Recipients {
 
     /**
      * The merge fields this sends, as [TAG => [label, Mailchimp type]].
-     * Number fields always hold a number; slot fields are text so an unused
-     * slot can be cleared with an empty value.
+     * Numbers are always sent, as 0 when there is nothing to count. Slot
+     * fields are text so an unused slot's name and link can be blank, which
+     * is what an email's *|IF:T2NAME|* check relies on. Times are text such
+     * as "1m 25s". Time is sent overall only (MYAVGTIME, NETAVGTIME): per-tree
+     * times would take the audience past Mailchimp's 30-field limit.
      */
     public static function merge_field_definitions() {
         $fields = [
@@ -46,6 +49,8 @@ class QRCodeTracker_Recipients {
             'NETTREES'  => ['Trees in the whole network', 'number'],
             'MORETREES' => ['Trees beyond the per-tree breakdown', 'number'],
             'TREELIST'  => ['All their trees with scans', 'text'],
+            'MYAVGTIME' => ['Average time on their tree pages', 'text'],
+            'NETAVGTIME'=> ['Average time on tree pages across the network', 'text'],
         ];
         for ($slot = 1; $slot <= self::TREE_SLOTS; $slot++) {
             $fields["T{$slot}NAME"]   = ["Tree {$slot} name", 'text'];
@@ -128,25 +133,37 @@ class QRCodeTracker_Recipients {
      * @return array [email => ['recipient' => array, 'fields' => [TAG => value]]]
      */
     public function build_all() {
-        $trees   = $this->trees();
-        $clicks  = QRCodeTracker_Clicks::counts_for(array_keys($trees));
-        $network = $this->network_totals($trees);
-        $teams   = $this->team_scan_totals($trees);
+        $trees      = $this->trees();
+        $engagement = QRCodeTracker_Engagement::totals_by_tracker();
+        $context    = [
+            'trees'      => $trees,
+            'clicks'     => QRCodeTracker_Clicks::counts_for(array_keys($trees)),
+            'network'    => $this->network_totals($trees),
+            'teams'      => $this->team_scan_totals($trees),
+            'engagement' => $engagement,
+            'net_time'   => QRCodeTracker_Engagement::average_seconds($engagement, array_keys($engagement)),
+        ];
 
         $built = [];
         foreach ($this->get_recipients() as $email => $recipient) {
             $built[$email] = [
                 'recipient' => $recipient,
-                'fields'    => $this->fields_for($recipient, $trees, $clicks, $network, $teams),
+                'fields'    => $this->fields_for($recipient, $context),
             ];
         }
         return $built;
     }
 
-    private function fields_for(array $recipient, array $trees, array $clicks, array $network, array $teams) {
-        $mine = [];
+    /**
+     * @param array $context Shared per-sync data: trees, clicks, network,
+     *                       teams, engagement and net_time (see build_all()).
+     */
+    private function fields_for(array $recipient, array $context) {
+        $clicks = $context['clicks'];
+        $teams  = $context['teams'];
+        $mine   = [];
         foreach ($recipient['tree_ids'] as $tree_id) {
-            $mine[] = $trees[$tree_id];
+            $mine[] = $context['trees'][$tree_id];
         }
         usort($mine, function ($a, $b) { return (int) $b->scan_count <=> (int) $a->scan_count; });
 
@@ -158,10 +175,14 @@ class QRCodeTracker_Recipients {
             'MYSHARES'  => array_sum(array_map(function ($tree) { return (int) $tree->social_share_count; }, $mine)),
             'MYCLICKS'  => array_sum(array_map(function ($tree) use ($clicks) { return $clicks[(int) $tree->id] ?? 0; }, $mine)),
             'TEAMSCANS' => array_sum(array_map(function ($team_id) use ($teams) { return $teams[$team_id] ?? 0; }, $team_ids)),
-            'NETSCANS'  => $network['scans'],
-            'NETTREES'  => $network['trees'],
+            'NETSCANS'  => $context['network']['scans'],
+            'NETTREES'  => $context['network']['trees'],
             'MORETREES' => max(0, count($mine) - self::TREE_SLOTS),
             'TREELIST'  => $this->tree_list($mine),
+            'MYAVGTIME' => QRCodeTracker_Engagement::format(
+                QRCodeTracker_Engagement::average_seconds($context['engagement'], $recipient['tree_ids'])
+            ),
+            'NETAVGTIME'=> QRCodeTracker_Engagement::format($context['net_time']),
         ];
 
         $first_name = $this->first_name($recipient['name']);
@@ -174,24 +195,32 @@ class QRCodeTracker_Recipients {
         return $fields + $this->slot_fields($mine, $clicks);
     }
 
+    /**
+     * Per-tree slots. A slot without a tree sends 0 for its numbers, but an
+     * empty name and link: emails show a slot with *|IF:T2NAME|*, so the
+     * name must stay blank for the slot to stay hidden.
+     */
     private function slot_fields(array $mine, array $clicks) {
         $fields = [];
         for ($slot = 1; $slot <= self::TREE_SLOTS; $slot++) {
             $tree = $mine[$slot - 1] ?? null;
-            // Empty values clear a slot left over from an earlier sync.
+            $id   = $tree ? (int) $tree->id : 0;
             $fields["T{$slot}NAME"]   = $tree ? self::tree_name($tree) : '';
-            $fields["T{$slot}SCANS"]  = $tree ? (string) (int) $tree->scan_count : '';
-            $fields["T{$slot}CLICKS"] = $tree ? (string) ($clicks[(int) $tree->id] ?? 0) : '';
+            $fields["T{$slot}SCANS"]  = $tree ? (string) (int) $tree->scan_count : '0';
+            $fields["T{$slot}CLICKS"] = $tree ? (string) ($clicks[$id] ?? 0) : '0';
             $fields["T{$slot}URL"]    = $tree ? (string) $tree->url : '';
         }
         return $fields;
     }
 
     /**
-     * "Riverside 43 · Home 12 · …", cut to fit a Mailchimp text field.
+     * "Riverside: 43 scans · Home: 1 scan · …", cut to fit a Mailchimp text field.
      */
     private function tree_list(array $mine) {
-        $parts = array_map(function ($tree) { return self::tree_name($tree) . ' ' . (int) $tree->scan_count; }, $mine);
+        $parts = array_map(function ($tree) {
+            $scans = (int) $tree->scan_count;
+            return self::tree_name($tree) . ': ' . $scans . ($scans === 1 ? ' scan' : ' scans');
+        }, $mine);
         $list  = implode(' · ', $parts);
         if (mb_strlen($list) <= self::TEXT_FIELD_MAX) {
             return $list;

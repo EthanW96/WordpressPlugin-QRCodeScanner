@@ -10,6 +10,7 @@ class QRCodeTracker_DB {
     private $merges_table;
     private $clicks_table;
     private $recipient_links_table;
+    private $engagement_table;
 
     public function __construct() {
         global $wpdb;
@@ -22,6 +23,7 @@ class QRCodeTracker_DB {
         $this->merges_table = $wpdb->prefix . 'qr_tracker_merges';
         $this->clicks_table = $wpdb->prefix . 'qr_tracker_clicks';
         $this->recipient_links_table = $wpdb->prefix . 'qr_tracker_recipient_links';
+        $this->engagement_table = $wpdb->prefix . 'qr_tracker_engagement';
     }
 
     public function install() {
@@ -142,6 +144,7 @@ class QRCodeTracker_DB {
         dbDelta($sql_access_requests);
         $this->create_merge_tables();
         $this->create_update_email_tables();
+        $this->create_engagement_table();
 
         // Insert default team if none exists
         $this->insert_default_team();
@@ -171,6 +174,10 @@ class QRCodeTracker_DB {
         $links_exists  = $wpdb->get_var("SHOW TABLES LIKE '{$this->recipient_links_table}'");
         if (!$clicks_exists || !$links_exists) {
             $this->create_update_email_tables();
+        }
+
+        if (!$wpdb->get_var("SHOW TABLES LIKE '{$this->engagement_table}'")) {
+            $this->create_engagement_table();
         }
         
         // Check if team_id column exists in main table
@@ -439,6 +446,29 @@ class QRCodeTracker_DB {
     }
 
     /**
+     * How long each tracked visit kept the tree page visible. New, so
+     * creating it never touches existing data. One row per scan-log row; the
+     * QR code is found through the log, so engagement follows the visit when
+     * a merge moves it.
+     */
+    private function create_engagement_table() {
+        global $wpdb;
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE {$this->engagement_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            log_id BIGINT UNSIGNED NOT NULL,
+            seconds INT UNSIGNED NOT NULL DEFAULT 0,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY log_id (log_id)
+        ) $charset_collate;";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta($sql);
+    }
+
+    /**
      * Tables backing the purchaser update emails. Both are new, so creating
      * them never touches existing data.
      *
@@ -632,6 +662,7 @@ class QRCodeTracker_DB {
             $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}qr_tracker_merges");
             $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}qr_tracker_clicks");
             $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}qr_tracker_recipient_links");
+            $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}qr_tracker_engagement");
 
             delete_option('qr_tracker_delete_on_uninstall');
             delete_option('qr_tracker_has_aliases');

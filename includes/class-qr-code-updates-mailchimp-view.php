@@ -159,7 +159,7 @@ class QRCodeTracker_Updates_Mailchimp_View {
             echo '<div class="notice notice-warning inline"><p><strong>Test mode is on:</strong> a sync sends only ' . count($to_send) . ' of these ' . count($preview) . ' recipient(s), marked “Sent”. Everyone else is left out.</p></div>';
         }
         echo '<div style="max-width:100%;overflow-x:auto"><table class="widefat striped"><thead><tr>';
-        echo '<th>Sent</th><th>Email</th><th>Name</th><th>Via</th><th>Trees</th><th>Scans</th><th>Shares</th><th>Clicks</th><th>Team scans</th><th>Breakdown</th>';
+        echo '<th>Sent</th><th>Email</th><th>Name</th><th>Via</th><th>Trees</th><th>Scans</th><th>Shares</th><th>Clicks</th><th>Avg time</th><th>Team scans</th><th>Breakdown</th>';
         echo '</tr></thead><tbody>';
 
         foreach (array_slice($preview, 0, self::PREVIEW_LIMIT) as $email => $entry) {
@@ -167,9 +167,11 @@ class QRCodeTracker_Updates_Mailchimp_View {
             echo '<tr><td>' . (isset($to_send[$email]) ? '<span class="qr-updates-ok">Sent</span>' : '<span class="description">Skipped</span>') . '</td>';
             echo '<td>' . esc_html($email) . '</td><td>' . esc_html($entry['recipient']['name']) . '</td>';
             echo '<td>' . esc_html(implode(', ', $entry['recipient']['via'])) . '</td>';
-            foreach (['TREES', 'MYSCANS', 'MYSHARES', 'MYCLICKS', 'TEAMSCANS'] as $tag) {
+            foreach (['TREES', 'MYSCANS', 'MYSHARES', 'MYCLICKS'] as $tag) {
                 echo '<td>' . number_format((int) $fields[$tag]) . '</td>';
             }
+            echo '<td>' . esc_html($fields['MYAVGTIME']) . '</td>';
+            echo '<td>' . number_format((int) $fields['TEAMSCANS']) . '</td>';
             echo '<td>' . esc_html($fields['TREELIST']) . '</td></tr>';
         }
         echo '</tbody></table></div>';
@@ -192,20 +194,31 @@ class QRCodeTracker_Updates_Mailchimp_View {
         }
         echo '</tbody></table>';
 
-        echo '<p>A per-tree breakdown that only shows the trees someone owns — paste into a Mailchimp text block:</p>';
-        echo '<textarea readonly rows="12" class="large-text code" style="max-width:780px">' . esc_textarea($this->breakdown_snippet()) . '</textarea>';
+        echo '<p>An example to paste into a Mailchimp text block: an if/else greeting and summary, then a per-tree breakdown that only shows the trees someone owns.</p>';
+        echo '<textarea readonly rows="18" class="large-text code" style="max-width:780px">' . esc_textarea($this->breakdown_snippet()) . '</textarea>';
         echo '<p class="description">Mailchimp shows videos as a thumbnail linking to the video (use its Video content block); email clients cannot play video inline.</p>';
     }
 
+    /**
+     * A paste-ready example using only plain *|IF:|* / *|ELSE:|* checks,
+     * which every Mailchimp plan accepts (comparisons such as TREES>1 may be
+     * rejected as invalid). Unused tree slots have a blank name, so
+     * *|IF:T2NAME|* is true only for someone with a second tree.
+     */
     private function breakdown_snippet() {
-        $lines = ['Your trees have been scanned *|MYSCANS|* times, and your website button clicked *|MYCLICKS|* times.', ''];
+        $lines = [
+            '*|IF:FNAME|*Hi *|FNAME|*,*|ELSE:|*Hello there,*|END:IF|*',
+            '',
+            '*|IF:T2NAME|*Your *|TREES|* Advent Trees have been scanned *|MYSCANS|* times so far, and visitors spent an average of *|MYAVGTIME|* on their pages.'
+                . '*|ELSE:|*Your Advent Tree, *|T1NAME|*, has been scanned *|MYSCANS|* times so far, and visitors spent an average of *|MYAVGTIME|* on its page.*|END:IF|*'
+                . ' Across the whole network, people are spending *|NETAVGTIME|* on a tree page.',
+            '',
+        ];
         for ($slot = 1; $slot <= QRCodeTracker_Recipients::TREE_SLOTS; $slot++) {
             $lines[] = "*|IF:T{$slot}NAME|*";
             $lines[] = "*|T{$slot}NAME|*: *|T{$slot}SCANS|* scans, *|T{$slot}CLICKS|* website clicks — *|T{$slot}URL|*";
             $lines[] = '*|END:IF|*';
         }
-        // Plain IF checks only: they work on every Mailchimp plan, where
-        // comparisons such as MORETREES>0 may be rejected as invalid.
         $lines[] = '*|IF:T2NAME|*';
         $lines[] = 'All your trees at a glance: *|TREELIST|*';
         $lines[] = '*|END:IF|*';
