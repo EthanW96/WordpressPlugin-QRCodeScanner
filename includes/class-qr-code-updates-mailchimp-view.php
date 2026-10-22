@@ -159,7 +159,7 @@ class QRCodeTracker_Updates_Mailchimp_View {
             echo '<div class="notice notice-warning inline"><p><strong>Test mode is on:</strong> a sync sends only ' . count($to_send) . ' of these ' . count($preview) . ' recipient(s), marked “Sent”. Everyone else is left out.</p></div>';
         }
         echo '<div style="max-width:100%;overflow-x:auto"><table class="widefat striped"><thead><tr>';
-        echo '<th>Sent</th><th>Email</th><th>Name</th><th>Via</th><th>Trees</th><th>Scans</th><th>Shares</th><th>Clicks</th><th>Avg time</th><th>Team scans</th><th>Breakdown</th>';
+        echo '<th>Sent</th><th>Email</th><th>Name</th><th>Via</th><th>Team (TEAMNAME)</th><th>Trees</th><th>Scans</th><th>Shares</th><th>Clicks</th><th>Avg time</th><th>Team scans</th><th>Breakdown</th>';
         echo '</tr></thead><tbody>';
 
         foreach (array_slice($preview, 0, self::PREVIEW_LIMIT) as $email => $entry) {
@@ -167,6 +167,7 @@ class QRCodeTracker_Updates_Mailchimp_View {
             echo '<tr><td>' . (isset($to_send[$email]) ? '<span class="qr-updates-ok">Sent</span>' : '<span class="description">Skipped</span>') . '</td>';
             echo '<td>' . esc_html($email) . '</td><td>' . esc_html($entry['recipient']['name']) . '</td>';
             echo '<td>' . esc_html(implode(', ', $entry['recipient']['via'])) . '</td>';
+            echo '<td>' . ($fields['TEAMNAME'] !== '' ? esc_html($fields['TEAMNAME']) : '<span class="description">Individual</span>') . '</td>';
             foreach (['TREES', 'MYSCANS', 'MYSHARES', 'MYCLICKS'] as $tag) {
                 echo '<td>' . number_format((int) $fields[$tag]) . '</td>';
             }
