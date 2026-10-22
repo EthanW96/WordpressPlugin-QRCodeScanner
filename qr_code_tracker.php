@@ -2,7 +2,7 @@
 /*
 Plugin Name: QR Code Tracker
 Description: Generate and track QR code links with query strings, including scan tracking and postcode rollups, plus dynamic HTML messages via shortcodes.
-Version: 1.0.9
+Version: 1.0.10
 Author: Ethan Widen
 */
 
@@ -24,6 +24,7 @@ require_once __DIR__ . '/includes/class-qr-code-popup.php';
 require_once __DIR__ . '/includes/class-qr-code-permissions.php';
 require_once __DIR__ . '/includes/class-qr-code-email.php';
 require_once __DIR__ . '/includes/class-qr-code-clicks.php';
+require_once __DIR__ . '/includes/class-qr-code-engagement.php';
 require_once __DIR__ . '/includes/class-qr-code-recipient-links.php';
 require_once __DIR__ . '/includes/class-qr-code-link-backfill.php';
 require_once __DIR__ . '/includes/class-qr-code-recipients.php';
@@ -86,6 +87,7 @@ class QRCodeTracker {
     private $teams;
     private $email;
     private $clicks;
+    private $engagement;
     private $recipients;
     private $mailchimp_sync;
     private $tree_checkout_field_overrides_cache = null;
@@ -113,6 +115,11 @@ class QRCodeTracker {
         $this->recipients     = new QRCodeTracker_Recipients($this->teams);
         $this->mailchimp_sync = new QRCodeTracker_Mailchimp_Sync($this->recipients);
         add_action('init', [$this->clicks, 'handle_request'], 1);
+
+        // How long visitors keep a tree's page open; reported by a beacon.
+        $this->engagement = new QRCodeTracker_Engagement();
+        add_action('init', [$this->engagement, 'handle_report'], 1);
+        add_action('wp_footer', [$this->engagement, 'render_script'], 99);
         add_action(QRCodeTracker_Mailchimp_Sync::CRON_HOOK, [$this->mailchimp_sync, 'run_scheduled']);
         register_deactivation_hook(__FILE__, ['QRCodeTracker_Mailchimp_Sync', 'clear_schedule']);
 
@@ -367,6 +374,10 @@ class QRCodeTracker {
             ]);
 
             $recorded = ($update_result !== false && $insert_result !== false);
+            if ($insert_result !== false) {
+                // Lets the page report how long this visit stays open.
+                $this->engagement->set_visit((int) $wpdb->insert_id);
+            }
             if ($recorded) {
                 $message = $is_social_share
                     ? 'Social share visit recorded successfully.'
