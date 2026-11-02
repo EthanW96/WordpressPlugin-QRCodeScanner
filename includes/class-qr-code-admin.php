@@ -196,6 +196,7 @@ class QRCodeTracker_Admin {
             $shop_link = esc_url_raw($_POST['qr_shop_link']);
             $shop_logo = esc_url_raw($_POST['qr_shop_logo']);
             $show_shop_link = isset($_POST['qr_show_shop_link']) ? 1 : 0;
+            $language = QRCodeTracker_Language::sanitize($_POST['qr_language'] ?? '');
             $team_id = !empty($_POST['qr_team']) && QRCodeTracker_Permissions::can_assign_qr_codes_to_teams() ? intval($_POST['qr_team']) : null;
             
             // Validate fields for spaces and special characters
@@ -246,7 +247,7 @@ class QRCodeTracker_Admin {
                     if ($existing) {
                         echo '<div class="error"><p>Error: A QR code with this URL or short code already exists (ID: ' . $existing->id . ', Postcode: ' . $existing->postcode . ', Tree: ' . $existing->tree . '). Please try again.</p></div>';
                     } else {
-                        $wpdb->insert($this->main_table, compact('url', 'short_code', 'edit_token', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id'));
+                        $wpdb->insert($this->main_table, compact('url', 'short_code', 'edit_token', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id', 'language'));
                         echo '<div class="updated"><p>QR Code entry saved.</p></div>';
                     }
                 }
@@ -274,6 +275,7 @@ class QRCodeTracker_Admin {
                 $shop_link = esc_url_raw($_POST['qr_shop_link']);
                 $shop_logo = esc_url_raw($_POST['qr_shop_logo']);
                 $show_shop_link = isset($_POST['qr_show_shop_link']) ? 1 : 0;
+                $language = QRCodeTracker_Language::sanitize($_POST['qr_language'] ?? '');
                 $team_id = !empty($_POST['qr_team']) && QRCodeTracker_Permissions::can_assign_qr_codes_to_teams() ? intval($_POST['qr_team']) : null;
                 
                 // Validate fields for spaces and special characters
@@ -317,10 +319,10 @@ class QRCodeTracker_Admin {
                     
                     // If no tracked visits exist, allow URL editing
                     if (!$has_recorded_hits) {
-                        $update_data = compact('url', 'short_code', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
+                        $update_data = compact('url', 'short_code', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id', 'language');
                     } else {
                         // If tracked visits exist, only update non-URL fields
-                        $update_data = compact('short_code', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id');
+                        $update_data = compact('short_code', 'postcode', 'city', 'tree', 'label', 'reporting_id', 'message_1', 'message_2', 'show_popup', 'shop_link', 'shop_logo', 'show_shop_link', 'team_id', 'language');
                     }
                     
                     $wpdb->update($this->main_table, $update_data, ['id' => $edit_id]);
@@ -428,6 +430,7 @@ class QRCodeTracker_Admin {
                         <td><input type="url" name="qr_shop_logo" id="qr_shop_logo" value="' . esc_attr($edit_data->shop_logo) . '" placeholder="https://example.com/logo.png"><p class="description">URL to your shop logo image. Leave empty to use default from settings.</p></td></tr>
                     <tr><th><label for="qr_show_shop_link">Show Shop Link:</label></th>
                         <td><input type="checkbox" name="qr_show_shop_link" id="qr_show_shop_link" value="1"' . ($edit_data->show_shop_link ? ' checked' : '') . '> <label for="qr_show_shop_link">Display shop logo as clickable link when QR code is scanned</label><p class="description">If checked, the shop logo will be displayed as a clickable link using the <code>[qr_tracker_shop_link]</code> shortcode. Both shop link and logo URL must be set.</p></td></tr>';
+                echo QRCodeTracker_Language::field_html($edit_data->language ?? '');
             
             // Team selection (only show if user has permission)
             if (QRCodeTracker_Permissions::can_assign_qr_codes_to_teams()) {
@@ -582,6 +585,7 @@ class QRCodeTracker_Admin {
                         <td><input type="url" name="qr_shop_logo" id="qr_shop_logo" placeholder="https://example.com/logo.png"><p class="description">URL to your shop logo image. Leave empty to use default from settings.</p></td></tr>
                     <tr><th><label for="qr_show_shop_link">Show Shop Link:</label></th>
                         <td><input type="checkbox" name="qr_show_shop_link" id="qr_show_shop_link" value="1" checked> <label for="qr_show_shop_link">Display shop logo as clickable link when QR code is scanned</label><p class="description">If checked, the shop logo will be displayed as a clickable link using the <code>[qr_tracker_shop_link]</code> shortcode. Both shop link and logo URL must be set.</p></td></tr>';
+                echo QRCodeTracker_Language::field_html('');
             
             // Team selection (only show if user has permission)
             if (QRCodeTracker_Permissions::can_assign_qr_codes_to_teams()) {
@@ -871,7 +875,7 @@ class QRCodeTracker_Admin {
             return;
         }
         
-        $plugin_version = '1.0.11';
+        $plugin_version = '1.0.12';
         if (isset($_POST['qr_tracker_settings_submit'])) {
             // Check manage settings permission
             if (!QRCodeTracker_Permissions::can_manage_settings()) {

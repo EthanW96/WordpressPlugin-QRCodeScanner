@@ -2,7 +2,7 @@
 /*
 Plugin Name: QR Code Tracker
 Description: Generate and track QR code links with query strings, including scan tracking and postcode rollups, plus dynamic HTML messages via shortcodes.
-Version: 1.0.11
+Version: 1.0.12
 Author: Ethan Widen
 */
 
@@ -25,6 +25,7 @@ require_once __DIR__ . '/includes/class-qr-code-permissions.php';
 require_once __DIR__ . '/includes/class-qr-code-email.php';
 require_once __DIR__ . '/includes/class-qr-code-clicks.php';
 require_once __DIR__ . '/includes/class-qr-code-engagement.php';
+require_once __DIR__ . '/includes/class-qr-code-language.php';
 require_once __DIR__ . '/includes/class-qr-code-recipient-links.php';
 require_once __DIR__ . '/includes/class-qr-code-link-backfill.php';
 require_once __DIR__ . '/includes/class-qr-code-recipients.php';
@@ -136,6 +137,8 @@ class QRCodeTracker {
         $this->popup = new QRCodeTracker_Popup($this);
 
         add_action('parse_request', [$this, 'maybe_redirect_query_url_to_short_code'], 1);
+        // Per-code language runs just before the visit is recorded.
+        add_action('wp', [new QRCodeTracker_Language($this), 'maybe_redirect'], -1);
         add_action('wp', [$this, 'track_visit'], 0);
         add_action('template_redirect', [$this, 'handle_legacy_short_code_redirect'], 0);
         add_action('template_redirect', [$this, 'handle_qr_management_request']);
@@ -509,7 +512,7 @@ class QRCodeTracker {
         return ['row' => $row, 'via_path' => $via_path];
     }
 
-    private function get_path_short_code_from_request() {
+    public function get_path_short_code_from_request() {
         if (empty($_SERVER['REQUEST_URI'])) {
             return '';
         }
