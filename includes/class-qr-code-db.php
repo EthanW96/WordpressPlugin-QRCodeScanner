@@ -52,6 +52,7 @@ class QRCodeTracker_DB {
             shop_logo VARCHAR(255),
             show_shop_link TINYINT(1) DEFAULT 1,
             church_org_website VARCHAR(255),
+            language VARCHAR(16) DEFAULT NULL,
             team_id BIGINT UNSIGNED DEFAULT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -269,6 +270,13 @@ class QRCodeTracker_DB {
         $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'church_org_website'");
         if (empty($columns)) {
             $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN church_org_website VARCHAR(255) AFTER show_shop_link");
+        }
+
+        // Per-QR-code WPML language (blank = site default). New and empty,
+        // so adding it never changes how an existing code behaves.
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->main_table} LIKE 'language'");
+        if (empty($columns)) {
+            $wpdb->query("ALTER TABLE {$this->main_table} ADD COLUMN language VARCHAR(16) DEFAULT NULL AFTER church_org_website");
         }
 
         // Add is_private column to teams table

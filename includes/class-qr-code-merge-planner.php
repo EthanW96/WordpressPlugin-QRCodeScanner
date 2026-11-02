@@ -32,6 +32,7 @@ class QRCodeTracker_Merge_Planner {
         'shop_logo'          => 'Shop Logo',
         'show_popup'         => 'Show Popup',
         'show_shop_link'     => 'Show Shop Link',
+        'language'           => 'Language',
         'created_at'         => 'Created',
     ];
 
